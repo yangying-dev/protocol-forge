@@ -1,0 +1,23 @@
+# NuGet dependency updates. Avalonia and CommunityToolkit.Mvvm both ship
+# security-relevant fixes, so keep this on.
+version: 2
+updates:
+  - package-ecosystem: nuget
+    directory: /ProtocolForge
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: [dependencies]
+
+  - package-ecosystem: nuget
+    directory: /tests/pf-verify
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    labels: [dependencies]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    labels: [dependencies, ci]

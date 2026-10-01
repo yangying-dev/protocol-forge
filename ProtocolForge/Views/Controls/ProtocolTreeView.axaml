@@ -1,0 +1,87 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ProtocolForge.ViewModels"
+             xmlns:models="using:ProtocolForge.Models"
+             x:Class="ProtocolForge.Views.Controls.ProtocolTreeView"
+             x:DataType="vm:ProtocolTreeViewModel">
+
+    <Grid RowDefinitions="Auto,*">
+        <Border Grid.Row="0" Background="#F0F0F0" Padding="8,4"
+                IsVisible="{Binding IsEnabled}">
+            <TextBlock Text="{Binding SelectedFieldInfo}"
+                       FontSize="11" Foreground="Gray"
+                       FontFamily="Consolas, monospace" />
+        </Border>
+
+        <TreeView Grid.Row="1" Name="ProtocolTree"
+                  ItemsSource="{Binding Layers}"
+                  Background="White"
+                  BorderThickness="0"
+                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                  ScrollViewer.VerticalScrollBarVisibility="Auto">
+            <TreeView.DataTemplates>
+                <!-- Layer: show protocol name + descriptive text -->
+                <TreeDataTemplate DataType="models:ProtocolLayer"
+                                  ItemsSource="{Binding Fields}">
+                    <StackPanel Orientation="Horizontal" Spacing="4"
+                                x:DataType="models:ProtocolLayer">
+                        <TextBlock Text="{Binding ShortLabel}"
+                                   FontWeight="SemiBold" FontSize="12" />
+                    </StackPanel>
+                </TreeDataTemplate>
+
+                <!-- Field: name : display value [hex offset info] -->
+                <TreeDataTemplate DataType="models:ProtocolField"
+                                  ItemsSource="{Binding Children}">
+                    <Border Padding="2,1"
+                            x:DataType="models:ProtocolField">
+                        <Border.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="{DynamicResource L10n.Field.EditValue}"
+                                          IsEnabled="{Binding IsTreeEditable}"
+                                          Click="OnEditValueClicked" />
+                            </ContextMenu>
+                        </Border.ContextMenu>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock Text="{Binding Name}" FontSize="12"
+                                       FontWeight="SemiBold" Foreground="#1565C0" />
+                            <TextBlock Text=":" FontSize="12" Foreground="#888" />
+                            <TextBlock Text="{Binding DisplayValue}" FontSize="12"
+                                       IsVisible="{Binding !IsEditing}"
+                                       Foreground="#424242" />
+                            <TextBox Text="{Binding EditText}"
+                                     IsVisible="{Binding IsEditing}"
+                                     Width="160" Padding="3,0"
+                                     FontSize="12" VerticalContentAlignment="Center"
+                                     FontFamily="Consolas, monospace"
+                                     KeyDown="OnEditKeyDown"
+                                     LostFocus="OnEditLostFocus" />
+                            <TextBlock Text="{Binding HexValue, StringFormat={}[{0}]}"
+                                       IsVisible="{Binding ShowHex}"
+                                       FontSize="11" Foreground="#9E9E9E"
+                                       FontFamily="Consolas, monospace" />
+                        </StackPanel>
+                    </Border>
+                </TreeDataTemplate>
+            </TreeView.DataTemplates>
+
+            <TreeView.Styles>
+                <Style Selector="TreeViewItem">
+                    <Setter Property="Cursor" Value="Hand" />
+                    <!-- Disable the theme's animated hover transition: hovering a row
+                         must repaint its background immediately, not fade in over time. -->
+                    <Setter Property="Transitions">
+                        <Transitions />
+                    </Setter>
+                </Style>
+                <!-- Immediate, lightweight hover highlight (no gradient/transition). -->
+                <Style Selector="TreeViewItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+                    <Setter Property="Background" Value="#E8F0FE" />
+                </Style>
+                <Style Selector="TreeViewItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+                    <Setter Property="Background" Value="#CCE0E0FF" />
+                </Style>
+            </TreeView.Styles>
+        </TreeView>
+    </Grid>
+</UserControl>

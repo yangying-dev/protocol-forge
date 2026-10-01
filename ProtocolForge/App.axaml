@@ -1,0 +1,26 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="ProtocolForge.App"
+             xmlns:local="using:ProtocolForge"
+             RequestedThemeVariant="Default">
+             <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
+
+    <Application.DataTemplates>
+        <local:ViewLocator/>
+    </Application.DataTemplates>
+  
+    <Application.Styles>
+        <FluentTheme />
+        <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml" />
+        
+        <Style Selector="MenuItem:checked:toggle /template/ ContentControl#PART_ToggleIconPresenter">
+            <Setter Property="Content">
+                <Template>
+                    <Path Fill="{Binding $parent[MenuItem].Foreground}"
+                          Width="12"
+                          Data="{StaticResource CheckMarkPathData}" />
+                </Template>
+            </Setter>
+        </Style>
+    </Application.Styles>
+</Application>

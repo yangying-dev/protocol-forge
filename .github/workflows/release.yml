@@ -1,0 +1,216 @@
+name: Release
+
+# Triggered by pushing a `v*` tag. Builds the Linux (AppImage + deb) and Windows
+# (multi-file ZIP) packages and attaches them to a GitHub Release.
+#
+# ORDERING (this is not optional, it is the difference between this workflow
+# running at all and silently never firing):
+#   1. merge release.yml
+#   2. tag that commit:  git tag -a v0.1.0 -m "0.1.0"
+#   3. push the tag:     git push origin v0.1.0
+# GitHub Actions runs the workflow **as of the tree at the tagged commit**. If you
+# tag a commit that predates this file, the workflow does not exist as far as the
+# run is concerned and no release is produced, with no error anywhere.
+#
+# PERMISSIONS: `contents: write` is declared explicitly below. The read-only
+# `permissions: contents: read` in ci.yml applies to ci.yml ONLY — permissions do
+# not carry across workflow files. A release workflow that omits this block
+# inherits the repository default, which on a read-only default fails at the
+# release-creation step with an opaque 403.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to publish (e.g. v0.1.0)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: the release notes and any SHA comparison need it.
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install tshark
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y tshark
+
+      - name: Reject pcap/pcapng in the diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${{ github.event.before }}"
+          # 首次推送到空仓库时 before 全为 0，git diff 会失败；原来用 2>/dev/null
+          # 吞掉错误，导致门禁静默放行。回退到根提交，与 ci.yml 的做法一致。
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
+            base="$(git rev-list --max-parents=0 HEAD)"
+          fi
+          # 与 ci.yml 保持一致：用 :(icase,glob) 才能拦住 .PCAP 这类大写扩展名
+          captures="$(git diff --name-only --diff-filter=ACMR "$base" HEAD -- ':(icase,glob)**/*.pcap' ':(icase,glob)**/*.pcapng')"
+          if [ -n "$captures" ]; then
+            printf 'Real captures must never be committed:\n%s\n' "$captures" >&2
+            exit 1
+          fi
+
+      - name: Build (warnings as errors)
+        run: |
+          dotnet restore ProtocolForge.sln
+          dotnet build ProtocolForge.sln -c Release -warnaserror
+
+      - name: Verification harness
+        run: |
+          dotnet restore tests/pf-verify/PfVerify.csproj
+          dotnet build tests/pf-verify/PfVerify.csproj -c Release -warnaserror
+          # Capture-dependent groups skip without a local fixture, and the harness
+          # says so in its footer. Accept the partial run here: release CI has no
+          # access to a real capture by policy, and the no-pcap rule is absolute.
+          dotnet run --project tests/pf-verify/PfVerify.csproj -c Release --no-build
+
+  linux:
+    name: Linux packages
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            imagemagick dpkg-dev fakeroot libfuse2 desktop-file-utils
+
+      - name: Cache appimagetool
+        id: appimagetool
+        uses: actions/cache@v4
+        with:
+          path: /tmp/appimagetool
+          key: appimagetool-v13
+
+      - name: Fetch appimagetool if absent
+        if: steps.appimagetool.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p /tmp/appimagetool
+          curl -fsSL -o /tmp/appimagetool/appimagetool \
+            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x /tmp/appimagetool/appimagetool
+
+      - name: Build AppImage + deb
+        env:
+          APPIMAGETOOL: /tmp/appimagetool/appimagetool
+        run: ./packaging/linux/publish-linux.sh
+
+      - name: Collect Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          if-no-files-found: error
+          path: |
+            artifacts/linux-x64/*.AppImage
+            artifacts/linux-x64/*.deb
+            artifacts/linux-x64/SHA256SUMS
+          retention-days: 7
+
+  windows:
+    name: Windows package
+    needs: verify
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build multi-file ZIP
+        run: ./packaging/windows/publish-windows.ps1
+
+      - name: Collect Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-packages
+          if-no-files-found: error
+          path: |
+            artifacts/windows-x64/*.zip
+            artifacts/windows-x64/SHA256SUMS
+          retention-days: 7
+
+  release:
+    name: Publish release
+    needs: [verify, linux, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-packages
+          path: out/linux
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-packages
+          path: out/windows
+
+      - name: Stage the release payload
+        run: |
+          set -euo pipefail
+          mkdir -p out/stage
+          # Keep each platform under its own directory. Both packaging scripts
+          # emit a file called SHA256SUMS; flattening them into one directory
+          # would silently overwrite one platform's checksums with the other's.
+          cp -a out/linux/. out/stage/linux/
+          cp -a out/windows/. out/stage/windows/
+          echo "--- staged payload ---"
+          find out/stage -type f | sort
+
+      - name: Recompute checksums over the final payload
+        working-directory: out/stage
+        run: |
+          set -euo pipefail
+          find . -type f ! -name 'SHA256SUMS*' -print0 \
+            | sort -z | xargs -0 sha256sum > SHA256SUMS.all
+          cat SHA256SUMS.all
+          # Sanity: every payload must be non-empty.
+          test "$(find . -type f | wc -l)" -gt 4
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::notice::Release $TAG already exists — uploading assets to it."
+            gh release upload "$TAG" out/stage/linux/* out/stage/windows/* out/stage/SHA256SUMS.all --clobber
+          else
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --generate-notes \
+              out/stage/linux/* out/stage/windows/* out/stage/SHA256SUMS.all
+          fi

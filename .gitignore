@@ -1,0 +1,66 @@
+# Build output
+bin/
+obj/
+artifacts/
+release/
+
+# IDE / editor
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Secrets / local environment
+.env
+.env.*
+# `.env*` 匹配不到 `prod.env` / `staging.env` 这类命名，这些同样是密钥载体。
+*.env
+appsettings.Development.json
+# 模板文件不含真实值，必须能提交，放行要放在忽略规则之后（后匹配者胜）。
+!.env.example
+!*.env.example
+
+# Private keys and certificates (never commit)
+*.pem
+*.key
+*.ppk
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa*
+id_dsa*
+*.crt
+*.cer
+
+# Agent / tooling working state (never belongs in the repository)
+.omo/
+.gstack/
+.workflow/
+
+# Real captures are local-only and must never be committed.
+# CI rejects any added or modified .pcap / .pcapng, so this is not negotiable.
+*.pcap
+*.pcapng
+local-pcap/
+
+# Runtime logs
+*.log
+
+# Python bytecode (docs/make-synthetic-capture.py is a script, not a package)
+__pycache__/
+*.py[cod]
+
+# Offline-license artifacts. The license subsystem was removed in 0.1.0, but a
+# developer replaying an older branch may still have these on disk — never let
+# a real license file or its rollback watermark reach the repository.
+*.lic
+license_state.json

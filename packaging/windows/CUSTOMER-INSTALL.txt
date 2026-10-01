@@ -1,0 +1,21 @@
+ProtocolForge 0.1.0 — Windows 10/11 x64
+
+This is a multi-file self-contained distribution. Keep all files in the extracted folder together.
+
+Requirements
+- Windows 10 or Windows 11, x64
+- Wireshark with tshark 2.6.0 or later
+- Keep the Npcap option enabled when installing Wireshark (it is selected by default)
+
+Installation
+1. Extract ProtocolForge-0.1.0-win-x86_64.zip to a writable folder.
+2. Install Wireshark from https://www.wireshark.org/download.html.
+3. During installation, keep the Npcap option enabled.
+4. Run ProtocolForge.exe.
+5. If tshark is not found, use File → Tshark Path and select tshark.exe.
+
+Data and support
+- Settings and window layout are stored under %APPDATA%\ProtocolForge\.
+- Runtime logs are stored under %LOCALAPPDATA%\ProtocolForge\logs\.
+- Do not bundle or distribute Npcap with this product.
+- Support: https://github.com/yangying-dev/protocol-forge/issues

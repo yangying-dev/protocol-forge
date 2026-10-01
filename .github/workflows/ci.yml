@@ -1,0 +1,124 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Linux verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Install tshark
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y tshark
+
+      - name: Reject newly added or modified captures
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${{ github.event.pull_request.base.sha }}"
+          if [ -z "$base" ]; then
+            base="${{ github.event.before }}"
+          fi
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
+            base="$(git rev-list --max-parents=0 HEAD)"
+          fi
+          # :(icase,glob) is required, not cosmetic: core.ignorecase is true on this repo, so
+          # .gitignore's *.pcap already absorbs .PCAP — the gate has to agree or B.PCAP slips through.
+          captures="$(git diff --name-only --diff-filter=ACMR "$base" HEAD -- ':(icase,glob)**/*.pcap' ':(icase,glob)**/*.pcapng')"
+          if [ -n "$captures" ]; then
+            printf 'Real capture changes are forbidden in CI:\n%s\n' "$captures" >&2
+            exit 1
+          fi
+
+      - name: Reject real capture filenames in tracked text
+        run: python3 docs/check-no-capture-names.py
+
+      - name: Restore
+        run: |
+          dotnet restore ProtocolForge.sln
+          dotnet restore tests/pf-verify/PfVerify.csproj
+
+      - name: Build
+        run: |
+          dotnet build ProtocolForge.sln -c Release --no-restore -warnaserror
+          dotnet build tests/pf-verify/PfVerify.csproj -c Release --no-restore -warnaserror
+
+      - name: Verification harness
+        run: dotnet run --project tests/pf-verify/PfVerify.csproj -c Release --no-build
+
+      - name: Install Linux packaging tools
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y imagemagick dpkg-dev fakeroot libfuse2 desktop-file-utils
+
+      - name: Download appimagetool
+        run: |
+          curl -L --fail --retry 3 -o "$RUNNER_TEMP/appimagetool" \
+            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x "$RUNNER_TEMP/appimagetool"
+          sudo install "$RUNNER_TEMP/appimagetool" /usr/local/bin/appimagetool
+
+      - name: Build Linux AppImage and deb
+        run: APPIMAGETOOL=/usr/local/bin/appimagetool ./packaging/linux/publish-linux.sh
+
+      - name: Upload Linux packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: ProtocolForge-linux-x64-packages
+          path: |
+            artifacts/linux-x64/*.AppImage
+            artifacts/linux-x64/*.deb
+            artifacts/linux-x64/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-release:
+    name: Windows x64 publish probe
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish multi-file Windows x64
+        shell: pwsh
+        run: ./packaging/windows/publish-windows.ps1
+
+      - name: Upload Windows x64 package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ProtocolForge-windows-x64-package
+          path: |
+            artifacts/windows-x64/*.zip
+            artifacts/windows-x64/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
