@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=ProtocolForge
+Comment=3GPP protocol simulation and debugging workbench
+Exec=protocolforge %F
+Icon=protocolforge
+Terminal=false
+Categories=Development;
+Keywords=3GPP;PCAP;Wireshark;network;
+MimeType=application/vnd.tcpdump.pcap;application/x-pcapng;
+StartupNotify=true
+StartupWMClass=ProtocolForge

@@ -1,0 +1,55 @@
+# Normalize all text files to LF in the repository; allow per-platform
+# checkout line endings (CRLF on Windows, LF on Linux/macOS).
+* text=auto
+
+# Shell scripts MUST stay LF even on Windows, otherwise a Windows clone cannot
+# run the Linux packaging script at all. Git for Windows defaults core.autocrlf
+# to true, which without this rule rewrites publish-linux.sh to CRLF and breaks it.
+*.sh text eol=lf
+
+# C# / XAML / MSBuild / PowerShell follow the project's documented Windows
+# convention: CRLF. These are the files the toolchain and editors care about.
+*.cs      text eol=crlf
+*.axaml   text eol=crlf
+*.csproj  text eol=crlf
+*.sln     text eol=crlf
+*.ps1     text eol=crlf
+*.manifest text eol=crlf
+
+# Markdown and JSON are deliberately NOT pinned to an eol here. They are already
+# CRLF on disk, but forcing it would flip every one of them on a fresh checkout
+# for no tooling benefit, and `* text=auto` keeps them normalized in the index
+# either way. Platform-native checkout is the intended behaviour for these.
+*.md   text
+*.json text
+
+# GitHub Actions YAML is read by the runner, not by an editor — keep LF.
+*.yml  text eol=lf
+
+# Binary assets must never be line-ending normalized or diffed as text.
+*.pcap binary
+*.pcapng binary
+*.jpg binary
+*.jpeg binary
+*.png binary
+*.ico binary
+*.gif binary
+*.pdf binary
+*.svg text
+
+# Defensive: packaging outputs and native binaries must never be committed.
+*.AppImage binary
+*.deb binary
+*.rpm binary
+*.zip binary
+*.dll binary
+*.exe binary
+*.so binary
+*.dylib binary
+*.a binary
+*.lib binary
+*.pdb binary
+*.nupkg binary
+*.woff binary
+*.woff2 binary
+*.ttf binary

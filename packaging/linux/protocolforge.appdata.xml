@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.yangying-dev.protocolforge</id>
+  <name>ProtocolForge</name>
+  <summary>3GPP protocol simulation and debugging workbench</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>Apache-2.0</project_license>
+  <developer id="io.github.yangying-dev.protocolforge">
+    <name>ProtocolForge contributors</name>
+  </developer>
+  <description>
+    <p>
+      Inspect, edit, and replay 3GPP protocol packets with tshark,
+      a native tree and hex editor, and network-interface injection.
+    </p>
+  </description>
+  <launchable type="desktop-id">protocolforge.desktop</launchable>
+  <provides>
+    <binary>protocolforge</binary>
+  </provides>
+  <url type="homepage">https://github.com/yangying-dev/protocol-forge</url>
+  <categories>
+    <category>Development</category>
+  </categories>
+  <content_rating type="oars-1.1"/>
+</component>
