@@ -50,13 +50,36 @@
                                        IsVisible="{Binding !IsEditing}"
                                        Foreground="#424242" />
                             <TextBox Text="{Binding EditText}"
-                                     IsVisible="{Binding IsEditing}"
+                                     IsVisible="{Binding IsEditingAndNotEnum}"
                                      Width="160" Padding="3,0"
                                      FontSize="12" VerticalContentAlignment="Center"
                                      FontFamily="Consolas, monospace"
                                      KeyDown="OnEditKeyDown"
                                      LostFocus="OnEditLostFocus" />
-                            <TextBlock Text="{Binding HexValue, StringFormat={}[{0}]}"
+                            <ComboBox ItemsSource="{Binding EnumOptions}"
+                                      SelectedItem="{Binding SelectedEnumOption, Mode=TwoWay}"
+                                      IsVisible="{Binding IsEditingAndEnum}"
+                                      MinWidth="200" MaxWidth="340"
+                                      Padding="3,0" FontSize="12"
+                                      VerticalContentAlignment="Center"
+                                      HorizontalAlignment="Left"
+                                      SelectionChanged="OnEnumSelectionChanged">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate DataType="models:EnumOption"
+                                                 x:DataType="models:EnumOption">
+                                        <TextBlock Text="{Binding Label}" FontSize="12" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                            <StackPanel Orientation="Horizontal" Spacing="4"
+                                    IsVisible="{Binding IsEditing}">
+                                    <CheckBox IsChecked="{Binding AllowLengthChange}"
+                                              FontSize="11" VerticalAlignment="Center"
+                                              ToolTip.Tip="{DynamicResource L10n.Field.TipLengthChange}" />
+                                    <TextBlock Text="{DynamicResource L10n.Field.AllowLengthChange}"
+                                               FontSize="11" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <TextBlock Text="{Binding HexValue, StringFormat={}[{0}]}"
                                        IsVisible="{Binding ShowHex}"
                                        FontSize="11" Foreground="#9E9E9E"
                                        FontFamily="Consolas, monospace" />

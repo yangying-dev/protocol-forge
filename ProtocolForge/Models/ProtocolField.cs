@@ -35,6 +35,8 @@ public enum FieldKind
     String,
 }
 
+public sealed record EnumOption(string Label, string RawHex);
+
 /// <summary>
 /// Represents a single protocol Information Element (IE) or field
 /// parsed from Tshark JSON output. Maps to byte offsets in the raw packet.
@@ -87,20 +89,71 @@ public partial class ProtocolField : ObservableObject
     [ObservableProperty]
     private FieldKind _kind = FieldKind.Unknown;
 
+    /// <summary>
+    /// Interpretations observed for this field, paired with the bytes that produced
+    /// them. Presentation only: an enumerated field is still an integer on the wire,
+    /// so <see cref="Kind"/> is deliberately left unchanged and the edit fence and
+    /// value converters keep working as-is.
+    ///
+    /// Harvested from PDML during dissection, so it holds values seen THIS session,
+    /// not the full 3GPP table. tshark has no enum-dump facility and its PDML
+    /// <c>show</c> attribute only ever describes the value in that one packet.
+    /// </summary>
+    [ObservableProperty]
+    private ObservableCollection<EnumOption> _enumOptions = [];
+
+    /// <summary>Enables the dropdown editor. One option still qualifies: it names the value.</summary>
+    public bool HasEnumOptions => EnumOptions.Count > 0;
+
+    public bool IsEditingAndEnum => IsEditing && HasEnumOptions;
+
+    public bool IsEditingAndNotEnum => IsEditing && !HasEnumOptions;
+
+    /// <summary>The option matching this field's current bytes, or null if unobserved.</summary>
+    [ObservableProperty]
+    private EnumOption? _selectedEnumOption;
+
+    partial void OnEnumOptionsChanged(ObservableCollection<EnumOption> value)
+    {
+        OnPropertyChanged(nameof(HasEnumOptions));
+        OnPropertyChanged(nameof(IsEditingAndEnum));
+        OnPropertyChanged(nameof(IsEditingAndNotEnum));
+    }
+
+    partial void OnIsEditingChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsEditingAndEnum));
+        OnPropertyChanged(nameof(IsEditingAndNotEnum));
+    }
+
     /// <summary>True while this field's value editor is open in the tree.</summary>
     [ObservableProperty]
     private bool _isEditing;
+
+    /// <summary>
+    /// Set by the operator to let the committed value have a different length, which
+    /// splices the frame and shifts every later field. Off by default and cleared when
+    /// the editor opens: a length change must be asked for, never inferred.
+    /// </summary>
+    [ObservableProperty]
+    private bool _allowLengthChange;
 
     /// <summary>Text currently shown in the tree's value editor.</summary>
     [ObservableProperty]
     private string _editText = string.Empty;
 
     /// <summary>
-    /// Whether the field can be edited from the protocol tree: a resolvable type,
-    /// a concrete byte span, and not a "not decoded" tail marker.
+    /// Whether the tree should offer an editor for this field. This deliberately
+    /// answers only "is there a type to edit and is this not an undecoded tail".
+    ///
+    /// The remaining requirements — a valid byte span, in-frame, byte-aligned — belong
+    /// to <see cref="Services.ProtocolEditorService.CheckTreeEditFence"/>, which reports
+    /// which specific one failed. Folding them in here as well made the fence's
+    /// no-byte-span check unreachable, because this property had already rejected the
+    /// same fields with a vaguer reason.
     /// </summary>
     public bool IsTreeEditable =>
-        Kind != FieldKind.Unknown && Offset >= 0 && Length > 0 && !IsUndecodedMarker;
+        Kind != FieldKind.Unknown && !IsUndecodedMarker;
 
     /// <summary>First byte this field or its descendants occupy; -1 when positionless.</summary>
     public int EffectiveStart

@@ -123,6 +123,21 @@ public partial class Packet : ObservableObject
     }
 
     /// <summary>
+    /// Replaces the current bytes wholesale, used by undo/redo. The tree offsets are
+    /// NOT adjusted: a history entry always restores a frame that was parsed from those
+    /// exact bytes, and the caller rebuilds the tree from the file afterwards.
+    /// </summary>
+    public void RestoreBytes(byte[] bytes)
+    {
+        ModifiedData = bytes.Length == RawData.Length && bytes.AsSpan().SequenceEqual(RawData)
+            ? null
+            : (byte[])bytes.Clone();
+        OnPropertyChanged(nameof(IsModified));
+        OnPropertyChanged(nameof(EffectiveData));
+        OnPropertyChanged(nameof(Length));
+    }
+
+    /// <summary>
     /// Applies byte modifications at a given offset, marking the packet as dirty.
     /// </summary>
     public void ApplyModification(int offset, byte[] newBytes)
@@ -133,4 +148,80 @@ public partial class Packet : ObservableObject
         OnPropertyChanged(nameof(EffectiveData));
         OnPropertyChanged(nameof(Length));
     }
+
+    /// <summary>
+    /// Replaces <paramref name="removeLength"/> bytes at <paramref name="offset"/>
+    /// with <paramref name="insert"/>, which may be a different length.
+    ///
+    /// This is the only primitive that changes packet length. Callers must have
+    /// verified the result by reparse first: once the bytes are gone, the original
+    /// span cannot be recovered from this packet.
+    /// </summary>
+    public void SpliceBytes(int offset, int removeLength, byte[] insert)
+    {
+        if (offset < 0 || removeLength < 0 || offset + removeLength > EffectiveData.Length)
+            throw new ArgumentOutOfRangeException(nameof(offset), "Splice range is outside the frame.");
+
+        byte[] current = EffectiveData;
+        int tailLength = current.Length - offset - removeLength;
+        int resultLength = offset + insert.Length + tailLength;
+
+        var result = new byte[resultLength];
+        Array.Copy(current, 0, result, 0, offset);
+        Array.Copy(insert, 0, result, offset, insert.Length);
+        if (tailLength > 0)
+            Array.Copy(current, offset + removeLength, result, offset + insert.Length, tailLength);
+
+        ModifiedData = result;
+        OnPropertyChanged(nameof(IsModified));
+        OnPropertyChanged(nameof(EffectiveData));
+        OnPropertyChanged(nameof(Length));
+    }
+
+    /// <summary>
+    /// Moves every field at or after <paramref name="pivot"/> by <paramref name="delta"/>,
+    /// then prunes the fields the splice pushed outside the frame. Without the prune
+    /// a truncated field would linger in the tree with an offset past the last byte,
+    /// where the hex viewer cannot show it and the edit fence rejects it.
+    /// </summary>
+    public void ShiftFieldOffsets(int pivot, int delta)
+    {
+        if (delta == 0)
+            return;
+
+        foreach (var layer in Layers)
+        {
+            layer.Offset = Shift(layer.Offset, pivot, delta);
+            ShiftChildren(layer.Fields, pivot, delta);
+            PruneChildren(layer.Fields);
+        }
+    }
+
+    private static void ShiftChildren(IEnumerable<ProtocolField> fields, int pivot, int delta)
+    {
+        foreach (var field in fields)
+        {
+            field.Offset = Shift(field.Offset, pivot, delta);
+            if (field.Children.Count > 0)
+                ShiftChildren(field.Children, pivot, delta);
+        }
+    }
+
+    private void PruneChildren(ObservableCollection<ProtocolField> fields)
+    {
+        int frameLength = EffectiveData.Length;
+        for (int i = fields.Count - 1; i >= 0; i--)
+        {
+            var field = fields[i];
+            if (field.Children.Count > 0)
+                PruneChildren(field.Children);
+
+            bool outside = field.Length > 0 && field.Offset + field.Length > frameLength;
+            if (outside || field.Children.Count == 0 && field.Length == 0 && field.Offset >= frameLength)
+                fields.RemoveAt(i);
+        }
+    }
+
+    private static int Shift(int offset, int pivot, int delta) =>
+        offset >= pivot ? offset + delta : offset;
 }

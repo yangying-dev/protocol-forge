@@ -8,6 +8,10 @@ namespace ProtocolForge.ViewModels;
 public sealed partial class HexEditorViewModel : ObservableObject
 {
     private readonly ProtocolEditorService _editorService;
+    private readonly EditHistoryService _history;
+
+    /// <summary>Raised after a hex edit lands, so the window can refresh undo/redo.</summary>
+    public event Action? HistoryChanged;
     private Packet? _currentPacket;
 
     private const int BytesPerRow = 16;
@@ -69,8 +73,9 @@ public sealed partial class HexEditorViewModel : ObservableObject
     /// </summary>
     public bool IsReadOnly { get; set; }
 
-    public HexEditorViewModel(ProtocolEditorService editorService)
+    public HexEditorViewModel(ProtocolEditorService editorService, EditHistoryService history)
     {
+        _history = history;
         _editorService = editorService;
 
         // Re-resolve the last status on language switch.
@@ -518,7 +523,11 @@ public sealed partial class HexEditorViewModel : ObservableObject
         }
 
         byte[] newBytes = runBytes.ToArray();
+        byte[] before = (byte[])packet.EffectiveData.Clone();
         packet.ApplyModification(anchor, newBytes);
+        _history.Record(packet.Index, packet.PacketNumber, before, packet.EffectiveData,
+            LocalizationService.Resolve("Status.UndoEditHex", packet.PacketNumber, newBytes.Length));
+        HistoryChanged?.Invoke();
 
         int end = Math.Min(anchor + newBytes.Length, Bytes.Count);
         for (int i = anchor; i < end; i++)

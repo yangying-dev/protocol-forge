@@ -72,9 +72,23 @@ public partial class ProtocolTreeView : UserControl
         {
             if (current is TextBox { DataContext: ProtocolField { IsEditing: true } })
                 return true;
+            // The enum dropdown of an open editor counts as "still editing": opening
+            // its popup must not trip the outside-click commit and close the editor.
+            if (current is ComboBox { DataContext: ProtocolField { IsEditing: true } })
+                return true;
             current = current.GetVisualParent<Control>();
         }
         return false;
+    }
+
+    private void OnEnumSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (sender is not ComboBox { DataContext: ProtocolField field } box)
+            return;
+        if (box.SelectedItem is not EnumOption option)
+            return;
+
+        _viewModel?.ApplyEnumOption(field, option);
     }
 
     private void OnTreePointerPressed(object? sender, PointerPressedEventArgs e)

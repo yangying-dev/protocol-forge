@@ -54,8 +54,15 @@ public sealed partial class ProtocolTreeViewModel : ObservableObject
     /// </summary>
     public event Action<ProtocolField>? TreeSelectRequested;
 
-    public ProtocolTreeViewModel(ProtocolEditorService editorService, EditTransactionService editTransaction)
+    /// <summary>Raised after a commit lands, so the window can refresh the undo/redo affordances.</summary>
+    public event Action? HistoryChanged;
+
+    private readonly EditHistoryService _history;
+
+    public ProtocolTreeViewModel(ProtocolEditorService editorService, EditTransactionService editTransaction,
+        EditHistoryService history)
     {
+        _history = history;
         _editorService = editorService;
         _editTransaction = editTransaction;
 
@@ -273,10 +280,70 @@ public sealed partial class ProtocolTreeViewModel : ObservableObject
         }
 
         CancelFieldEdit();
+        field.AllowLengthChange = false;
         _editingField = field;
         field.EditText = FormatForEdit(field);
+        field.SelectedEnumOption = MatchEnumOption(field);
         field.IsEditing = true;
         ShowStatus("Field.Editing", field.Name);
+    }
+
+    /// <summary>
+    /// Finds the catalogued interpretation matching the field's current bytes, so the
+    /// dropdown opens on today's value instead of blank.
+    /// </summary>
+    private static EnumOption? MatchEnumOption(ProtocolField field)
+    {
+        if (field.EnumOptions.Count == 0 || field.RawBytes.Length == 0)
+            return null;
+
+        string rawHex = Convert.ToHexString(field.RawBytes).ToLowerInvariant();
+        return field.EnumOptions.FirstOrDefault(
+            o => string.Equals(o.RawHex, rawHex, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Replaces the pending edit text with the selected interpretation's bytes. The
+    /// existing UInt/Int converters accept the 0x form, so committing needs no new
+    /// conversion path and the edit fence and VBC apply unchanged.
+    ///
+    /// Selecting the option that already matches the field is a no-op: the dropdown
+    /// preselects it on open, and that must not overwrite the text FormatForEdit
+    /// just produced.
+    /// </summary>
+    public void ApplyEnumOption(ProtocolField field, EnumOption option)
+    {
+        if (field == null || option == null)
+            return;
+
+        field.SelectedEnumOption = option;
+
+        if (field.RawBytes.Length > 0 &&
+            string.Equals(Convert.ToHexString(field.RawBytes), option.RawHex, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        field.EditText = "0x" + option.RawHex;
+    }
+
+    private static bool TryParseHexEdit(string? text, out byte[] bytes)
+    {
+        bytes = [];
+        string hex = (text ?? string.Empty).Trim();
+        if (hex.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            hex = hex[2..];
+        if (hex.Length == 0 || hex.Length % 2 != 0)
+            return false;
+        try
+        {
+            bytes = Convert.FromHexString(hex);
+            return true;
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
     }
 
     /// <summary>
@@ -310,7 +377,23 @@ public sealed partial class ProtocolTreeViewModel : ObservableObject
         _commitInProgress = true;
         try
         {
-            var bytes = ProtocolEditorService.ConvertRawValue(field.Kind, field.EditText, field.Length);
+            byte[] bytes;
+            if (field.AllowLengthChange)
+            {
+                // Length-changing entry is hex-only: a decimal or dotted-IPv4 string
+                // cannot express "three more bytes", and guessing an encoding here is
+                // how a field silently becomes nonsense.
+                if (!TryParseHexEdit(field.EditText, out bytes))
+                {
+                    ShowStatus("Field.NeedHexForLength");
+                    return;
+                }
+            }
+            else
+            {
+                bytes = ProtocolEditorService.ConvertRawValue(field.Kind, field.EditText, field.Length);
+            }
+
             if (bytes.AsSpan().SequenceEqual(field.RawBytes))
             {
                 field.IsEditing = false;
@@ -319,9 +402,23 @@ public sealed partial class ProtocolTreeViewModel : ObservableObject
                 return;
             }
 
-            var result = await _editTransaction.CommitFieldEditAsync(
-                packet, field, bytes,
-                PendingContextFrames, PendingLinkLayerType);
+            bool lengthChanges = bytes.Length != field.Length;
+            if (lengthChanges && !field.AllowLengthChange)
+            {
+                ShowStatus("Field.LengthNotAllowed", bytes.Length - field.Length);
+                return;
+            }
+
+            // Snapshot before the commit, not after: by the time the edit event fires
+            // the packet already holds the new bytes, so capturing then would record the
+            // original raw frame and make undo skip every intermediate edit.
+            byte[] before = (byte[])packet.EffectiveData.Clone();
+
+            var result = lengthChanges
+                ? await _editTransaction.CommitLengthChangingEditAsync(
+                    packet, field, bytes, PendingContextFrames, PendingLinkLayerType)
+                : await _editTransaction.CommitFieldEditAsync(
+                    packet, field, bytes, PendingContextFrames, PendingLinkLayerType);
 
             if (!result.Success)
             {
@@ -336,6 +433,10 @@ public sealed partial class ProtocolTreeViewModel : ObservableObject
                 if (misses > 0)
                     TraceLog.Write($"Display refresh: {misses} field(s) unmatched for packet #{packet.PacketNumber}");
             }
+
+            _history.Record(packet.Index, packet.PacketNumber, before, packet.EffectiveData,
+                LocalizationService.Resolve("Status.UndoEditField", packet.PacketNumber, field.Name));
+            HistoryChanged?.Invoke();
 
             field.DisplayValue = FormatForEdit(field);
             var edited = field;
