@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using Avalonia;
+using ProtocolForge.Cli;
 
 namespace ProtocolForge
 {
@@ -11,12 +12,26 @@ namespace ProtocolForge
         // SynchronizationContext-reliant code before AppMain is called: things aren't initialized
         // yet and stuff might break.
         [STAThread]
-        public static void Main(string[] args)
+        public static int Main(string[] args)
         {
             AddFileTraceListener();
             RegisterCrashRecorders();
+
+            // Headless verbs run before Avalonia starts: the service layer they use is
+            // UI-free by design, so there is no reason to pay for a UI thread and a
+            // window that a script cannot see or close.
+            if (args.Length > 0 && HeadlessCli.VerbSet.Contains(args[0]))
+                return HeadlessCli.RunAsync(args, Console.Out).GetAwaiter().GetResult();
+
+            // `--help` must not fall through: an unrecognised first argument is a file
+            // path to open, but asking for help should print usage and exit instead of
+            // starting a window a script can neither see nor close.
+            if (args.Length > 0 && args[0] is "-h" or "--help" or "help" or "-?")
+                return HeadlessCli.PrintUsage();
+
             BuildAvaloniaApp()
                 .StartWithClassicDesktopLifetime(args);
+            return 0;
         }
 
         // Trace output dies without a debugger; persist it for inspection.
