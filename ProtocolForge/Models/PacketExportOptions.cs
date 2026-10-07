@@ -19,4 +19,16 @@ public class PacketExportOptions
 
     /// <summary>Snapshot length from PCAP global header. Default: 65535.</summary>
     public int Snaplen { get; set; } = 65535;
+
+    /// <summary>
+    /// Write PCAPNG instead of classic PCAP. Set from the source document so opening a
+    /// .pcapng and saving does not silently downgrade the format.
+    /// </summary>
+    public bool Pcapng { get; set; }
+
+    /// <summary>Emit big-endian classic PCAP. PCAPNG is always little-endian per spec.</summary>
+    public bool BigEndian { get; set; }
+
+    /// <summary>Record the source's nanosecond resolution as if_tsresol=9.</summary>
+    public bool NanosecondResolution { get; set; }
 }

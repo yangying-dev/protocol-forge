@@ -36,6 +36,22 @@ public partial class PacketDocument : ObservableObject
     /// <summary>Snapshot length from PCAP global header.</summary>
     public int Snaplen { get; set; } = 65535;
 
+    /// <summary>Source file was PCAPNG, so a save writes PCAPNG back rather than downgrading.</summary>
+    public bool IsPcapNg { get; set; }
+
+    /// <summary>Source file was big-endian classic PCAP.</summary>
+    public bool SourceBigEndian { get; set; }
+
+    /// <summary>Source file declared nanosecond timestamps.</summary>
+    public bool SourceNanoseconds { get; set; }
+
+    /// <summary>
+    /// Interfaces found in the source file. Above 1 means the capture merged several
+    /// adapters; the per-packet interface id is not preserved, so a save writes one
+    /// interface. Callers warn the user rather than dropping it silently.
+    /// </summary>
+    public int InterfaceCount { get; set; } = 1;
+
     /// <summary>
     /// Context providers that locate frames which must precede a target frame in a
     /// per-packet temp PCAP so tshark dissects it with cross-frame state (SDP codec

@@ -78,15 +78,33 @@ public sealed class PcapExportService
         if (string.IsNullOrWhiteSpace(options.OutputPath))
             throw new ArgumentException("Output path is required.", nameof(options));
 
+        var selected = options.ExportOnlyModified
+            ? packets.Where(p => p.IsModified)
+            : packets.Where(p => options.IncludeUnmodified || p.IsModified);
+
+        var materialised = selected as IList<Packet> ?? selected.ToList();
+
+        if (options.Pcapng)
+        {
+            byte[] pcapng = [];
+            PcapngWriter.Write(
+                materialised,
+                options.LinkLayerType,
+                options.Snaplen,
+                options.NanosecondResolution,
+                bytes => pcapng = bytes);
+
+            await WriteAtomicallyAsync(options.OutputPath, writer => writer.Write(pcapng), ct);
+            return;
+        }
+
         await WriteAtomicallyAsync(options.OutputPath, writer =>
         {
             WriteGlobalHeader(writer, options);
 
-            foreach (var packet in packets)
+            foreach (var packet in materialised)
             {
                 ct.ThrowIfCancellationRequested();
-                if (options.ExportOnlyModified && !packet.IsModified)
-                    continue;
                 WritePacketRecord(writer, packet, ct);
             }
         }, ct);
@@ -149,7 +167,9 @@ public sealed class PcapExportService
 
     private static void WriteGlobalHeader(BinaryWriter writer, PacketExportOptions options)
     {
-        writer.Write(0xa1b2c3d4u);   // Magic number (little-endian, microsecond)
+        // The magic is byte-order dependent: 0xa1b2c3d4 read little-endian identifies a
+        // little-endian file, and the swapped value identifies a big-endian one.
+        writer.Write(options.BigEndian ? 0xd4c3b2a1u : 0xa1b2c3d4u);
         writer.Write((ushort)2);      // Version major
         writer.Write((ushort)4);      // Version minor
         writer.Write(0);              // Timezone (GMT)

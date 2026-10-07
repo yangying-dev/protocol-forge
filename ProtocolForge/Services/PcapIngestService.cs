@@ -87,7 +87,8 @@ public sealed class PcapIngestService
             VersionMajor = versionMajor,
             VersionMinor = versionMinor,
             IsLittleEndian = littleEndian,
-            IsNanoSeconds = nanoSeconds
+            IsNanoSeconds = nanoSeconds,
+            IsPcapNg = false
         };
     }
 
@@ -224,7 +225,9 @@ public sealed class PcapIngestService
             VersionMajor = versionMajor,
             VersionMinor = versionMinor,
             IsLittleEndian = littleEndian,
-            IsNanoSeconds = false // PCAPNG timestamps are normalized to microseconds
+            IsNanoSeconds = false, // PCAPNG timestamps are normalized to microseconds
+            IsPcapNg = true,
+            InterfaceCount = Math.Max(interfaces.Count, 1)
         };
     }
 
@@ -305,4 +308,14 @@ public sealed class PcapReadResult
     public ushort VersionMinor { get; init; }
     public bool IsLittleEndian { get; init; }
     public bool IsNanoSeconds { get; init; }
+
+    /// <summary>True when the source file was PCAPNG rather than classic PCAP.</summary>
+    public bool IsPcapNg { get; init; }
+
+    /// <summary>
+    /// Interface Description Blocks found in a PCAPNG file. 1 for classic PCAP.
+    /// Above 1 the per-packet interface association cannot survive a save: the writer
+    /// emits a single IDB, so the caller must warn rather than flatten quietly.
+    /// </summary>
+    public int InterfaceCount { get; init; } = 1;
 }
