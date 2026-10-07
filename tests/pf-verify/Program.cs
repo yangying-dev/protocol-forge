@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
@@ -5,6 +6,12 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Collections.ObjectModel;
 using ProtocolForge.Models;
+using ProtocolForge;
+using Avalonia.Media.Imaging;
+using Avalonia.VisualTree;
+using Avalonia.Headless;
+using Avalonia.Controls;
+using Avalonia;
 using ProtocolForge.Services;
 using ProtocolForge.ViewModels;
 
@@ -34,10 +41,30 @@ static string? ResolveCapturePath(string root)
 }
 
 string repoRoot = FindRepoRoot();
+// G1/G2/G16/G19 index frame 4413 unconditionally, so a generated fixture must be at
+// least that long or those groups fail instead of reporting a short file.
+const int RequiredCaptureFrames = 4413;
 // Keep the guard a null test, not a separate bool: a bool cannot narrow the type
 // and every call site then fails with CS8604.
 string? PcapPath = ResolveCapturePath(repoRoot);
 if (PcapPath is not null && !File.Exists(PcapPath)) PcapPath = null;
+
+// `--ui` needs no capture fixture, and building a 4413-frame one for a UI check is
+// pure waste.
+bool uiOnly = args.Contains("--ui", StringComparer.Ordinal);
+string? generatedCapture = null;
+if (PcapPath is null && !uiOnly)
+{
+    // The capture groups used to skip here, which meant the headline behaviour —
+    // edit fence, Verify-Before-Commit, address re-extraction — never ran in CI.
+    // A synthetic fixture built from the same bytes as the other groups closes
+    // that gap without committing a capture: the no-pcap rule stays absolute
+    // because the file is generated into the temp directory and deleted after.
+    generatedCapture = Path.Combine(Path.GetTempPath(), $"pf_verify_capture_{Guid.NewGuid():N}.pcap");
+    await File.WriteAllBytesAsync(generatedCapture, BuildGeneratedCaptureFixture());
+    PcapPath = generatedCapture;
+    Console.WriteLine($"PF_CAPTURE unset — generated a {RequiredCaptureFrames}-frame synthetic capture for the capture-dependent groups.");
+}
 const string CaptureHint = "capture fixture absent — set PF_CAPTURE to a local .pcap";
 string ProjectDir = Path.Combine(repoRoot, "ProtocolForge");
 
@@ -50,11 +77,43 @@ var skipped = 0;
 // clear it. Reporting the actual per-group reason keeps a green run honest.
 var skipReasons = new List<string>();
 
+// Filtered runs still print the usual footer. When the filter matched nothing, the
+// footer alone would read like a successful verification run — so count the PASS lines
+// the filter actually printed and say explicitly that the run proved nothing.
+var printedPasses = 0;
+
+// ── Output filter: --only <group#> / --group <title-substring> ──
+// Output-only: groups still execute, so the exit code and report.txt stay full-run.
+// FAIL lines print even when filtered — a filtered run must never look green.
+int? onlyGroup = null;
+string? titleFilter = null;
+for (int i = 0; i + 1 < args.Length; i++)
+{
+    if (args[i] == "--only" && int.TryParse(args[i + 1], out int parsedOnly)) { onlyGroup = parsedOnly; i++; }
+    else if (args[i] == "--group") titleFilter = args[++i];
+}
+bool GroupSelected(int n, string title) =>
+    (!onlyGroup.HasValue || onlyGroup.Value == n) &&
+    (titleFilter is null || title.Contains(titleFilter, StringComparison.OrdinalIgnoreCase));
+int currentGroup = 0;
+string currentTitle = "";
+void Banner(int n, string title)
+{
+    currentGroup = n;
+    currentTitle = title;
+    if (GroupSelected(n, title)) Console.WriteLine($"\nGROUP {n}: {title}");
+}
+void Detail(string text)
+{
+    if (GroupSelected(currentGroup, currentTitle)) Console.WriteLine(text);
+}
+
 void Report(string name, bool ok, string? detail = null)
 {
     string line = ok ? $"PASS {name}" : $"FAIL {name}: {detail ?? "assertion failed"}";
     reportLines.Add(line);
-    Console.WriteLine(line);
+    bool show = !ok || GroupSelected(currentGroup, currentTitle);
+    if (show) { Console.WriteLine(line); if (ok) printedPasses++; }
     if (!ok) failures++;
 }
 
@@ -64,10 +123,16 @@ void Skip(string name, string why)
 {
     string line = $"SKIP {name}: {why}";
     reportLines.Add(line);
-    Console.WriteLine(line);
+    if (GroupSelected(currentGroup, currentTitle)) Console.WriteLine(line);
     skipped++;
     skipReasons.Add(why);
 }
+
+// `--ui` runs the headless render as the process's only job. Dispatched after the
+// reporting helpers exist and before the capture fixture is built, because top-level
+// statements execute in written order and the UI check needs none of the capture groups.
+if (args.Contains("--ui", StringComparer.Ordinal))
+    return RunHeadlessRenderOnly();
 
 const int TargetIndex = 4412; // frame number 4413
 
@@ -81,7 +146,7 @@ try
         var tshark = new TsharkService(ingest, export);
 
         // ══ GROUP 1: tree-edit fence verdicts (frame 4413) ══
-        Console.WriteLine("\nGROUP 1: tree-edit fence verdicts (frame 4413)");
+        Banner(1, "tree-edit fence verdicts (frame 4413)");
         var readResult = await ingest.ReadPacketsAsync(PcapPath);
         Report("G1 load pcap has >=4413 packets", readResult.Packets.Count >= 4413,
             $"count={readResult.Packets.Count}");
@@ -127,9 +192,9 @@ try
                 foreach (var layer in packet.Layers)
                     WalkFields(layer.Fields);
 
-                Console.WriteLine($"    total fields walked = {totalFields}, allowed-with-bytes = {allowedFields.Count}, blocked reasons:");
+                Detail($"    total fields walked = {totalFields}, allowed-with-bytes = {allowedFields.Count}, blocked reasons:");
                 foreach (var (r, c) in blockedByReason)
-                    Console.WriteLine($"        {c,3}x  {r}");
+                    Detail($"        {c,3}x  {r}");
 
                 Report("G1a fence blocks metadata/bit-level fields", blockedByReason.Count > 0,
                     $"reasonCount={blockedByReason.Count}");
@@ -139,7 +204,7 @@ try
                     $"blockedReasons={blockedByReason.Count}, allowed={allowedFields.Count}");
 
                 // ══ GROUP 2: P2 Verify-Before-Commit transaction (service layer) ══
-                Console.WriteLine("\nGROUP 2: P2 VBC transaction");
+                Banner(2, "P2 VBC transaction");
                 var tx = new EditTransactionService(export, tshark);
 
                 var target = allowedFields.FirstOrDefault();
@@ -149,7 +214,7 @@ try
                 }
                 else
                 {
-                    Console.WriteLine($"    candidate = {target.OriginalPdmlName} @{target.Offset} len={target.Length} raw={string.Join(" ", target.RawBytes.Select(b => b.ToString("X2")))}");
+                    Detail($"    candidate = {target.OriginalPdmlName} @{target.Offset} len={target.Length} raw={string.Join(" ", target.RawBytes.Select(b => b.ToString("X2")))}");
                     Report("G2a candidate field has concrete bytes", target.RawBytes.Length == target.Length,
                         $"rawBytes={target.RawBytes.Length}, field.Length={target.Length}");
 
@@ -159,7 +224,7 @@ try
                     byte[] before = (byte[])packet.EffectiveData.Clone();
 
                     var legal = await tx.CommitFieldEditAsync(packet, target, newValue, null, readResult.LinkLayerType);
-                    Console.WriteLine($"    legal edit verdict: Success={legal.Success} Reason={legal.Reason}");
+                    Detail($"    legal edit verdict: Success={legal.Success} Reason={legal.Reason}");
                     if (legal.Success)
                     {
                         byte[] after = packet.EffectiveData;
@@ -191,7 +256,7 @@ try
                     };
                     byte[] beforeDrift = (byte[])packet.EffectiveData.Clone();
                     var drift = await tx.CommitFieldEditAsync(packet, driftField, newValue, null, readResult.LinkLayerType);
-                    Console.WriteLine($"    drift verdict: Success={drift.Success} Reason={drift.Reason}");
+                    Detail($"    drift verdict: Success={drift.Success} Reason={drift.Reason}");
                     Report("G2d wrong-position edit aborted", !drift.Success,
                         $"Success={drift.Success} Reason={drift.Reason}");
                     Report("G2e abort leaves packet byte-identical", packet.EffectiveData.SequenceEqual(beforeDrift),
@@ -201,7 +266,7 @@ try
                     var longValue = new byte[] { 0x01, 0x02, 0x03, 0x04 };
                     byte[] beforeLen = (byte[])packet.EffectiveData.Clone();
                     var lenEdit = await tx.CommitFieldEditAsync(packet, target, longValue, null, readResult.LinkLayerType);
-                    Console.WriteLine($"    length-edit verdict: Success={lenEdit.Success} Reason={lenEdit.Reason}");
+                    Detail($"    length-edit verdict: Success={lenEdit.Success} Reason={lenEdit.Reason}");
                     Report("G2f length-changing edit rejected", !lenEdit.Success,
                         $"Success={lenEdit.Success} Reason={lenEdit.Reason}");
                     Report("G2g length-reject leaves packet byte-identical", packet.EffectiveData.SequenceEqual(beforeLen),
@@ -221,7 +286,7 @@ catch (Exception ex)
 }
 
 // ══ GROUP 3: tshark version gate — real env (any tshark >= min 2.6 → gate PASSes) ══
-Console.WriteLine("\nGROUP 3: tshark version gate (real env)");
+Banner(3, "tshark version gate (real env)");
 try
 {
     var detection = TsharkService.DetectTshark();
@@ -238,7 +303,7 @@ catch (Exception ex)
 }
 
 // ══ GROUP 4: tshark version gate — fake old 2.5 via TSHARK_PATH (gate FAIL branch) ══
-Console.WriteLine("\nGROUP 4: tshark version gate (fake tshark 2.5 via TSHARK_PATH)");
+Banner(4, "tshark version gate (fake tshark 2.5 via TSHARK_PATH)");
 try
 {
     string fakePath = Path.Combine(Path.GetTempPath(), "pf_fake_tshark");
@@ -262,7 +327,7 @@ try
 
     Environment.SetEnvironmentVariable("TSHARK_PATH", fakePath);
     var fakeDetection = TsharkService.RedetectTshark();
-    Console.WriteLine($"    fake detect: Ok={fakeDetection.Ok}, Version={fakeDetection.Version}, Path={fakeDetection.Path}");
+    Detail($"    fake detect: Ok={fakeDetection.Ok}, Version={fakeDetection.Version}, Path={fakeDetection.Path}");
     Report("G4 fake tshark 2.5 < min 2.6 gives Ok=false", fakeDetection.Ok == false,
         $"Ok={fakeDetection.Ok}, Msg={fakeDetection.Message}");
     Report("G4 fake version parsed as 2.5.0", fakeDetection.Version == "2.5.0", $"Version={fakeDetection.Version}");
@@ -286,7 +351,7 @@ try
     }
 
     var newDetection = TsharkService.RedetectTshark();
-    Console.WriteLine($"    fake detect: Ok={newDetection.Ok}, Version={newDetection.Version}");
+    Detail($"    fake detect: Ok={newDetection.Ok}, Version={newDetection.Version}");
     Report("G4 fake tshark 4.2 >= min 2.6 gives Ok=true", newDetection.Ok,
         $"Ok={newDetection.Ok}, Msg={newDetection.Message}");
 
@@ -299,7 +364,7 @@ catch (Exception ex)
 }
 
 // ══ GROUP 5: read-only raw load ══
-Console.WriteLine("\nGROUP 5: read-only load");
+Banner(5, "read-only load");
 try
 {
     if (PcapPath is null) Skip("G5 read-only raw load", CaptureHint);
@@ -322,7 +387,7 @@ catch (Exception ex)
 }
 
 // ══ GROUP 6: P3 hex-editing code surface (static, no GUI allowed) ══
-Console.WriteLine("\nGROUP 6: P3 hex-edit REPLACE-only code surface");
+Banner(6, "P3 hex-edit REPLACE-only code surface");
 try
 {
     string vmPath = Path.Combine(ProjectDir, "ViewModels/HexEditorViewModel.cs");
@@ -355,7 +420,7 @@ catch (Exception ex)
 }
 
 // ══ GROUP 7: Npcap probe pure logic (no Npcap needed — degradation contract) ══
-Console.WriteLine("\nGROUP 7: Npcap probe pure logic (degradation contract)");
+Banner(7, "Npcap probe pure logic (degradation contract)");
 try
 {
     string fakeRoot = Path.Combine(Path.GetTempPath(), "pf_npcap_" + Guid.NewGuid().ToString("N"));
@@ -403,7 +468,7 @@ catch (Exception ex)
 }
 
 // ══ GROUP 8: BPF probe pure logic (no BPF needed — macOS degradation contract) ══
-Console.WriteLine("\nGROUP 8: BPF pure logic (macOS degradation contract)");
+Banner(8, "BPF pure logic (macOS degradation contract)");
 try
 {
     byte[] ifreq = BpfSendService.BuildIfreq("en0");
@@ -430,7 +495,7 @@ catch (Exception ex)
 
 
 // ══ GROUP 11: i18n localization — en/zh dictionaries + runtime switching (console host, no Avalonia) ══
-Console.WriteLine("\nGROUP 11: localization (dictionary parity / placeholders / runtime switching)");
+Banner(11, "localization (dictionary parity / placeholders / runtime switching)");
 try
 {
     var en = LocalizationService.For(AppLanguage.EnUs);
@@ -439,7 +504,7 @@ try
     // G11a: dictionary parity — identical key sets (same count, same keys)
     bool sameCount = en.Entries.Count == zh.Entries.Count;
     bool sameKeys = en.Entries.Keys.ToHashSet().SetEquals(zh.Entries.Keys);
-    Console.WriteLine($"    en={en.Entries.Count} keys, zh={zh.Entries.Count} keys");
+    Detail($"    en={en.Entries.Count} keys, zh={zh.Entries.Count} keys");
     Report("G11a en/zh key sets identical (count + keys)", sameCount && sameKeys,
         $"en={en.Entries.Count}, zh={zh.Entries.Count}, sameKeys={sameKeys}");
 
@@ -461,7 +526,7 @@ try
     bool hasCjk = zh.Entries.Values.Any(v => v.Any(c => c >= 0x4E00 && c <= 0x9FFF));
     var cjkSample = zh.Entries.FirstOrDefault(kv => kv.Value.Any(c => c >= 0x4E00 && c <= 0x9FFF));
     if (cjkSample.Key != null)
-        Console.WriteLine($"    zh CJK sample: \"{cjkSample.Key}\" = \"{cjkSample.Value}\"");
+        Detail($"    zh CJK sample: \"{cjkSample.Key}\" = \"{cjkSample.Value}\"");
     Report("G11c zh dictionary contains CJK ideographs (U+4E00–U+9FFF)", hasCjk,
         cjkSample.Key == null ? "no CJK value found" : $"sample=\"{cjkSample.Key}\"");
 
@@ -518,7 +583,7 @@ var ing12 = new PcapIngestService();
 var exp12 = new PcapExportService();
 var tsh12 = new TsharkService(ing12, exp12);
 PcapReadResult? read12 = PcapPath is { } p12 ? await ing12.ReadPacketsAsync(p12) : null;
-Console.WriteLine($"\nGROUP 12a+12b: edit fence gates + raw-value conversion");
+Banner(12, "12a+12b: edit fence gates + raw-value conversion");
 try
 {
     LocalizationService.SetCurrent(AppLanguage.EnUs);
@@ -634,7 +699,7 @@ catch (Exception ex)
     Report("G12 group execution", false, ex.ToString());
 }
 
-Console.WriteLine("\nGROUP 13: field edit application — offsets, length guards, hex apply");
+Banner(13, "field edit application — offsets, length guards, hex apply");
 try
 {
     byte[] g13Frame = Concat(
@@ -710,7 +775,7 @@ catch (Exception ex)
     Report("G13 group execution", false, ex.ToString());
 }
 
-Console.WriteLine("\nGROUP 14: protocol layers on parsed frame (frame 2 of real capture)");
+Banner(14, "protocol layers on parsed frame (frame 2 of real capture)");
 try
 {
     if (read12 is null) Skip("G14 protocol layers on parsed frame", CaptureHint);
@@ -737,8 +802,22 @@ try
             Report("G14-04 layer↔packet parent linkage (all-or-none tolerant)",
                 g14parents == g14Pkt.Layers.Count || g14parents == 0,
                 $"{g14parents}/{g14Pkt.Layers.Count} linked");
-            Report("G14-05 duplicate layer names tolerated (TR-03)", true,
-                string.Join(", ", g14Pkt.Layers.Select(l => l.ProtocolName)));
+            // TR-03: tshark may report the same protocol twice (a tunnelled frame has
+            // two IP layers). Both must survive as separate, independently addressable
+            // rows — a collapse onto one offset would make the outer layer unreachable
+            // and the inner layer's fields would highlight the wrong bytes.
+            var g14Dupes = g14Pkt.Layers
+                .GroupBy(l => l.ProtocolName)
+                .Where(g => g.Count() > 1)
+                .ToList();
+            bool g14DupeOffsetsDistinct = g14Dupes.All(g =>
+                g.Select(l => l.Offset).Distinct().Count() == g.Count());
+            bool g14EveryLayerAddressable = g14Pkt.Layers.All(l => l.ParentPacket == g14Pkt);
+            Report("G14-05 same-named layers stay distinct rows, each addressable (TR-03)",
+                g14DupeOffsetsDistinct && g14EveryLayerAddressable,
+                g14Dupes.Count == 0
+                    ? "no duplicated layer name in this fixture"
+                    : $"dupes={string.Join(";", g14Dupes.Select(g => $"{g.Key}x{g.Count()}@[{string.Join(",", g.Select(l => l.Offset))}]"))}, linked={g14EveryLayerAddressable}");
             int g14bits;
             int g14total = CountFields(g14Pkt.Layers.SelectMany(l => l.Fields).ToArray(), out g14bits);
             Report("G14-06 nested fields walkable (incl. bit-level)",
@@ -756,7 +835,7 @@ catch (Exception ex)
     Report("G14 group execution", false, ex.ToString());
 }
 
-Console.WriteLine("\nGROUP 15: pre-send packet preparation — checksum repair + source rewrite (static)");
+Banner(15, "pre-send packet preparation — checksum repair + source rewrite (static)");
 try
 {
     var g15iface = new NetworkInterfaceInfo(
@@ -881,7 +960,7 @@ catch (Exception ex)
     Report("G15 group execution", false, ex.ToString());
 }
 
-Console.WriteLine("\nGROUP 16: verify-before-commit — abort reasons byte-identical, legal commit lands");
+Banner(16, "verify-before-commit — abort reasons byte-identical, legal commit lands");
 try
 {
     if (read12 is null) Skip("G16 verify-before-commit", CaptureHint);
@@ -964,7 +1043,7 @@ catch (Exception ex)
     Report("G16 group execution", false, ex.ToString());
 }
 
-Console.WriteLine("\nGROUP 17: PCAP/PCAPNG ingestion — classic endianness/ns, pcapng sections, resolutions");
+Banner(17, "PCAP/PCAPNG ingestion — classic endianness/ns, pcapng sections, resolutions");
 {
     var g17Ing = new PcapIngestService();
     var g17Temps = new List<string>();
@@ -1120,7 +1199,7 @@ Console.WriteLine("\nGROUP 17: PCAP/PCAPNG ingestion — classic endianness/ns, 
     }
 }
 
-Console.WriteLine("\nGROUP 18: PCAP export — byte-exact header/records, modified-only, round trip");
+Banner(18, "PCAP export — byte-exact header/records, modified-only, round trip");
 {
     var g18Exp = new PcapExportService();
     var g18Ing = new PcapIngestService();
@@ -1238,7 +1317,7 @@ Console.WriteLine("\nGROUP 18: PCAP export — byte-exact header/records, modifi
     }
 }
 
-Console.WriteLine("\nGROUP 19: address/port extraction + edit→reparse refresh on a real frame (4413)");
+Banner(19, "address/port extraction + edit→reparse refresh on a real frame (4413)");
 try
 {
     if (read12 is null) Skip("G19 address/port extraction + reparse refresh", CaptureHint);
@@ -1302,7 +1381,7 @@ catch (Exception ex)
     Report("G19 group execution", false, ex.ToString());
 }
 
-Console.WriteLine("\nGROUP 20: layout + settings persistence (ApplicationData, snapshot/restore)");
+Banner(20, "layout + settings persistence (ApplicationData, snapshot/restore)");
 {
     string g20Dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ProtocolForge");
     string g20Layout = Path.Combine(g20Dir, "layout.json");
@@ -1365,7 +1444,7 @@ Console.WriteLine("\nGROUP 20: layout + settings persistence (ApplicationData, s
 
 if (OperatingSystem.IsLinux())
 {
-    Console.WriteLine("\nGROUP N: loopback injection on Linux (rung ladder)");
+    Banner(21, "loopback injection on Linux (rung ladder)");
     try
     {
         var gNIface = new NetworkInterfaceService().GetInterfaces().FirstOrDefault(i => i.Name == "lo");
@@ -1432,7 +1511,7 @@ else
 }
 
 // ══ GROUP 22: HexPreferred hex-native field detection/display (source surface, G6 模式) ══
-Console.WriteLine("\nGROUP 22: HexPreferred hex-native field editing code surface");
+Banner(22, "HexPreferred hex-native field editing code surface");
 try
 {
     string g22Tshark = await File.ReadAllTextAsync(Path.Combine(ProjectDir, "Services/TsharkService.cs"));
@@ -1461,7 +1540,7 @@ catch (Exception ex)
 }
 
 // ══ GROUP 23: trace.log startup rotation + crash recorders (source surface) ══
-Console.WriteLine("\nGROUP 23: trace.log startup rotation + crash recorders code surface");
+Banner(23, "trace.log startup rotation + crash recorders code surface");
 try
 {
     string g23 = await File.ReadAllTextAsync(Path.Combine(ProjectDir, "Program.cs"));
@@ -1508,7 +1587,7 @@ catch (Exception ex)
 
 // ══ GROUP 24: jsonraw 三遍解析专项 — fixture pcaps driven through the real
 // parse path (ParsePacketFromPcapFileAsync / BuildPacketTreeAsync + tshark) ══
-Console.WriteLine("\nGROUP 24: jsonraw 3-pass parse — fixture pcaps (TR-02..TR-09)");
+Banner(24, "jsonraw 3-pass parse — fixture pcaps (TR-02..TR-09)");
 var g24Tsh = new TsharkService(new PcapIngestService(), new PcapExportService());
 try
 {
@@ -1664,7 +1743,7 @@ catch (Exception ex)
 }
 
 // ══ GROUP 25: V-08 (Vbc.NoPdmlName, behavioral) + A-02 (address re-extraction) ══
-Console.WriteLine("\nGROUP 25: V-08 empty-pdmlName abort + A-02 address re-extraction");
+Banner(25, "V-08 empty-pdmlName abort + A-02 address re-extraction");
 var g25Tsh = new TsharkService(new PcapIngestService(), new PcapExportService());
 try
 {
@@ -1727,13 +1806,18 @@ catch (Exception ex)
 
 // ══ GROUP 27: N-10..N-13 send ladder directed descent (rung order / FrameTooShort /
 // UDP fallback / TCP platform text) — trace-captured behavioral proofs + source gates ══
-Console.WriteLine("\nGROUP 27: send ladder directed descent (N-10..N-13)");
+Banner(27, "send ladder directed descent (N-10..N-13)");
 try
 {
     string nSrc = await File.ReadAllTextAsync(Path.Combine(ProjectDir, "Services/PacketSendService.cs"));
 
+    // The guard moved onto SendTarget.CanSend when multi-NIC fan-out was added, so this
+    // checks the new shape: a target counts as sendable only with sockets or an L2 rung,
+    // and the aggregate bail-out still reports Send.NoSocketType.
     Report("N-10 no-socket guard → Send.NoSocketType (source)",
-        nSrc.Contains("sockets.Count == 0 && l2Rung == null") && nSrc.Contains("Send.NoSocketType"),
+        nSrc.Contains("Sockets.Count > 0 || L2Rung != null")
+        && nSrc.Contains("!targets.Any(t => t.CanSend)")
+        && nSrc.Contains("Send.NoSocketType"),
         "missing NoSocketType guard");
     int pk = nSrc.IndexOf("new Socket(AddressFamily.Packet,", StringComparison.Ordinal);
     int ip = nSrc.IndexOf("new Socket(AddressFamily.InterNetwork, SocketType.Raw,", StringComparison.Ordinal);
@@ -1828,7 +1912,7 @@ catch (Exception ex)
 }
 
 // ══ GROUP 28: ST-03 settings save failure is silently swallowed (behavioral) ══
-Console.WriteLine("\nGROUP 28: ST-03 settings save failure silent (behavioral)");
+Banner(28, "ST-03 settings save failure silent (behavioral)");
 try
 {
     string stSrc = await File.ReadAllTextAsync(Path.Combine(ProjectDir, "Services/TsharkSettingsService.cs"));
@@ -1879,7 +1963,7 @@ catch (Exception ex)
 }
 
 // ══ GROUP 29: TR-04 PFCP 匿名容器（合成夹具）+ H-13 RefreshEditedFieldBytes ══
-Console.WriteLine("\nGROUP 29: TR-04 PFCP anonymous containers + H-13 hex refresh");
+Banner(29, "TR-04 PFCP anonymous containers + H-13 hex refresh");
 var g29Ing = new PcapIngestService();
 var g29Exp = new PcapExportService();
 var g29Tsh = new TsharkService(g29Ing, g29Exp);
@@ -1974,7 +2058,7 @@ catch (Exception ex)
 }
 
 // ══ GROUP 30: CP-01..04 context providers（mock 逻辑 + 真实 tshark 夹具） ══
-Console.WriteLine("\nGROUP 30: CP-01..04 context providers (mock + real fixtures)");
+Banner(30, "CP-01..04 context providers (mock + real fixtures)");
 try
 {
     // ── mock: SDP 懒扫描一次 + 结果缓存 + 失败自动重试 ──
@@ -2116,7 +2200,7 @@ catch (Exception ex)
 }
 
 // ══ GROUP 31: TL-01..03 TLS keylog 参数注入（argv 捕获式假 tshark） ══
-Console.WriteLine("\nGROUP 31: TL-01..03 tls/ssl keylog args (argv-capture fake tshark)");
+Banner(31, "TL-01..03 tls/ssl keylog args (argv-capture fake tshark)");
 string? g31TshEnv = Environment.GetEnvironmentVariable("TSHARK_PATH");
 string? g31KlogEnv = Environment.GetEnvironmentVariable("SSLKEYLOGFILE");
 string g31Dir = Path.Combine(Path.GetTempPath(), "pf-g31");
@@ -2203,7 +2287,7 @@ finally
 }
 
 // ══ GROUP 32: N-17 网卡枚举 ══
-Console.WriteLine("\nGROUP 32: N-17 interfaces");
+Banner(32, "N-17 interfaces");
 try
 {
 
@@ -2252,7 +2336,7 @@ catch (Exception ex)
 }
 
 // ══ GROUP 26: T-08/T-09/T-12 detection order, version gate, cache (LAST, env-probed) ══
-Console.WriteLine("\nGROUP 26: detection env-first + version gate + cache (T-08/T-09/T-12)");
+Banner(26, "detection env-first + version gate + cache (T-08/T-09/T-12)");
 try
 {
     string tshSrc = await File.ReadAllTextAsync(Path.Combine(ProjectDir, "Services/TsharkService.cs"));
@@ -2319,7 +2403,7 @@ catch (Exception ex)
     Report("G26 group execution", false, ex.ToString());
 }
 
-Console.WriteLine("\nGROUP 33: direct send state, no-op tree edit, and close guard");
+Banner(33, "direct send state, no-op tree edit, and close guard");
 try
 {
     var g33Packets = new PacketListViewModel();
@@ -2432,7 +2516,8 @@ try
         int g33EditEvents = 0;
         var g33Tree = new ProtocolTreeViewModel(
             g33Editor,
-            new EditTransactionService(g33Export, g33Tsh));
+            new EditTransactionService(g33Export, g33Tsh),
+            new EditHistoryService());
         g33Tree.FieldEdited += _ => g33EditEvents++;
         if (g33Field != null)
         {
@@ -2461,7 +2546,7 @@ catch (Exception ex)
 }
 
 
-  Console.WriteLine("\nGROUP 34: reset-modifications repaints, restores the tree, and unlocks the fence");
+  Banner(34, "reset-modifications repaints, restores the tree, and unlocks the fence");
   try
   {
       var g34Editor = new ProtocolEditorService();
@@ -2488,7 +2573,7 @@ catch (Exception ex)
           // The hex grid is built in view code-behind, so updating HexByte.Value does not
           // repaint on its own. Without an explicit repaint request the user sees the old
           // bytes until they click another cell.
-          var g34Hex = new HexEditorViewModel(g34Editor);
+          var g34Hex = new HexEditorViewModel(g34Editor, new EditHistoryService());
           int g34Repaints = 0;
           g34Hex.RefreshVisualRequested += () => g34Repaints++;
           g34Hex.LoadPacket(g34Packet);
@@ -2586,7 +2671,7 @@ catch (Exception ex)
                 PdmlData? g34DataFresh = await g34Tsh.ReparseSinglePacketAsync(g34DataTmp);
                 if (g34DataFresh != null)
                 {
-                    var g34DataTree = new ProtocolTreeViewModel(g34Editor, new EditTransactionService(g34Export, g34Tsh));
+                    var g34DataTree = new ProtocolTreeViewModel(g34Editor, new EditTransactionService(g34Export, g34Tsh), new EditHistoryService());
                     foreach (var layer in g34DataPacket.Layers) g34DataTree.Layers.Add(layer);
                     int g34DataMisses = g34DataTree.RefreshFieldDisplays(g34DataPacket, g34DataFresh);
                     var g34DataAfter = g34DataTree.Layers.FirstOrDefault(layer => layer.ProtocolName == "data")?
@@ -2620,14 +2705,14 @@ catch (Exception ex)
       Report("G34 group execution", false, ex.ToString());
   }
 
-  Console.WriteLine("\nGROUP 35: reset-modifications end-to-end through the real command");
+  Banner(35, "reset-modifications end-to-end through the real command");
   try
   {
       var g35Editor = new ProtocolEditorService();
       var g35Export = new PcapExportService();
       var g35Tsh = new TsharkService(new PcapIngestService(), g35Export);
-      var g35Tree = new ProtocolTreeViewModel(g35Editor, new EditTransactionService(g35Export, g35Tsh));
-      var g35Hex = new HexEditorViewModel(g35Editor);
+      var g35Tree = new ProtocolTreeViewModel(g35Editor, new EditTransactionService(g35Export, g35Tsh), new EditHistoryService());
+      var g35Hex = new HexEditorViewModel(g35Editor, new EditHistoryService());
       var g35List = new PacketListViewModel();
       var g35Toolbar = new ToolBarViewModel(
           new NetworkInterfaceService(),
@@ -2708,7 +2793,7 @@ catch (Exception ex)
   }
 
 // ══ GROUP 36: DI-01..03 重复容器不得补出幽灵兄弟节点 ══
-Console.WriteLine("\nGROUP 36: DI-01..03 paired repeated containers must not emit a phantom twin row");
+Banner(36, "DI-01..03 paired repeated containers must not emit a phantom twin row");
 try
 {
     string g36Tmp = Path.Combine(Path.GetTempPath(), "pf-g36-diameter.pcap");
@@ -2762,7 +2847,7 @@ finally
 }
 
 // ══ GROUP 37: LB-01..03 位域标签人文化 + SP-01..02 匿名容器字节跨度 ══
-Console.WriteLine("\nGROUP 37: LB/SP bitfield labels and anonymous-container spans");
+Banner(37, "LB/SP bitfield labels and anonymous-container spans");
 try
 {
     // ── LB: bitfield leaves must carry Wireshark's label, not the field abbreviation.
@@ -2858,7 +2943,7 @@ finally
 }
 
 // ══ GROUP 38: EI-01..04 专家信息（异常/校验和告警）必须透出 ══
-Console.WriteLine("\nGROUP 38: EI-01..04 expert info rows surface (wireshark keeps them)");
+Banner(38, "EI-01..04 expert info rows surface (wireshark keeps them)");
 try
 {
     // An IPv4 packet with TTL=1 makes tshark attach an expert-info subtree under ip.ttl:
@@ -2920,7 +3005,1332 @@ finally
     try { File.Delete(Path.Combine(Path.GetTempPath(), "pf-g38-expert.pcap")); } catch { }
 }
 
+// ══ GROUP 39: DF-01..04 display filter narrows the grid + EN-01..03 enum catalog ══
+Banner(39, "display filter + enum catalog");
+try
+{
+    var g39Src = Path.Combine(Path.GetTempPath(), "pf-g39.pcap");
+    var g39Pfcp = BuildSyntheticPfcpAssociationResponse();
+    var g39Udp = FixtureEth(FixtureIpv4(FixtureUdp(5000, 5001, new byte[] { 0x0a, 0x0b, 0x0c, 0x0d })));
+    var g39Frames = new byte[40][];
+    for (int i = 0; i < g39Frames.Length - 1; i++) g39Frames[i] = g39Udp;
+    g39Frames[g39Frames.Length - 1] = g39Pfcp;
+    await File.WriteAllBytesAsync(g39Src, BuildFixturePcap(g39Frames));
+
+    var g39Ingest = new PcapIngestService();
+    var g39Tshark = new TsharkService(g39Ingest, new PcapExportService());
+
+    async Task<int> LoadAsync(string? filter)
+    {
+        var doc = new PacketDocument { FilePath = g39Src };
+        await g39Tshark.LoadPcapAsync(doc, g39Src, null, filter);
+        return doc.Packets.Count;
+    }
+
+    int unfiltered = await LoadAsync(null);
+    int onlyPfcp = await LoadAsync("pfcp");
+    Report("DF-01 unfiltered load sees every frame", unfiltered == g39Frames.Length,
+        $"loaded={unfiltered}, expected={g39Frames.Length}");
+    Report("DF-02 display filter narrows the grid", onlyPfcp > 0 && onlyPfcp < unfiltered,
+        $"filtered={onlyPfcp}, unfiltered={unfiltered}");
+    Report("DF-03 filter selecting the only PFCP frame keeps exactly it", onlyPfcp == 1,
+        $"filtered={onlyPfcp}");
+
+    // Rows keep their original frame.number, which is what makes sparse indices safe.
+    var g39Doc = new PacketDocument { FilePath = g39Src };
+    await g39Tshark.LoadPcapAsync(g39Doc, g39Src, null, "pfcp");
+    var g39Kept = g39Doc.Packets.Single();
+    Report("DF-04 filtered row keeps its original frame number and bytes",
+        g39Kept.PacketNumber == g39Frames.Length && g39Kept.RawData.AsSpan().SequenceEqual(g39Pfcp),
+        $"number={g39Kept.PacketNumber}, bytesMatch={g39Kept.RawData.AsSpan().SequenceEqual(g39Pfcp)}");
+
+    // Enum catalog: the PFCP tree carries integer fields whose PDML showname names
+    // the value, so after dissection the field must carry at least one option.
+    EnumCatalog.Reset();
+    var g39Pkt = new Packet { Index = 0, Timestamp = 0, RawData = (byte[])g39Pfcp.Clone() };
+    await g39Tshark.ParsePacketFromPcapFileAsync(g39Pkt, g39Src);
+    var g39EnumFields = g39Pkt.Layers
+        .SelectMany(l => l.Fields)
+        .Concat(g39Pkt.Layers.SelectMany(l => Flatten(l.Fields)))
+        .Where(f => f.HasEnumOptions)
+        .ToList();
+    Report("EN-01 enum catalog attaches options to numeric fields", g39EnumFields.Count > 0,
+        $"fieldsWithOptions={g39EnumFields.Count}");
+
+    var g39Named = g39EnumFields.FirstOrDefault(f => f.EnumOptions.Any(o => o.Label != f.DisplayValue));
+    Report("EN-02 option label differs from the bare value it replaces",
+        g39Named is not null,
+        g39Named is null ? "no labeled enum field found"
+                         : $"{g39Named.OriginalPdmlName}: {g39Named.EnumOptions[0].Label}");
+
+    var g39Match = g39EnumFields.FirstOrDefault(f =>
+        f.RawBytes.Length > 0 && f.EnumOptions.Any(o =>
+            o.RawHex.Equals(Convert.ToHexString(f.RawBytes), StringComparison.OrdinalIgnoreCase)));
+    Report("EN-03 current bytes resolve to one of the offered options", g39Match is not null,
+        g39Match is null ? "no option matched the current bytes"
+                         : $"{g39Match.OriginalPdmlName} matched");
+}
+catch (Exception ex)
+{
+    Report("G39 group execution", false, ex.ToString());
+}
+finally
+{
+    try { File.Delete(Path.Combine(Path.GetTempPath(), "pf-g39.pcap")); } catch { }
+}
+
+// ══ GROUP 40: TP-01..05 statistics taps ══
+Banner(40, "statistics taps");
+try
+{
+    var g40Src = Path.Combine(Path.GetTempPath(), "pf-g40.pcap");
+    var g40Frames = new byte[30][];
+    byte[] g40Udp = FixtureEth(FixtureIpv4(FixtureUdp(5000, 5001, new byte[] { 0x01, 0x02, 0x03, 0x04 })));
+    for (int i = 0; i < g40Frames.Length - 1; i++) g40Frames[i] = g40Udp;
+    g40Frames[g40Frames.Length - 1] = BuildSyntheticPfcpAssociationResponse();
+    await File.WriteAllBytesAsync(g40Src, BuildFixturePcap(g40Frames));
+
+    var g40Tshark = new TsharkService(new PcapIngestService(), new PcapExportService());
+
+    var conv = await g40Tshark.RunStatisticsTapAsync(g40Src, "conv,udp");
+    Report("TP-01 conv,udp returns output lines", conv.Count > 0, $"lines={conv.Count}");
+    Report("TP-02 the Wireshark banner and ==== separators are stripped",
+        conv.All(l => !l.StartsWith("Wireshark ") && !l.StartsWith("====")),
+        $"first='{conv.FirstOrDefault()}'");
+    Report("TP-03 a conversation row reports frame and byte counts",
+        conv.Any(l => l.Contains("Frames") && l.Contains("Bytes")),
+        string.Join(" | ", conv.Take(4)));
+
+    // The filter belongs to the tap argument, not -Y: a tap post-filters nothing.
+    var filtered = await g40Tshark.RunStatisticsTapAsync(g40Src, "conv,udp", "frame.number > 999999");
+    Report("TP-04 tap-argument filter is accepted (tshark reports it, not \"No Filter\")",
+        filtered.Any(l => l.StartsWith("Filter:")) && !filtered.Any(l => l.Contains("<No Filter>")),
+        filtered.FirstOrDefault(l => l.StartsWith("Filter:")) ?? "no Filter: line");
+
+    // io,phs is the protocol-hierarchy tap; a display filter must NOT be appended
+    // because io,phs rejects the argument outright.
+    var phs = await g40Tshark.RunStatisticsTapAsync(g40Src, "io,phs", "frame.number > 999999");
+    Report("TP-05 io,phs ignores the filter instead of rejecting the tap",
+        phs.Any(l => l.Contains("frames:")), $"lines={string.Join(" | ", phs.Take(3))}");
+
+    var bad = await g40Tshark.RunStatisticsTapAsync(g40Src, "protocols");
+    Report("TP-06 an invalid tap name yields no lines rather than throwing",
+        bad.Count == 0, $"lines={bad.Count}");
+}
+catch (Exception ex)
+{
+    Report("G40 group execution", false, ex.ToString());
+}
+finally
+{
+    try { File.Delete(Path.Combine(Path.GetTempPath(), "pf-g40.pcap")); } catch { }
+}
+
+// ══ GROUP 41: NG-01..05 PCAPNG write-back round-trip ══
+Banner(41, "PCAPNG writer round-trip");
+try
+{
+    var g41Src = Path.Combine(Path.GetTempPath(), "pf-g41-in.pcap");
+    var g41Out = Path.Combine(Path.GetTempPath(), "pf-g41-out.pcapng");
+    var g41Frames = new byte[12][];
+    byte[] g41Udp = FixtureEth(FixtureIpv4(FixtureUdp(5000, 5001, new byte[] { 0x0a, 0x0b, 0x0c, 0x0d })));
+    for (int i = 0; i < g41Frames.Length - 1; i++) g41Frames[i] = g41Udp;
+    g41Frames[g41Frames.Length - 1] = BuildSyntheticPfcpAssociationResponse();
+    await File.WriteAllBytesAsync(g41Src, BuildFixturePcap(g41Frames));
+
+    var g41Ingest = new PcapIngestService();
+    var g41Export = new PcapExportService();
+    var g41Read = await g41Ingest.ReadPacketsAsync(g41Src);
+
+    var g41Doc = new PacketDocument { FilePath = g41Src };
+    await g41Export.ExportAsync(g41Read.Packets.Select((p, i) => new Packet
+    {
+        Index = i,
+        Timestamp = p.Timestamp,
+        RawData = p.Data,
+    }), new PacketExportOptions
+    {
+        OutputPath = g41Out,
+        LinkLayerType = g41Read.LinkLayerType,
+        Snaplen = g41Read.Snaplen,
+        Pcapng = true,
+    });
+
+    byte[] g41Bytes = await File.ReadAllBytesAsync(g41Out);
+    Report("NG-01 output starts with the PCAPNG section header block magic",
+        g41Bytes.Length > 12 &&
+        BitConverter.ToUInt32(g41Bytes, 0) == 0x0A0D0D0A &&
+        BitConverter.ToUInt32(g41Bytes, 8) == 0x1A2B3C4D,
+        $"len={g41Bytes.Length}, first={BitConverter.ToUInt32(g41Bytes, 0):X8}, bom={BitConverter.ToUInt32(g41Bytes, 8):X8}");
+
+    var g41Back = await g41Ingest.ReadPacketsAsync(g41Out);
+    Report("NG-02 the app's own reader reads it back as PCAPNG",
+        g41Back.IsPcapNg, $"IsPcapNg={g41Back.IsPcapNg}");
+    Report("NG-03 packet count survives the round-trip",
+        g41Back.Packets.Count == g41Read.Packets.Count,
+        $"in={g41Read.Packets.Count}, out={g41Back.Packets.Count}");
+    Report("NG-04 every frame's bytes are byte-identical after the round-trip",
+        g41Back.Packets.Count == g41Read.Packets.Count &&
+        g41Back.Packets.Select((p, i) => p.Data.AsSpan().SequenceEqual(g41Read.Packets[i].Data)).All(x => x),
+        "byte comparison over all frames");
+
+    var g41Ts = new TsharkService(g41Ingest, g41Export);
+    bool g41Parsed = await g41Ts.ParsePacketFromPcapFileAsync(
+        new Packet { Index = 0, Timestamp = g41Back.Packets[0].Timestamp, RawData = g41Back.Packets[0].Data },
+        g41Out);
+    Report("NG-05 tshark dissects the written PCAPNG", g41Parsed, $"parsed={g41Parsed}");
+
+    // Classic PCAP must stay classic: the format flag cannot leak into the default path.
+    var g41Classic = Path.Combine(Path.GetTempPath(), "pf-g41-classic.pcap");
+    await g41Export.ExportAsync(g41Read.Packets.Select((p, i) => new Packet
+    {
+        Index = i,
+        Timestamp = p.Timestamp,
+        RawData = p.Data,
+    }), new PacketExportOptions
+    {
+        OutputPath = g41Classic,
+        LinkLayerType = g41Read.LinkLayerType,
+        Snaplen = g41Read.Snaplen,
+    });
+    var g41ClassicBack = await g41Ingest.ReadPacketsAsync(g41Classic);
+    Report("NG-06 the default path still writes classic PCAP",
+        !g41ClassicBack.IsPcapNg && g41ClassicBack.Packets.Count == g41Read.Packets.Count,
+        $"IsPcapNg={g41ClassicBack.IsPcapNg}, packets={g41ClassicBack.Packets.Count}");
+
+    // ns-declared export must round-trip microsecond timestamps precisely; the buggy
+    // writer emitted µs values under a ns declaration, a 1000× wall-time error that
+    // only shows when the file is re-read with its true resolution.
+    var g41Ns = Path.Combine(Path.GetTempPath(), "pf-g41-ns.pcapng");
+    await g41Export.ExportAsync(g41Read.Packets.Select((p, i) => new Packet
+    {
+        Index = i,
+        Timestamp = p.Timestamp,
+        RawData = p.Data,
+    }), new PacketExportOptions
+    {
+        OutputPath = g41Ns,
+        LinkLayerType = g41Read.LinkLayerType,
+        Snaplen = g41Read.Snaplen,
+        Pcapng = true,
+        NanosecondResolution = true,
+    });
+    var g41NsBack = await g41Ingest.ReadPacketsAsync(g41Ns);
+    Report("NG-07 ns-declared PCAPNG round-trips timestamps in microseconds, precisely",
+        g41NsBack.Packets.Count == g41Read.Packets.Count &&
+        g41NsBack.Packets.Select((p, i) => p.Timestamp == g41Read.Packets[i].Timestamp).All(x => x),
+        $"first: in={g41Read.Packets[0].Timestamp}µs, out={g41NsBack.Packets[0].Timestamp}µs");
+
+    try { File.Delete(g41Classic); } catch { }
+    try { File.Delete(g41Ns); } catch { }
+}
+catch (Exception ex)
+{
+    Report("G41 group execution", false, ex.ToString());
+}
+finally
+{
+    try { File.Delete(Path.Combine(Path.GetTempPath(), "pf-g41-in.pcap")); } catch { }
+    try { File.Delete(Path.Combine(Path.GetTempPath(), "pf-g41-out.pcapng")); } catch { }
+}
+
+// ══ GROUP 42: LC-01..08 length-changing edit (splice + compound) ══
+Banner(42, "length-changing edit");
+try
+{
+    var g42Src = Path.Combine(Path.GetTempPath(), "pf-g42.pcap");
+    // A UDP payload of 4 bytes: the variable-width field tshark sizes by the buffer,
+    // which is what makes a genuine insert possible.
+    byte[] g42Frame = FixtureEth(FixtureIpv4(FixtureUdp(5000, 5001, new byte[] { 0x0a, 0x0b, 0x0c, 0x0d })));
+    await File.WriteAllBytesAsync(g42Src, BuildFixturePcap(g42Frame));
+
+    var g42Ingest = new PcapIngestService();
+    var g42Export = new PcapExportService();
+    var g42Tshark = new TsharkService(g42Ingest, g42Export);
+    var g42Tx = new EditTransactionService(g42Export, g42Tshark);
+
+    var g42Read = await g42Ingest.ReadPacketsAsync(g42Src);
+    var g42Pkt = new Packet { Index = 0, Timestamp = g42Read.Packets[0].Timestamp, RawData = g42Read.Packets[0].Data };
+    await g42Tshark.ParsePacketFromPcapFileAsync(g42Pkt, g42Src);
+    int g42OrigLen = g42Pkt.EffectiveData.Length;
+
+    var g42All = Flatten(g42Pkt.Layers.SelectMany(l => l.Fields)).ToList();
+    var g42Len = g42All.FirstOrDefault(f => f.OriginalPdmlName == "udp.length");
+    var g42IpLen = g42All.FirstOrDefault(f => f.OriginalPdmlName == "ip.len");
+    var g42Payload = g42All.FirstOrDefault(f => f.OriginalPdmlName == "udp.payload");
+    Report("LC-00 fixture exposes ip.len, udp.length and udp.payload",
+        g42Len is not null && g42Payload is not null && g42IpLen is not null,
+        $"ip.len={g42IpLen?.OriginalPdmlName}, udp.length={g42Len?.OriginalPdmlName}, payload={g42Payload?.OriginalPdmlName}");
+
+    if (g42Len is not null && g42Payload is not null && g42IpLen is not null)
+    {
+        // Grow the payload by 3 and declare the new UDP length in the SAME transaction.
+        // One at a time cannot work: the frame is malformed in between.
+        byte[] g42NewPayload = [0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10];
+        // udp.length is a 16-bit big-endian field, not a single byte.
+        int g42OldLen = (g42Len.RawBytes[0] << 8) | g42Len.RawBytes[1];
+        byte[] g42NewLen = ProtocolEditorService.ConvertRawValue(
+            g42Len.Kind, (g42OldLen + 3).ToString(), g42Len.Length);
+
+        // Every enclosing length has to move in the same transaction: IP total length,
+        // then UDP length, then the payload bytes.
+        int g42OldIpLen = (g42IpLen.RawBytes[0] << 8) | g42IpLen.RawBytes[1];
+        byte[] g42NewIpLen = ProtocolEditorService.ConvertRawValue(
+            g42IpLen.Kind, (g42OldIpLen + 3).ToString(), g42IpLen.Length);
+
+        var g42Res = await g42Tx.CommitCompoundEditAsync(g42Pkt,
+            [(g42Payload, g42NewPayload), (g42Len, g42NewLen), (g42IpLen, g42NewIpLen)],
+            null, g42Read.LinkLayerType);
+
+        Report("LC-01 compound edit (payload + both enclosing lengths) commits", g42Res.Success,
+            $"Success={g42Res.Success} Reason={g42Res.Reason}");
+        Report("LC-02 the frame is exactly three bytes longer",
+            g42Pkt.EffectiveData.Length == g42OrigLen + 3,
+            $"len={g42Pkt.EffectiveData.Length}, expected={g42OrigLen + 3}");
+        Report("LC-03 both edited fields report their new bytes",
+            g42Payload.RawBytes.Length == 7 && ((g42Len.RawBytes[0] << 8) | g42Len.RawBytes[1]) == g42OldLen + 3,
+            $"payloadLen={g42Payload.RawBytes.Length}, udpLen={(g42Len.RawBytes[0] << 8) | g42Len.RawBytes[1]}, expected={g42OldLen + 3}");
+
+        var g42Tmp = Path.Combine(Path.GetTempPath(), "pf-g42-out.pcap");
+        await g42Export.SavePacketAsync(
+            new Packet { Index = 0, Timestamp = g42Pkt.Timestamp, RawData = g42Pkt.EffectiveData },
+            g42Tmp, g42Read.LinkLayerType);
+        var g42Re = new Packet { Index = 0, Timestamp = g42Pkt.Timestamp, RawData = g42Pkt.EffectiveData };
+        bool g42Parsed = await g42Tshark.ParsePacketFromPcapFileAsync(g42Re, g42Tmp);
+        var g42RePayload = Flatten(g42Re.Layers.SelectMany(l => l.Fields))
+            .FirstOrDefault(f => f.OriginalPdmlName == "udp.payload");
+        Report("LC-04 tshark dissects the grown frame and sees the wider payload",
+            g42Parsed && g42RePayload is not null && g42RePayload.RawBytes.Length == 7,
+            $"parsed={g42Parsed}, payloadLen={g42RePayload?.RawBytes.Length}");
+        try { File.Delete(g42Tmp); } catch { }
+
+        // A payload grown WITHOUT its length field must be refused, not committed.
+        var g42Pkt2 = new Packet { Index = 0, Timestamp = g42Read.Packets[0].Timestamp, RawData = g42Read.Packets[0].Data };
+        await g42Tshark.ParsePacketFromPcapFileAsync(g42Pkt2, g42Src);
+        var g42All2 = Flatten(g42Pkt2.Layers.SelectMany(l => l.Fields)).ToList();
+        var g42Payload2 = g42All2.First(f => f.OriginalPdmlName == "udp.payload");
+        byte[] g42Before = (byte[])g42Pkt2.EffectiveData.Clone();
+        var g42Lone = await g42Tx.CommitCompoundEditAsync(g42Pkt2,
+            [(g42Payload2, new byte[] { 1, 2, 3, 4, 5, 6, 7 })], null, g42Read.LinkLayerType);
+        Report("LC-05 a payload grown without its length field is refused",
+            !g42Lone.Success, $"Success={g42Lone.Success} Reason={g42Lone.Reason}");
+        Report("LC-06 the refused edit leaves the frame byte-identical",
+            g42Pkt2.EffectiveData.AsSpan().SequenceEqual(g42Before),
+            $"unchanged={g42Pkt2.EffectiveData.AsSpan().SequenceEqual(g42Before)}");
+
+        // An impossible splice must also leave the frame untouched.
+        var g42Before3 = (byte[])g42Pkt.EffectiveData.Clone();
+        var g42Huge = await g42Tx.CommitCompoundEditAsync(g42Pkt,
+            [(g42Payload, new byte[512])], null, g42Read.LinkLayerType);
+        Report("LC-07 an impossible splice aborts and leaves the frame untouched",
+            !g42Huge.Success && g42Pkt.EffectiveData.AsSpan().SequenceEqual(g42Before3),
+            $"Success={g42Huge.Success} unchanged={g42Pkt.EffectiveData.AsSpan().SequenceEqual(g42Before3)}");
+    }
+}
+catch (Exception ex)
+{
+    Report("G42 group execution", false, ex.ToString());
+}
+finally
+{
+    try { File.Delete(Path.Combine(Path.GetTempPath(), "pf-g42.pcap")); } catch { }
+}
+
+// ══ GROUP 43: UH-01..07 undo/redo history ══
+Banner(43, "undo/redo history");
+try
+{
+    var g43 = new EditHistoryService();
+    var g43Pkt = new Packet
+    {
+        Index = 3,
+        RawData = new byte[] { 0x01, 0x02, 0x03, 0x04 },
+    };
+
+    Report("UH-01 a fresh history can neither undo nor redo",
+        !g43.CanUndo && !g43.CanRedo, $"undo={g43.CanUndo}, redo={g43.CanRedo}");
+
+    byte[] v0 = (byte[])g43Pkt.EffectiveData.Clone();
+    g43Pkt.ApplyModification(1, new byte[] { 0xAA });
+    g43.Record(g43Pkt.Index, g43Pkt.PacketNumber, v0, g43Pkt.EffectiveData, "edit 1");
+    Report("UH-02 an edit makes the history undoable", g43.CanUndo && !g43.CanRedo,
+        $"undo={g43.CanUndo}, redo={g43.CanRedo}");
+
+    byte[] v1 = (byte[])g43Pkt.EffectiveData.Clone();
+    g43Pkt.ApplyModification(2, new byte[] { 0xBB, 0xCC });
+    g43.Record(g43Pkt.Index, g43Pkt.PacketNumber, v1, g43Pkt.EffectiveData, "edit 2");
+
+    g43.Undo(g43Pkt);
+    Report("UH-03 undo restores the intermediate state, not the original",
+        g43Pkt.EffectiveData.AsSpan().SequenceEqual(v1) && !g43Pkt.EffectiveData.AsSpan().SequenceEqual(v0),
+        $"bytes={Convert.ToHexString(g43Pkt.EffectiveData)}");
+
+    g43.Undo(g43Pkt);
+    Report("UH-04 a second undo reaches the original bytes",
+        g43Pkt.EffectiveData.AsSpan().SequenceEqual(v0) && !g43Pkt.IsModified,
+        $"bytes={Convert.ToHexString(g43Pkt.EffectiveData)}, modified={g43Pkt.IsModified}");
+
+    g43.Redo(g43Pkt);
+    Report("UH-05 redo replays the first edit",
+        g43Pkt.EffectiveData.AsSpan().SequenceEqual(v1), $"bytes={Convert.ToHexString(g43Pkt.EffectiveData)}");
+
+    g43.Redo(g43Pkt);
+    Report("UH-06 redo replays the second edit",
+        g43Pkt.EffectiveData.AsSpan().SequenceEqual(v1) is false &&
+        Convert.ToHexString(g43Pkt.EffectiveData) == "01AABBCC",
+        $"bytes={Convert.ToHexString(g43Pkt.EffectiveData)}");
+
+    // A fresh edit must invalidate the redo branch.
+    g43.Undo(g43Pkt);
+    byte[] vNow = (byte[])g43Pkt.EffectiveData.Clone();
+    g43Pkt.ApplyModification(0, new byte[] { 0xFF });
+    g43.Record(g43Pkt.Index, g43Pkt.PacketNumber, vNow, g43Pkt.EffectiveData, "edit 3");
+    Report("UH-07 a new edit discards the redo branch", !g43.CanRedo, $"redo={g43.CanRedo}");
+
+    Report("UH-08 undo past the beginning is refused, not thrown",
+        g43.Undo(g43Pkt) is not null && g43.Undo(g43Pkt) is not null && g43.Undo(g43Pkt) is null,
+        "third undo returns null");
+
+    // Capacity: the stack must not grow without bound.
+    var g43Big = new EditHistoryService();
+    for (int i = 0; i < EditHistoryService.Capacity + 50; i++)
+        g43Big.Record(i, i + 1, new byte[] { 0x00 }, new byte[] { 0x01 }, $"e{i}");
+    Report("UH-09 the stack is capped at its capacity",
+        g43Big.UndoStack.Count == EditHistoryService.Capacity,
+        $"count={g43Big.UndoStack.Count}, capacity={EditHistoryService.Capacity}");
+
+    var g43Forget = new EditHistoryService();
+    g43Forget.Record(7, 8, new byte[] { 0 }, new byte[] { 1 }, "a");
+    g43Forget.Record(9, 10, new byte[] { 0 }, new byte[] { 1 }, "b");
+    g43Forget.Forget(7);
+    Report("UH-10 forgetting one packet leaves the other packet's history alone",
+        g43Forget.UndoStack.Count == 1 && g43Forget.UndoStack[0].PacketIndex == 9,
+        $"count={g43Forget.UndoStack.Count}");
+}
+catch (Exception ex)
+{
+    Report("G43 group execution", false, ex.ToString());
+}
+
+// ══ GROUP 44: FS-01..04 follow-stream index is exposed ══
+Banner(44, "follow-stream index");
+try
+{
+    var g44Src = Path.Combine(Path.GetTempPath(), "pf-g44.pcap");
+    // Two TCP conversations on different ports, so the index must report two streams.
+    byte[] g44Req = BuildTcpSegment(80, 1234, 1, 0, 0x18,
+        System.Text.Encoding.ASCII.GetBytes("GET / HTTP/1.1\r\n\r\n"));
+    byte[] g44Req2 = BuildTcpSegment(80, 1234, 100, 200, 0x18,
+        System.Text.Encoding.ASCII.GetBytes("GET /x HTTP/1.1\r\n\r\n"));
+    byte[] g44Other = BuildTcpSegment(80, 5555, 1, 0, 0x18,
+        System.Text.Encoding.ASCII.GetBytes("GET /y HTTP/1.1\r\n\r\n"));
+    byte[] g44A = FixtureEth(FixtureIpv4(g44Req, 6, 1), 0x0800);
+    byte[] g44A2 = FixtureEth(FixtureIpv4(g44Req2, 6, 2), 0x0800);
+    byte[] g44B = FixtureEth(FixtureIpv4(g44Other, 6, 3), 0x0800);
+    await File.WriteAllBytesAsync(g44Src, BuildFixturePcap(g44A, g44A2, g44B));
+
+    var g44Doc = new PacketDocument { FilePath = g44Src };
+    var g44Tshark = new TsharkService(new PcapIngestService(), new PcapExportService());
+    await g44Tshark.LoadPcapAsync(g44Doc, g44Src, null);
+
+    var g44Provider = g44Doc.ContextProviders.OfType<TcpStreamContextProvider>().FirstOrDefault();
+    Report("FS-00 the document carries a TCP stream provider", g44Provider is not null,
+        g44Provider is null ? "missing" : g44Provider.Name);
+
+    if (g44Provider is not null)
+    {
+        var g44Streams = await g44Provider.GetStreamsAsync();
+        Report("FS-01 the stream index reports both conversations", g44Streams.Count == 2,
+            $"streams={g44Streams.Count}");
+
+        bool g44FramesLookRight = g44Streams.All(s => s.Frames.Count > 0)
+            && g44Streams.Sum(s => s.Frames.Count) == 3;
+        Report("FS-02 every frame is attributed to exactly one stream", g44FramesLookRight,
+            $"totalFrames={g44Streams.Sum(s => s.Frames.Count)}");
+
+        var g44First = g44Streams.OrderBy(s => s.Frames[0]).First();
+        var g44Owner = await g44Provider.GetStreamOfFrameAsync(g44First.Frames[0]);
+        Report("FS-03 a frame maps back to its own stream",
+            g44Owner == g44First.StreamId, $"frame={g44First.Frames[0]}, owner={g44Owner}");
+
+        var g44None = await g44Provider.GetStreamOfFrameAsync(9999);
+        Report("FS-04 a frame that is not TCP maps to no stream", g44None is null, $"owner={g44None}");
+    }
+}
+catch (Exception ex)
+{
+    Report("G44 group execution", false, ex.ToString());
+}
+finally
+{
+    try { File.Delete(Path.Combine(Path.GetTempPath(), "pf-g44.pcap")); } catch { }
+}
+
+// ══ GROUP 49: VL-01..07 VLAN tagging ══
+Banner(49, "VLAN tagging");
+try
+{
+    byte[] g49Ip = FixtureIpv4(FixtureUdp(5000, 5001, new byte[] { 1, 2, 3, 4 }));
+    byte[] g49Plain = FixtureEth(g49Ip);
+
+    Report("VL-00 the untagged fixture is Ethernet-II/IPv4 with the IP header at 14",
+        PacketPrepareService.FindIpOffset(g49Plain) == 14,
+        $"ipOffset={PacketPrepareService.FindIpOffset(g49Plain)}");
+
+    byte[] g49Tagged = PacketPrepareService.ApplyVlanTag(g49Plain, 100);
+    Report("VL-01 inserting a tag adds exactly four bytes", g49Tagged.Length == g49Plain.Length + 4,
+        $"len={g49Tagged.Length}, was={g49Plain.Length}");
+    Report("VL-02 the tag's TPID is 802.1Q and the VID reads back",
+        ((ushort)((g49Tagged[12] << 8) | g49Tagged[13])) == 0x8100 &&
+        (((g49Tagged[14] << 8) | g49Tagged[15]) & 0x0FFF) == 100,
+        $"tpid=0x{((g49Tagged[12] << 8) | g49Tagged[13]):X4}, vid={((g49Tagged[14] << 8) | g49Tagged[15]) & 0x0FFF}");
+    Report("VL-03 the inner ethertype survives tagging",
+        ((ushort)((g49Tagged[16] << 8) | g49Tagged[17])) == 0x0800,
+        $"inner=0x{((g49Tagged[16] << 8) | g49Tagged[17]):X4}");
+    Report("VL-04 the IP header is found past the tag",
+        PacketPrepareService.FindIpOffset(g49Tagged) == 18,
+        $"ipOffset={PacketPrepareService.FindIpOffset(g49Tagged)}");
+    Report("VL-05 the payload after the tag is byte-identical",
+        g49Tagged.AsSpan(22).SequenceEqual(g49Plain.AsSpan(18)),
+        "bytes after the tag match the original payload");
+
+    // Replacing an existing tag keeps the length, so no offset downstream moves.
+    byte[] g49Retag = PacketPrepareService.ApplyVlanTag((byte[])g49Tagged.Clone(), 200);
+    Report("VL-06 replacing the VID keeps the frame length and moves the VID",
+        g49Retag.Length == g49Tagged.Length &&
+        (((g49Retag[14] << 8) | g49Retag[15]) & 0x0FFF) == 200,
+        $"len={g49Retag.Length}, vid={((g49Retag[14] << 8) | g49Retag[15]) & 0x0FFF}");
+
+    byte[] g49Stripped = PacketPrepareService.StripVlanTag(g49Tagged);
+    Report("VL-07 stripping the tag restores the original frame byte-for-byte",
+        g49Stripped.AsSpan().SequenceEqual(g49Plain),
+        $"len={g49Stripped.Length}, identical={g49Stripped.AsSpan().SequenceEqual(g49Plain)}");
+
+    Report("VL-08 stripping a frame that has no tag is a no-op",
+        PacketPrepareService.StripVlanTag(g49Plain).AsSpan().SequenceEqual(g49Plain),
+        "untouched");
+
+    // tshark must agree the tagged frame is VLAN with the right VID.
+    try
+    {
+        var g49Src = Path.Combine(Path.GetTempPath(), "pf-g49.pcap");
+        await File.WriteAllBytesAsync(g49Src, BuildFixturePcap(g49Tagged));
+        var g49Tshark = new TsharkService(new PcapIngestService(), new PcapExportService());
+        var g49Pkt = new Packet { Index = 0, Timestamp = 0, RawData = g49Tagged };
+        await g49Tshark.ParsePacketFromPcapFileAsync(g49Pkt, g49Src);
+        var g49All = Flatten(g49Pkt.Layers.SelectMany(l => l.Fields)).ToList();
+        var g49Vlan = g49All.FirstOrDefault(f => f.OriginalPdmlName is "vlan.id" or "vlan.vid");
+        int.TryParse(g49Vlan?.DisplayValue, out int g49Vid);
+        Report("VL-09 tshark dissects the tag and reports the VID",
+            g49Vlan is not null && g49Vid == 100,
+            $"layers={string.Join(",", g49Pkt.Layers.Select(l => l.ProtocolName))}, " +
+            $"field={g49Vlan?.OriginalPdmlName ?? "none"}, display={g49Vlan?.DisplayValue ?? "none"}");
+        Report("VL-10 the tagged frame dissects to vlan between eth and ip",
+            g49Pkt.Layers.Select(l => l.ProtocolName).ToList() is var g49Names &&
+            g49Names.IndexOf("vlan") == g49Names.IndexOf("eth") + 1 &&
+            g49Names.IndexOf("ip") == g49Names.IndexOf("vlan") + 1,
+            $"order={string.Join(",", g49Pkt.Layers.Select(l => l.ProtocolName))}");
+    }
+    catch (Exception ex)
+    {
+        Report("VL-09 tshark dissects the tag and reports the VID", false, ex.ToString());
+    }
+}
+catch (Exception ex)
+{
+    Report("G49 group execution", false, ex.ToString());
+}
+finally
+{
+    try { File.Delete(Path.Combine(Path.GetTempPath(), "pf-g49.pcap")); } catch { }
+}
+
+// Runs the headless UI render as the process's only job, invoked by `--ui`.
+//
+// Kept out of the main flow on purpose: initialising the Avalonia platform and Skia
+// inside a process that then executes thousands of assertions and tshark round-trips
+// crashes it, and a UI check that can take the whole harness down is worse than none.
+int RunHeadlessRenderOnly()
+{
+    try
+    {
+    // through Skia with no X server and no GL, which turns "the XAML compiled" into
+    // "the window rendered and these controls resolved".
+    Banner(54, "headless render of the real window");
+    try
+    {
+        try
+        {
+            AppBuilder.Configure<App>()
+                .UseSkia()
+                .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
+                .SetupWithoutStarting();
+        }
+        catch (Exception ex)
+        {
+            Report("HG-01 the headless platform initialises", false, ex.ToString());
+            throw;
+        }
+
+        var g54Window = App.ComposeMainWindow(null);
+        g54Window.Width = 1400;
+        g54Window.Height = 900;
+        g54Window.Show();
+
+        // Headless has no compositor clock, so frames only appear when the platform's render
+        // timer is ticked by hand; RunJobs alone never rasterises.
+        for (int i = 0; i < 5; i++) Pump();
+
+        Report("HG-02 the real window mounts and renders without throwing",
+            g54Window.IsLoaded && g54Window.DataContext is MainWindowViewModel,
+            $"IsLoaded={g54Window.IsLoaded}, dataContext={g54Window.DataContext?.GetType().Name ?? "null"}");
+
+        var g54Vm = (MainWindowViewModel)g54Window.DataContext!;
+        var g54Bar = g54Vm.ToolBar!;
+
+        static T? ByName<T>(Visual root, string name) where T : Visual =>
+            root.GetVisualDescendants().OfType<T>().FirstOrDefault(c => c.Name == name);
+
+        static void Pump()
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+                AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+            }
+        }
+
+        var g54Stats = ByName<ListBox>(g54Window, "StatisticsList");
+        var g54Reasm = ByName<ListBox>(g54Window, "ReassembledList");
+        Report("HG-03 the panel controls the fix touched are present in the visual tree",
+            g54Stats is not null && g54Reasm is not null,
+            $"statistics={g54Stats is not null}, reassembled={g54Reasm is not null}");
+
+        // The regression a compiled-XAML check cannot catch: both lists sit in Grid.Row=1
+        // and used to paint on top of each other.
+        bool g54Initial = g54Stats is not null && g54Reasm is not null && g54Stats.IsVisible && !g54Reasm.IsVisible;
+        g54Vm.ShowReassembled = true;
+        Pump();
+        bool g54Swapped = g54Stats is not null && g54Reasm is not null && !g54Stats.IsVisible && g54Reasm.IsVisible;
+        g54Vm.ShowReassembled = false;
+        Pump();
+        bool g54Restored = g54Stats is not null && g54Reasm is not null && g54Stats.IsVisible && !g54Reasm.IsVisible;
+        Report("HG-04 statistics and reassembled panels are mutually exclusive",
+            g54Initial && g54Swapped && g54Restored,
+            $"initial={g54Initial}, swapped={g54Swapped}, restored={g54Restored}");
+
+        var g54VlanBox = ByName<TextBox>(g54Window, "VlanIdBox");
+        g54Bar.VlanMode = PacketSendService.VlanMode.Insert;
+        Pump();
+        bool g54VlanShown = g54VlanBox is not null && g54VlanBox.IsVisible;
+        g54Bar.VlanMode = PacketSendService.VlanMode.Leave;
+        Pump();
+        bool g54VlanHidden = g54VlanBox is not null && !g54VlanBox.IsVisible;
+        Report("HG-05 the VLAN id box follows the VLAN mode",
+            g54VlanShown && g54VlanHidden,
+            $"shownOnInsert={g54VlanShown}, hiddenOnLeave={g54VlanHidden}");
+
+        var g54FixBox = ByName<CheckBox>(g54Window, "AutoFixCheckBox");
+        var g54MultiBox = ByName<CheckBox>(g54Window, "MultiNicCheckBox");
+        string g54FixText = g54FixBox?.Content as string ?? "";
+        string g54MultiText = g54MultiBox?.Content as string ?? "";
+        Report("HG-06 toolbar checkbox labels resolve from the localization dictionary",
+            g54FixText.Length > 0 && g54MultiText.Length > 0
+            && g54FixBox!.Bounds.Width > 40 && g54MultiBox!.Bounds.Width > 40,
+            $"autoFix='{g54FixText}' ({g54FixBox?.Bounds.Width}px), multiNic='{g54MultiText}' ({g54MultiBox?.Bounds.Width}px)");
+
+        g54Bar.MultiNicSend = true;
+        Pump();
+        bool g54MultiOn = g54MultiBox?.IsChecked == true;
+        bool g54Targets = g54Bar.TargetInterfaces.Count > 0;
+        g54Bar.MultiNicSend = false;
+        Pump();
+        bool g54MultiOff = g54MultiBox?.IsChecked == false;
+        Report("HG-07 multi-NIC mode drives the checkbox and resolves targets",
+            g54MultiOn && g54MultiOff && g54Targets,
+            $"on={g54MultiOn}, off={g54MultiOff}, targets={g54Bar.TargetInterfaces.Count}");
+
+        Pump();
+        var g54Frame = g54Window.CaptureRenderedFrame();
+        Report("HG-08 the platform produced a rendered frame",
+            g54Frame is not null,
+            g54Frame is null ? "CaptureRenderedFrame returned null" : $"{g54Frame.PixelSize.Width}x{g54Frame.PixelSize.Height}");
+
+        string g54Dir = Path.Combine(Path.GetTempPath(), "pf-g54");
+        Directory.CreateDirectory(g54Dir);
+        string g54Png = Path.Combine(g54Dir, "main-window.png");
+        if (g54Frame is null)
+        {
+            Report("HG-09 the frame is rendered content, not a blank surface", false, "no frame captured");
+            Report("HG-10 the capture saved as a real PNG", false, "no frame captured");
+            return 0;
+        }
+
+        g54Frame.Save(g54Png);
+
+        int g54W = g54Frame.PixelSize.Width, g54H = g54Frame.PixelSize.Height;
+        int g54Colors = 0;
+        using (var g54Locked = g54Frame.Lock())
+        {
+            if (g54Locked is not null && g54Locked.Address != IntPtr.Zero)
+            {
+                var g54Bytes = new byte[g54Locked.RowBytes * g54H];
+                System.Runtime.InteropServices.Marshal.Copy(g54Locked.Address, g54Bytes, 0, g54Bytes.Length);
+
+                var g54Distinct = new HashSet<uint>();
+                for (int y = 0; y < g54H; y++)
+                {
+                    int row = y * g54Locked.RowBytes;
+                    for (int x = 0; x < g54W; x++)
+                    {
+                        int i = row + x * 4;
+                        if (i + 3 < g54Bytes.Length)
+                            g54Distinct.Add((uint)(g54Bytes[i] | (g54Bytes[i + 1] << 8) | (g54Bytes[i + 2] << 16)));
+                    }
+                }
+                g54Colors = g54Distinct.Count;
+            }
+        }
+
+        Report("HG-09 the frame is rendered content, not a blank surface",
+            g54W > 800 && g54H > 500 && g54Colors > 16,
+            $"{g54W}x{g54H}, distinctColors={g54Colors}");
+
+        Report("HG-10 the capture saved as a real PNG",
+            File.Exists(g54Png) && new FileInfo(g54Png).Length > 3000,
+            $"{g54Png} ({new FileInfo(g54Png).Length} bytes)");
+
+        Detail($"    headless render: {g54Png}");
+        g54Window.Close();
+        Pump();
+    }
+    catch (Exception ex)
+    {
+        Report("G54 group execution", false, ex.ToString());
+    }
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        Report("G54 headless-only run", false, ex.ToString());
+        return 1;
+    }
+}
+
+
+// ══ GROUP 53: IF-01..04 multi-interface detection and trace-log naming ══
+Banner(53, "multi-interface detection");
+try
+{
+    string g53Dir = Path.Combine(Path.GetTempPath(), "pf-g53");
+    Directory.CreateDirectory(g53Dir);
+    try
+    {
+        // Two IDBs in one section: this is what a multi-adapter capture looks like.
+        static byte[] EthIp(byte[] ip) =>
+            [.. new byte[] { 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0x08, 0x00 }, .. ip];
+
+        var g53Ip = new byte[20];
+        g53Ip[0] = 0x45; g53Ip[2] = 20; g53Ip[8] = 64; g53Ip[9] = 17;
+        byte[] g53Frame = EthIp(g53Ip);
+
+        byte[] OneIdb()
+        {
+            using var ms = new MemoryStream();
+            using var w = new BinaryWriter(ms);
+            void Shb(ushort maj, ushort min)
+            {
+                // type(4) len(4) magic(4) major(2) minor(2) section_len(8) len(4) = 28
+                w.Write(0x0A0D0D0A); w.Write(28u); w.Write(0x1A2B3C4Du);
+                w.Write(maj); w.Write(min);
+                w.Write(unchecked((uint)-1L)); w.Write(0xFFFFFFFFu);
+                w.Write(28u);
+            }
+            void Idb(ushort link)
+            {
+                // type(4) len(4) link(2) reserved(2) snaplen(4) len(4) = 20
+                w.Write(0x00000001u); w.Write(20u); w.Write(link); w.Write((ushort)0);
+                w.Write(65535u); w.Write(20u);
+            }
+            Shb(1, 0); Idb(1);
+            return ms.ToArray();
+        }
+
+        byte[] TwoIdbs()
+        {
+            using var ms = new MemoryStream();
+            using var w = new BinaryWriter(ms);
+            void Shb()
+            {
+                w.Write(0x0A0D0D0A); w.Write(28u); w.Write(0x1A2B3C4Du);
+                w.Write((ushort)1); w.Write((ushort)0);
+                w.Write(unchecked((uint)-1L)); w.Write(0xFFFFFFFFu);
+                w.Write(28u);
+            }
+            void Idb(ushort link)
+            {
+                w.Write(0x00000001u); w.Write(20u); w.Write(link); w.Write((ushort)0);
+                w.Write(65535u); w.Write(20u);
+            }
+            void Epb(uint ifaceId)
+            {
+                int pad = (4 - g53Frame.Length % 4) % 4;
+                uint len = 28u + (uint)g53Frame.Length + (uint)pad + 4u;
+                w.Write(0x00000006u); w.Write(len); w.Write(ifaceId);
+                w.Write(0u); w.Write(0u); w.Write((uint)g53Frame.Length); w.Write((uint)g53Frame.Length);
+                w.Write(g53Frame);
+                for (int i = 0; i < pad; i++) w.Write((byte)0);
+                w.Write(len);
+            }
+            Shb(); Idb(1); Idb(1); Epb(0); Epb(1);
+            return ms.ToArray();
+        }
+
+        string g53One = Path.Combine(g53Dir, "one.pcapng");
+        string g53Two = Path.Combine(g53Dir, "two.pcapng");
+        await File.WriteAllBytesAsync(g53One, OneIdb());
+        await File.WriteAllBytesAsync(g53Two, TwoIdbs());
+
+        var g53Svc = new PcapIngestService();
+        var g53R1 = await g53Svc.ReadPacketsAsync(g53One);
+        var g53R2 = await g53Svc.ReadPacketsAsync(g53Two);
+
+        Report("IF-01 a single-IDB PCAPNG reports one interface",
+            g53R1.IsPcapNg && g53R1.InterfaceCount == 1,
+            $"isPcapNg={g53R1.IsPcapNg}, interfaces={g53R1.InterfaceCount}");
+
+        Report("IF-02 a two-IDB PCAPNG reports two interfaces, so the caller can warn",
+            g53R2.IsPcapNg && g53R2.InterfaceCount == 2,
+            $"isPcapNg={g53R2.IsPcapNg}, interfaces={g53R2.InterfaceCount}");
+
+        Report("IF-03 both IDB files still yield their packets and first link type",
+            g53R1.Packets.Count == 0 && g53R2.Packets.Count == 2
+            && g53R1.LinkLayerType == 1 && g53R2.LinkLayerType == 1,
+            $"one={g53R1.Packets.Count} pkts, two={g53R2.Packets.Count} pkts, "
+            + $"link={g53R1.LinkLayerType}/{g53R2.LinkLayerType}");
+
+        // Classic PCAP has no IDB concept and must stay at the default so the save path
+        // never mistakes it for a merged capture.
+        string g53Pcap = Path.Combine(g53Dir, "classic.pcap");
+        await File.WriteAllBytesAsync(g53Pcap, BuildFixturePcap([g53Frame]));
+        var g53R3 = await g53Svc.ReadPacketsAsync(g53Pcap);
+        Report("IF-04 classic PCAP reports one interface and no merge warning",
+            !g53R3.IsPcapNg && g53R3.InterfaceCount == 1,
+            $"isPcapNg={g53R3.IsPcapNg}, interfaces={g53R3.InterfaceCount}");
+
+        Report("IF-05 the log name splits only when a sibling instance is alive",
+            Path.GetFileName(TraceLog.LogFilePath) is string g53Name
+            && (g53Name == "trace.log" || g53Name.StartsWith("trace.")),
+            $"logFile={TraceLog.LogFilePath}");
+    }
+    catch (Exception ex)
+    {
+        Report("G53 group execution", false, ex.ToString());
+    }
+    finally
+    {
+        try { Directory.Delete(g53Dir, true); } catch { /* best-effort */ }
+    }
+}
+catch (Exception ex)
+{
+    Report("G53 group execution", false, ex.ToString());
+}
+
+// ══ GROUP 52: SI-01..05 stream index invalidation semantics ══// ══ GROUP 52: SI-01..05 stream index invalidation semantics ══
+// The rebuild is tied to save, not to edit. These assertions pin the tshark behaviour
+// that decision rests on, so a future tshark change cannot quietly invalidate it.
+Banner(52, "stream index invalidation semantics");
+try
+{
+    string g52Dir = Path.Combine(Path.GetTempPath(), "pf-g52");
+    Directory.CreateDirectory(g52Dir);
+    try
+    {
+        // Three same-stream TCP segments: SYN, ACK, FIN.
+        static byte[] Seg(int sp, int dp, byte flags, uint seq, byte[]? pad = null)
+        {
+            byte[] data = pad ?? [];
+            var t = new byte[20 + data.Length];
+            t[0] = (byte)(sp >> 8); t[1] = (byte)sp;
+            t[2] = (byte)(dp >> 8); t[3] = (byte)dp;
+            t[4] = (byte)(seq >> 24); t[5] = (byte)(seq >> 16); t[6] = (byte)(seq >> 8); t[7] = (byte)seq;
+            t[12] = (byte)((5 << 4) | (data.Length >> 8)); t[13] = flags;
+            data.CopyTo(t, 20);
+            return t;
+        }
+
+        byte[][] Segs(int dport3, byte flags2, byte[] pad2, byte[] dst3)
+        {
+            byte[][] tcp =
+            [
+                Seg(1234, 4321, 0x02, 1000),
+                Seg(1234, 4321, flags2, 1001, pad2),
+                Seg(1234, dport3, 0x11, 2002),
+            ];
+            var frames = new byte[tcp.Length][];
+            for (int i = 0; i < tcp.Length; i++)
+            {
+                var ip = new byte[20 + tcp[i].Length];
+                ip[0] = 0x45;
+                ip[2] = (byte)((20 + tcp[i].Length) >> 8); ip[3] = (byte)(20 + tcp[i].Length);
+                ip[8] = 64; ip[9] = 6;
+                ip[12] = 10; ip[14] = 1;
+                ip[16] = dst3[0]; ip[17] = dst3[1]; ip[18] = dst3[2]; ip[19] = dst3[3];
+                tcp[i].CopyTo(ip, 20);
+                frames[i] = FixtureEth(ip);
+            }
+            return frames;
+        }
+
+        async Task<string> Streams(string name, byte[][] frames)
+        {
+            string path = Path.Combine(g52Dir, name);
+            await File.WriteAllBytesAsync(path, BuildFixturePcap(frames));
+            var svc = new TsharkService(new PcapIngestService(), new PcapExportService());
+            var doc = new PacketDocument { FilePath = path };
+            await svc.LoadPcapAsync(doc, path, null);
+            var tcp = doc.ContextProviders.OfType<TcpStreamContextProvider>().First();
+            var all = await tcp.GetStreamsAsync();
+            string text = string.Join(",", all.Select(s => $"{s.StreamId}=[{string.Join("/", s.Frames)}]"));
+            string single = "";
+            try
+            {
+                // The same frame on its own: does it keep its capture-wide stream id?
+                string solo = Path.Combine(g52Dir, name.Replace(".pcap", "-solo.pcap"));
+                await File.WriteAllBytesAsync(solo, BuildFixturePcap([frames[1]]));
+                var soloDoc = new PacketDocument { FilePath = solo };
+                await svc.LoadPcapAsync(soloDoc, solo, null);
+                var soloTcp = soloDoc.ContextProviders.OfType<TcpStreamContextProvider>().First();
+                var soloAll = await soloTcp.GetStreamsAsync();
+                single = string.Join(",", soloAll.Select(s => s.StreamId));
+            }
+            catch (Exception ex) { single = "err:" + ex.Message; }
+            return text + " | solo=" + single;
+        }
+
+        string g52Base = await Streams("g52-base.pcap", Segs(4321, 0x10, [], [10, 0, 0, 2]));
+        string g52Len = await Streams("g52-len.pcap", Segs(4321, 0x18, new byte[40], [10, 0, 0, 2]));
+        string g52Port = await Streams("g52-port.pcap", Segs(7777, 0x10, [], [10, 0, 0, 2]));
+
+        Report("SI-01 a payload-length edit leaves stream numbering untouched",
+            g52Base == g52Len && g52Base.Contains("0=[1/2/3]"),
+            $"base={g52Base} len={g52Len}");
+
+        Report("SI-02 a four-tuple edit does move a frame to a new stream",
+            g52Port.Contains("1=[3]") && !g52Base.Contains("1=[3]"),
+            $"base={g52Base} port={g52Port}");
+
+        // This is the fact the save-time rebuild rests on: a lone frame cannot report the
+        // stream it belongs to, so the per-packet reparse an edit performs is useless here.
+        string g52SoloBase = g52Base.Split("| solo=")[1];
+        string g52SoloPort = g52Port.Split("| solo=")[1];
+        Report("SI-03 a lone frame reports stream 0 whatever stream it really belongs to",
+            g52SoloBase == "0" && g52SoloPort == "0",
+            $"base-solo={g52SoloBase}, port-solo={g52SoloPort}");
+
+        // Invalidate must actually force a re-read: overwrite the capture behind the
+        // provider's closed-over path with a *different* stream layout and confirm the
+        // next query sees it. Without a real rescan this would still report 0=[1/2/3].
+        string g52Live = Path.Combine(g52Dir, "g52-live.pcap");
+        await File.WriteAllBytesAsync(g52Live, BuildFixturePcap(Segs(4321, 0x10, [], [10, 0, 0, 2])));
+        var g52Svc = new TsharkService(new PcapIngestService(), new PcapExportService());
+        var g52Doc = new PacketDocument { FilePath = g52Live };
+        await g52Svc.LoadPcapAsync(g52Doc, g52Live, null);
+        var g52Prov = g52Doc.ContextProviders.OfType<TcpStreamContextProvider>().First();
+
+        string g52Before = string.Join(",", (await g52Prov.GetStreamsAsync()).Select(s => s.StreamId + "=" + string.Join("/", s.Frames)));
+        await File.WriteAllBytesAsync(g52Live, BuildFixturePcap(Segs(7777, 0x10, [], [10, 0, 0, 2])));
+        string g52Cached = string.Join(",", (await g52Prov.GetStreamsAsync()).Select(s => s.StreamId + "=" + string.Join("/", s.Frames)));
+        g52Prov.Invalidate();
+        string g52After = string.Join(",", (await g52Prov.GetStreamsAsync()).Select(s => s.StreamId + "=" + string.Join("/", s.Frames)));
+
+        Report("SI-04 the index is cached until invalidated, then re-read from disk",
+            g52Before == "0=1/2/3"
+            && g52Cached == g52Before                 // cache still serving the old file
+            && g52After.Contains("1=3"),              // after Invalidate the new layout appears
+            $"before={g52Before}, cached={g52Cached}, after={g52After}");
+    }
+    catch (Exception ex)
+    {
+        Report("G52 group execution", false, ex.ToString());
+    }
+    finally
+    {
+        try { Directory.Delete(g52Dir, true); } catch { /* best-effort */ }
+    }
+}
+catch (Exception ex)
+{
+    Report("G52 group execution", false, ex.ToString());
+}
+
+// ══ GROUP 51: VW-01..06 VLAN reachability warning + non-mutating tag ops ══// ══ GROUP 51: VW-01..06 VLAN reachability warning + non-mutating tag ops ══
+Banner(51, "VLAN warning and non-mutating tag ops");
+try
+{
+    byte[] g51Eth = FixtureEth(FixtureIpv4(FixtureUdp(5000, 5001, new byte[] { 7, 7 })));
+    byte[] g51Tagged = PacketPrepareService.ApplyVlanTag((byte[])g51Eth.Clone(), 100);
+
+    // REGRESSION: EffectiveData hands out the live buffer, so a tag op that rewrote its
+    // argument would change the packet as a side effect of merely sending it.
+    var g51Packet = new Packet { Index = 0, Timestamp = 0, RawData = (byte[])g51Tagged.Clone() };
+    byte[] g51Before = (byte[])g51Packet.EffectiveData.Clone();
+    PacketPrepareService.ApplyVlanTag(g51Packet.EffectiveData, 200);
+    Report("VW-01 re-tagging does not mutate the packet it was handed",
+        g51Packet.EffectiveData.AsSpan().SequenceEqual(g51Before),
+        $"vid now {PacketPrepareService.GetVlanId(g51Packet.EffectiveData)}, was 100");
+
+    PacketPrepareService.StripVlanTag(g51Packet.EffectiveData);
+    Report("VW-02 stripping does not mutate the packet it was handed",
+        g51Packet.EffectiveData.AsSpan().SequenceEqual(g51Before),
+        $"still tagged: {PacketPrepareService.HasVlanTag(g51Packet.EffectiveData)}");
+
+    Report("VW-03 the new tag ops agree on whether a frame carries a tag",
+        PacketPrepareService.HasVlanTag(g51Eth) == false
+        && PacketPrepareService.HasVlanTag(g51Tagged) == true
+        && PacketPrepareService.GetVlanId(g51Tagged) == 100
+        && PacketPrepareService.GetVlanId(g51Eth) == -1,
+        $"plain={PacketPrepareService.HasVlanTag(g51Eth)}, tagged={PacketPrepareService.GetVlanId(g51Tagged)}");
+
+    // The warning must count only frames a VLAN mode would really change.
+    var g51PlainOnly = new[] { new Packet { RawData = g51Eth } };
+    var g51TaggedOnly = new[] { new Packet { RawData = g51Tagged } };
+    Report("VW-04 Insert counts untagged frames and ignores already-tagged ones",
+        PacketSendService.CountVlanAffected(g51PlainOnly, PacketSendService.VlanMode.Insert, 100) == 1
+        && PacketSendService.CountVlanAffected(g51TaggedOnly, PacketSendService.VlanMode.Insert, 100) == 0,
+        $"plain={PacketSendService.CountVlanAffected(g51PlainOnly, PacketSendService.VlanMode.Insert, 100)}, " +
+        $"tagged={PacketSendService.CountVlanAffected(g51TaggedOnly, PacketSendService.VlanMode.Insert, 100)}");
+
+    Report("VW-05 Replace counts a frame only when the VID actually changes",
+        PacketSendService.CountVlanAffected(g51TaggedOnly, PacketSendService.VlanMode.Replace, 200) == 1
+        && PacketSendService.CountVlanAffected(g51TaggedOnly, PacketSendService.VlanMode.Replace, 100) == 0,
+        $"to200={PacketSendService.CountVlanAffected(g51TaggedOnly, PacketSendService.VlanMode.Replace, 200)}, " +
+        $"to100={PacketSendService.CountVlanAffected(g51TaggedOnly, PacketSendService.VlanMode.Replace, 100)}");
+
+    // Leave must never warn, and bare-IP packets have no header to tag.
+    var g51Bare = new[] { new Packet { RawData = FixtureIpv4(FixtureUdp(5000, 5001, new byte[] { 7 })) } };
+    Report("VW-06 Leave and bare-IP selections are both silent",
+        PacketSendService.CountVlanAffected(g51TaggedOnly, PacketSendService.VlanMode.Leave, 100) == 0
+        && PacketSendService.CountVlanAffected(g51Bare, PacketSendService.VlanMode.Insert, 100) == 0,
+        $"leave={PacketSendService.CountVlanAffected(g51TaggedOnly, PacketSendService.VlanMode.Leave, 100)}, " +
+        $"bareIp={PacketSendService.CountVlanAffected(g51Bare, PacketSendService.VlanMode.Insert, 100)}");
+}
+catch (Exception ex)
+{
+    Report("G51 group execution", false, ex.ToString());
+}
+
+// ══ GROUP 50: MN-01..05 multi-NIC fan-out ══// ══ GROUP 50: MN-01..05 multi-NIC fan-out ══
+Banner(50, "multi-NIC fan-out");
+try
+{
+    // Fan-out is the service's contract with the caller, so it is verified against
+    // the real entry point the toolbar uses: a list of targets, not one target.
+    var g50Lo = new NetworkInterfaceInfo("g50-lo", "g50-lo0", "loopback", null, null, null, true, true);
+    var g50A = new NetworkInterfaceInfo("g50-a", "g50-a0", "nic a", IPAddress.Parse("192.0.2.1"), null, "02:00:00:00:00:01", false, true);
+    var g50B = new NetworkInterfaceInfo("g50-b", "g50-b0", "nic b", IPAddress.Parse("198.51.100.1"), null, "02:00:00:00:00:02", false, true);
+
+    var g50Svc = new PacketSendService();
+    var g50Results = new List<PacketSendResult>();
+    g50Svc.PacketSent += r => g50Results.Add(r);
+    var g50Done = new TaskCompletionSource();
+    g50Svc.SendCompleted += () => g50Done.TrySetResult();
+
+    var g50Packet = new Packet
+    {
+        Index = 0,
+        Timestamp = 0,
+        RawData = FixtureEth(FixtureIpv4(FixtureUdp(5000, 5001, new byte[] { 9, 9 }))),
+    };
+
+    // No packets and no targets must both be inert: a send that cannot do anything
+    // should finish and release the gate rather than hang or throw.
+    await g50Svc.StartSendAsync(Array.Empty<Packet>(), g50A);
+    Report("MN-01 an empty target list completes instead of throwing", true,
+        $"completed={g50Done.Task.IsCompleted}");
+
+    var g50Cts = new CancellationTokenSource();
+    await g50Svc.StartSendAsync(new[] { g50Packet }, g50A, loopCount: 1, ct: g50Cts.Token);
+    await g50Done.Task.WaitAsync(TimeSpan.FromSeconds(30));
+    // SendPacketAsync reports exactly once per packet per target, so the result count
+    // is the fan-out width — that is what makes these assertions non-vacuous.
+    Report("MN-02 one packet on one target produces exactly one send attempt",
+        g50Results.Count == 1,
+        $"results={g50Results.Count} (want 1), first={(g50Results.Count > 0 ? g50Results[0].Message : "none")}");
+
+    // Two targets, one packet: the packet must be offered to both, and the gate must be
+    // released afterwards so a second send is possible.
+    g50Results.Clear();
+    var g50Done2 = new TaskCompletionSource();
+    g50Svc.SendCompleted += () => g50Done2.TrySetResult();
+    await g50Svc.StartSendAsync(new[] { g50Packet }, new[] { g50A, g50B }, loopCount: 1, ct: g50Cts.Token);
+    await g50Done2.Task.WaitAsync(TimeSpan.FromSeconds(30));
+    Report("MN-03 one packet on two targets produces two send attempts (true fan-out)",
+        g50Results.Count == 2,
+        $"results={g50Results.Count} (want 2)");
+    Report("MN-03b both fan-out attempts carry the packet's index",
+        g50Results.Count == 2 && g50Results.All(r => r.PacketIndex == 0),
+        $"indices={string.Join(",", g50Results.Select(r => r.PacketIndex))}");
+
+    var g50Done3 = new TaskCompletionSource();
+    g50Svc.SendCompleted += () => g50Done3.TrySetResult();
+    await g50Svc.StartSendAsync(new[] { g50Packet }, g50Lo, loopCount: 1, ct: g50Cts.Token);
+    bool g50LoopbackReleased = await Task.WhenAny(g50Done3.Task, Task.Delay(15000)) == g50Done3.Task;
+    Report("MN-04 an unusable target still completes and releases the gate",
+        g50LoopbackReleased,
+        $"completed={g50LoopbackReleased}");
+
+    Report("MN-05 a second send is allowed after the previous one finished",
+        !g50Svc.IsRunning,
+        $"IsRunning={g50Svc.IsRunning}");
+}
+catch (Exception ex)
+{
+    Report("G50 group execution", false, ex.ToString());
+}
+
+// ══ GROUP 48: EP-01..04 egress adapter pinning ══// ══ GROUP 48: EP-01..04 egress adapter pinning ══
+Banner(48, "egress adapter pinning");
+try
+{
+    // Binding the source address does not choose the egress adapter: the kernel routes
+    // by its own table. These assertions check that a managed socket really can be pinned
+    // to the chosen adapter, and that the platform reports honestly when it cannot.
+    var g48Ifaces = new NetworkInterfaceService().GetInterfaces();
+    var g48Target = g48Ifaces.FirstOrDefault(i => !i.IsLoopback && i.IPv4Address != null);
+
+    if (g48Target is null || !OperatingSystem.IsLinux())
+    {
+        Report("EP-00 a non-loopback adapter with an address is available to pin to",
+            true, "skipped: needs Linux and a non-loopback adapter");
+    }
+    else
+    {
+        using var g48Sock = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+        bool g48Pinned = TryPinForTest(g48Sock, g48Target.Name);
+        Report("EP-01 SO_BINDTODEVICE accepts the chosen adapter", g48Pinned,
+            $"device={g48Target.Name}, pinned={g48Pinned}");
+
+        using var g48Bad = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+        Report("EP-02 a non-existent adapter is rejected rather than silently accepted",
+            !TryPinForTest(g48Bad, "pf-no-such-device0"),
+            "pinning an unknown name must fail");
+
+        Report("EP-03 AF_PACKET needs no pin because it selects per frame",
+            System.Net.Sockets.AddressFamily.Packet != System.Net.Sockets.AddressFamily.InterNetwork,
+            "AF_PACKET is a distinct address family, so the per-frame sockaddr_ll path is used instead of a pin");
+
+        // Pinning is adapter-generic, so loopback pins too. Refusing to SEND on loopback
+        // is a separate policy in ToolBarViewModel, asserted by G33-06.
+        var g48Lo = g48Ifaces.FirstOrDefault(i => i.IsLoopback);
+        using var g48Sock2 = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+        Report("EP-04 pinning is adapter-generic (loopback pins as well; the send refusal is G33-06)",
+            g48Lo is null || TryPinForTest(g48Sock2, g48Lo.Name),
+            g48Lo is null ? "no loopback adapter present" : $"pinned {g48Lo.Name}");
+    }
+}
+catch (Exception ex)
+{
+    Report("G48 group execution", false, ex.ToString());
+}
+
+// ══ GROUP 47: RV-01..05 reassembled stream bytes ══// ══ GROUP 47: RV-01..05 reassembled stream bytes ══
+Banner(47, "reassembled stream bytes");
+try
+{
+    var g47Src = Path.Combine(Path.GetTempPath(), "pf-g47.pcap");
+    byte[] g47Body = System.Text.Encoding.ASCII.GetBytes(
+        "HELLO-WORLD-THIS-IS-A-LONG-DIAMETER-MESSAGE-SPLIT-ACROSS-TCP-SEGMENTS");
+    byte[] g47F1 = FixtureEth(FixtureIpv4(BuildTcpSegment(80, 1234, 1, 1, 0x18, g47Body[..20]), 6, 1), 0x0800);
+    byte[] g47F2 = FixtureEth(FixtureIpv4(BuildTcpSegment(80, 1234, 21, 1, 0x18, g47Body[20..]), 6, 2), 0x0800);
+    await File.WriteAllBytesAsync(g47Src, BuildFixturePcap(g47F1, g47F2));
+
+    var g47Tshark = new TsharkService(new PcapIngestService(), new PcapExportService());
+
+    // Only the second frame is dissected in the app; the first has to ride along for
+    // tshark to reassemble, which is exactly the context-provider behaviour.
+    var g47Doc = new PacketDocument { FilePath = g47Src };
+    await g47Tshark.LoadPcapAsync(g47Doc, g47Src, null);
+
+    var g47Bytes = await g47Tshark.GetReassembledStreamAsync(g47Src, "tcp", "0");
+    Report("RV-00 the reassembled stream is returned as bytes", g47Bytes is not null,
+        g47Bytes is null ? "null" : $"len={g47Bytes.Length}");
+    Report("RV-01 reassembly recovers the whole message, not one segment",
+        g47Bytes is not null && g47Bytes.Length == g47Body.Length,
+        $"got={g47Bytes?.Length}, expected={g47Body.Length}");
+    Report("RV-02 the reassembled bytes match the original payload",
+        g47Bytes is not null && g47Bytes.AsSpan().SequenceEqual(g47Body),
+        $"match={g47Bytes is not null && g47Bytes.AsSpan().SequenceEqual(g47Body)}");
+
+    // The follow tap wraps at 32 columns; this payload is deliberately an odd length
+    // (69), so a naive per-line decode would drop or misalign the tail byte.
+    Report("RV-03 an odd-length payload survives the 32-column hex wrap intact",
+        g47Body.Length % 2 == 1 && g47Bytes is not null && g47Bytes.Length == g47Body.Length,
+        $"payloadLen={g47Body.Length}, reassembledLen={g47Bytes?.Length}");
+
+    var g47Bad = await g47Tshark.GetReassembledStreamAsync(g47Src, "tcp", "99");
+    Report("RV-04 an unknown stream yields nothing rather than throwing",
+        g47Bad is null, $"len={g47Bad?.Length}");
+
+    bool g47Threw = false;
+    try { await g47Tshark.GetReassembledStreamAsync(g47Src, "sctp", "0"); }
+    catch (ArgumentException) { g47Threw = true; }
+    Report("RV-05 a protocol that cannot be followed is refused explicitly", g47Threw,
+        "sctp throws ArgumentException");
+}
+catch (Exception ex)
+{
+    Report("G47 group execution", false, ex.ToString());
+}
+finally
+{
+    try { File.Delete(Path.Combine(Path.GetTempPath(), "pf-g47.pcap")); } catch { }
+}
+
+// ══ GROUP 46: every advertised fence check is reachable ══// ══ GROUP 46: every advertised fence check is reachable ══
+Banner(46, "all six fence checks are reachable");
+try
+{
+    var g46Editor = new ProtocolEditorService();
+    // Bytes 4..7 are 00 01 02 03 so the happy-path field below genuinely agrees
+    // with the frame; an all-zero frame would make the last check fail correctly.
+    var g46Bytes = new byte[32];
+    g46Bytes[4] = 0; g46Bytes[5] = 1; g46Bytes[6] = 2; g46Bytes[7] = 3;
+    var g46Packet = new Packet { Index = 0, RawData = g46Bytes };
+
+    // 1. Unknown type.
+    var g46Unknown = new ProtocolField { Name = "x", Kind = FieldKind.Unknown, Offset = 4, Length = 2 };
+    var g46F1 = g46Editor.CheckTreeEditFence(g46Packet, g46Unknown);
+    Report("FE-01 unknown type is refused", !g46F1.Allowed, g46F1.Reason);
+
+    // 2. No byte span. This is the branch that used to be unreachable.
+    var g46NoSpan = new ProtocolField { Name = "x", Kind = FieldKind.UInt, Offset = 4, Length = 0 };
+    var g46F2 = g46Editor.CheckTreeEditFence(g46Packet, g46NoSpan);
+    Report("FE-02 a zero-length field is refused with the no-byte-span reason",
+        !g46F2.Allowed && g46F2.Reason.Contains("byte span", StringComparison.OrdinalIgnoreCase),
+        $"allowed={g46F2.Allowed}, reason={g46F2.Reason}");
+
+    var g46NegOffset = new ProtocolField { Name = "x", Kind = FieldKind.UInt, Offset = -1, Length = 2 };
+    var g46F2b = g46Editor.CheckTreeEditFence(g46Packet, g46NegOffset);
+    Report("FE-03 a negative offset is refused with the no-byte-span reason",
+        !g46F2b.Allowed && g46F2b.Reason.Contains("byte span", StringComparison.OrdinalIgnoreCase),
+        $"allowed={g46F2b.Allowed}, reason={g46F2b.Reason}");
+
+    // 3. Bit-level.
+    var g46Bits = new ProtocolField { Name = "x", Kind = FieldKind.UInt, Offset = 4, Length = 1, LengthBits = 3, RawBytes = new byte[] { 1 } };
+    var g46F3 = g46Editor.CheckTreeEditFence(g46Packet, g46Bits);
+    Report("FE-04 a bit-level field is refused", !g46F3.Allowed, g46F3.Reason);
+
+    // 4. Out of frame.
+    var g46Past = new ProtocolField { Name = "x", Kind = FieldKind.UInt, Offset = 30, Length = 8, RawBytes = new byte[8] };
+    var g46F4 = g46Editor.CheckTreeEditFence(g46Packet, g46Past);
+    Report("FE-05 a field running past the frame is refused", !g46F4.Allowed, g46F4.Reason);
+
+    // 5. No byte evidence.
+    var g46NoBytes = new ProtocolField { Name = "x", Kind = FieldKind.UInt, Offset = 4, Length = 4, RawBytes = [] };
+    var g46F5 = g46Editor.CheckTreeEditFence(g46Packet, g46NoBytes);
+    Report("FE-06 a field with no byte evidence is refused", !g46F5.Allowed, g46F5.Reason);
+
+    // 6. Bytes disagree with the frame.
+    var g46Disagree = new ProtocolField { Name = "x", Kind = FieldKind.UInt, Offset = 4, Length = 4, RawBytes = new byte[] { 9, 9, 9, 9 } };
+    var g46F6 = g46Editor.CheckTreeEditFence(g46Packet, g46Disagree);
+    Report("FE-07 bytes disagreeing with the frame is refused", !g46F6.Allowed, g46F6.Reason);
+
+    // And the happy path still works.
+    var g46Good = new ProtocolField { Name = "x", Kind = FieldKind.UInt, Offset = 4, Length = 4, RawBytes = new byte[] { 0, 1, 2, 3 } };
+    var g46F7 = g46Editor.CheckTreeEditFence(g46Packet, g46Good);
+    Report("FE-08 a well-formed field is still allowed", g46F7.Allowed, g46F7.Reason);
+
+    // The relaxation must not have made the menu offer an editor for junk.
+    Report("FE-09 an undecoded marker is never offered an editor",
+        !new ProtocolField { Name = "x", Kind = FieldKind.UInt, Offset = 4, Length = 2, IsUndecodedMarker = true }.IsTreeEditable,
+        "undecoded marker");
+    Report("FE-10 a field with a valid type but no span IS offered, so the fence can explain",
+        new ProtocolField { Name = "x", Kind = FieldKind.UInt, Offset = 4, Length = 0 }.IsTreeEditable,
+        "the fence reports the precise reason instead of the menu hiding it");
+}
+catch (Exception ex)
+{
+    Report("G46 group execution", false, ex.ToString());
+}
+
+// ══ GROUP 45: the duplicate-layer predicate can actually fail ══// ══ GROUP 45: the duplicate-layer predicate can actually fail ══
+Banner(45, "duplicate-layer predicate is not vacuous");
+try
+{
+    // G14-05 is only worth having if it can fail. Feed the same predicate two layer
+    // lists by hand: one healthy, one with a same-named pair collapsed onto a single
+    // offset, which is the defect TR-03 guards against.
+    static bool LayersAreDistinct(IEnumerable<ProtocolLayer> layers, Packet owner) =>
+        layers.GroupBy(l => l.ProtocolName)
+              .Where(g => g.Count() > 1)
+              .All(g => g.Select(l => l.Offset).Distinct().Count() == g.Count())
+        && layers.All(l => l.ParentPacket == owner);
+
+    var g45Owner = new Packet { Index = 0, RawData = new byte[64] };
+    var g45Healthy = new List<ProtocolLayer>
+    {
+        new ProtocolLayer { ProtocolName = "ip",   Offset = 14, ParentPacket = g45Owner },
+        new ProtocolLayer { ProtocolName = "gtp",  Offset = 34, ParentPacket = g45Owner },
+        new ProtocolLayer { ProtocolName = "ip",   Offset = 42, ParentPacket = g45Owner },
+    };
+    Report("NG-00 a healthy tunnelled layer list passes the predicate",
+        LayersAreDistinct(g45Healthy, g45Owner),
+        string.Join(",", g45Healthy.Select(l => $"{l.ProtocolName}@{l.Offset}")));
+
+    var g45Collapsed = new List<ProtocolLayer>
+    {
+        new ProtocolLayer { ProtocolName = "ip",  Offset = 14, ParentPacket = g45Owner },
+        new ProtocolLayer { ProtocolName = "gtp", Offset = 34, ParentPacket = g45Owner },
+        new ProtocolLayer { ProtocolName = "ip",  Offset = 14, ParentPacket = g45Owner },
+    };
+    Report("NG-01 the predicate rejects a collapsed duplicate offset",
+        !LayersAreDistinct(g45Collapsed, g45Owner),
+        "both ip layers share offset 14");
+
+    var g45Orphan = new List<ProtocolLayer>
+    {
+        new ProtocolLayer { ProtocolName = "ip",  Offset = 14, ParentPacket = g45Owner },
+        new ProtocolLayer { ProtocolName = "gtp", Offset = 34, ParentPacket = null },
+    };
+    Report("NG-02 the predicate rejects a layer with no owning packet",
+        !LayersAreDistinct(g45Orphan, g45Owner),
+        "gtp layer has ParentPacket=null");
+}
+catch (Exception ex)
+{
+    Report("G45 group execution", false, ex.ToString());
+}
+
+static bool TryPinForTest(Socket sock, string device)
+{
+    try
+    {
+        byte[] name = System.Text.Encoding.ASCII.GetBytes(device + "\0");
+        return SetsockoptBytesForTest((int)sock.Handle, 1, 25, name, name.Length) == 0;
+    }
+    catch { return false; }
+}
+
+[DllImport("libc", EntryPoint = "setsockopt", SetLastError = true)]
+static extern int SetsockoptBytesForTest(int fd, int level, int name, byte[] value, int len);
+
 // ── G12–G32 helpers (hoisted local functions) ──
+// Frame 4413 carries PFCP so the fence, VBC and address-extraction groups walk a
+// dissection-rich tree with editable leaves rather than an empty payload. The
+// fillers are ordinary UDP so the file is not 4413 copies of the same IE layout,
+// which would let a repeated-container defect hide.
+static byte[] BuildGeneratedCaptureFixture()
+{
+    var frames = new byte[RequiredCaptureFrames][];
+    byte[] filler = FixtureEth(FixtureIpv4(FixtureUdp(5000, 5001, new byte[] { 0x01, 0x02, 0x03, 0x04 })));
+    for (int i = 0; i < RequiredCaptureFrames - 1; i++)
+        frames[i] = filler;
+    frames[RequiredCaptureFrames - 1] = BuildSyntheticPfcpAssociationResponse();
+    return BuildFixturePcap(frames);
+}
+
 static byte[] BuildFixturePcap(params byte[][] frames)
 {
     using var ms = new MemoryStream();
@@ -3211,7 +4621,19 @@ string footer = failures == 0
     : $"{failures} assertion(s) failed{skipNote}";
 reportLines.Add(footer);
 Console.WriteLine($"\n{footer}");
+
+if (failures == 0 && (onlyGroup.HasValue || titleFilter is not null) && printedPasses == 0)
+{
+    string filterNote = "note: the active filter printed no PASS lines — this run proves nothing beyond the footer.";
+    reportLines.Add(filterNote);
+    Console.WriteLine(filterNote);
+}
 await File.WriteAllLinesAsync(Path.Combine(AppContext.BaseDirectory, "report.txt"), reportLines);
+
+if (generatedCapture is not null)
+{
+    try { File.Delete(generatedCapture); } catch (IOException) { }
+}
 // Opt-in strictness: a run that skipped anything is not a full-coverage run.
 // Default stays lenient so an ordinary clone without fixtures still reports usefully.
 bool strict = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("PF_STRICT_CAPTURE"))

@@ -57,7 +57,7 @@
 |---|---|---|---|---|
 | **T-01** | A | dotnet SDK ≥ 8.0 | 仓库根目录执行 `dotnet build` | 0 错误 0 警告（QA 门禁） |
 | **T-02** | A | tshark ≥ 3.6.2 可用 + pcap/ 样本齐全 | `dotnet run --project tests/pf-verify` | 控制台输出 `ALL GROUPS PASS`，退出码 0 |
-| **T-03** | A | T-02 通过 | 检查 bin 输出目录 | 生成 `report.txt`，含全部断言行 + `ALL GROUPS PASS` footer（2026-09-30 实测：本地无 `pcap/` 样本时 230 PASS / 0 FAIL / 6 SKIP = 236 行，exit 0；装齐样本后 6 个组一并执行、断言数更多。组号 G9/G10 已删除、G21 独立块并入别组，编号不连续属预期） |
+| **T-03** | A | T-02 通过 | 检查 bin 输出目录 | 生成 `report.txt`，含全部断言行 + `ALL GROUPS PASS` footer（2026-09-30 实测 230 PASS / 0 FAIL / 6 SKIP；**现状：`PF_CAPTURE` 未设置时 harness 会自行生成 4413 帧合成抓包，实测 378 PASS / 0 FAIL / 1 SKIP，exit 0**，唯一跳过为 `G17-13`（需 ≥18 万包的本地 pcapng）。组号 G9/G10 已删除、G21 独立块并入别组，编号不连续属预期） |
 | **T-04** | C | 任一平台 | 检查 `ProtocolForge.sln` | 仅含主项目；`tests/pf-verify` 不在 sln 中（须独立 `dotnet run`） |
 
 ---
@@ -438,6 +438,7 @@
 |---|---|---|
 | 构建 | `dotnet build` | **Build succeeded. 0 Warning(s) / 0 Error(s)** |
 | 验证基座 | `dotnet run --project tests/pf-verify` | **ALL GROUPS PASS**（287 PASS / 0 FAIL / 0 SKIP，exit 0；tshark 3.6.2，无组跳过） |
+| 枚举/过滤器/统计/CLI/PCAPNG 补齐后复跑 | `dotnet build` (Debug+Release `-warnaserror`) + `dotnet run --project tests/pf-verify` | **Build succeeded. 0 Warning(s) / 0 Error(s)**（Debug 与 Release 均 0/0）+ **ALL GROUPS PASS**（**325 PASS / 0 FAIL / 1 SKIP**，exit 0；tshark 4.2.2、dotnet 8.0.424）。新增 GROUP 39（DF/EN）、40（TP 统计 tap）、41（NG PCAPNG 往返）、42（LC 可变长度与复合编辑）、43（UH 撤销重做）、44（FS 跟踪 TCP 流）、45（重复层断言非空洞）、46（FE 无字节跨字段围栏可达性）、47（RV 重组流字节）、48（EP 出口网卡绑定）、49（VL VLAN 插入/替换/剥离）、50（MN 多网卡扇出）、51（VW VLAN 生效性告警与非原地改写）、52（SI 流索引失效语义）、53（IF 多接口检测与日志分流）；另有独立 `--ui` 模式跑 GROUP 54（HG 无头渲染，9 断言，单独进程/单独 CI 步骤）；`G14-05` 由恒真断言改为真断言。修复 VBC 越界抛异常、CLI 丢帧、tap 忽略 `-Y`、PCAPNG `section_length` 位宽、Follow Stream 下拉框未接 hook、重组面板与统计面板同格重叠、`--help` 启动 GUI、无字节跨字段被围栏提前挡下 7 个真实缺陷。MN 组以「每报文每目标恰好一次发送尝试」为断言口径（1 目标→1 次，2 目标→2 次），因此扇出宽度可被证伪而非仅断言非空 |
 | 离线授权模块删除后复跑（2026-09-30） | `dotnet build` + `dotnet run --project tests/pf-verify` | **Build succeeded. 0 Warning(s) / 0 Error(s)** + **ALL GROUPS PASS**（230 PASS / 0 FAIL / 6 SKIP，exit 0；本地无 `pcap/` 样本，6 个 capture 相关组跳过；dotnet 8.0.421、tshark 3.6.2） |
 
 **环境**：Linux 容器（root）、dotnet 8.0.424、tshark 4.2.2、pcap/ 四样本齐全。（此为 2026-09-29 那次复跑的环境；2026-09-30 复跑环境见上表最后一行。）

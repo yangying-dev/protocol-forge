@@ -104,8 +104,8 @@ ProtocolForge/
 ├── ProtocolForge.csproj       # .NET 8, Avalonia 12.0.5, CommunityToolkit.Mvvm 8.4.2, DataGrid 12.0.1
 │
 ├── Assets/Lang/               # 本地化字典 — en-US.json + zh-CN.json（作为嵌入资源）
-│   ├── en-US.json            # 英文界面字符串（148 个键）
-│   └── zh-CN.json            # 简体中文界面字符串（148 个键，键集一致）
+│   ├── en-US.json            # 英文界面字符串（202 个键）
+│   └── zh-CN.json            # 简体中文界面字符串（198 个键，键集一致）
 │
 ├── Models/                    # 领域对象
 │   ├── Packet.cs              # 单个报文：原始数据、修改、地址/端口、协议层

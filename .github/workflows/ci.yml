@@ -70,6 +70,11 @@ jobs:
       - name: Verification harness
         run: dotnet run --project tests/pf-verify/PfVerify.csproj -c Release --no-build
 
+      # Separate process on purpose: the headless render initialises Avalonia and Skia,
+      # which crashes a process that then goes on to run the tshark-backed groups.
+      - name: Headless UI render
+        run: dotnet run --project tests/pf-verify/PfVerify.csproj -c Release --no-build -- --ui
+
       - name: Install Linux packaging tools
         run: |
           sudo apt-get update

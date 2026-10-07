@@ -55,6 +55,12 @@ so no real operator capture is involved and reproducing them does not require co
   3. **UDP socket** — transport-layer fallback (no privileges required)
   Sending is driven by a configurable **interval (ms)** and **loop count**. An **Auto-fix** toggle repairs IPv4/IPv6 and TCP/UDP checksums before injection, and rewrites the source address to the selected interface's own.
 - **Toolbar UI** — Start/Pause/Stop send controls with a network adapter dropdown, send interval and loop count inputs, an Auto-fix toggle, live sent/failed counters, and a status bar.
+- **Display Filter** — A tshark display filter applied to the packet list. The filter is evaluated by tshark at load time, so the grid only ever holds matching packets and every row keeps the frame number its bytes came from. Reachable from the View menu and the panel header; Enter in the box applies it.
+- **Find** — Search the packet list columns and the selected packet's protocol tree, forward or backward. A tree hit expands and reveals the matching node rather than rebuilding the tree.
+- **Statistics Panel** — Runs `conv,*`, `endpoints,ip`, `io,phs` (protocol hierarchy), `io,stat` and `expert` taps, honouring the display filter where the tap accepts one. Toggle from the View menu. tshark pads its own output for humans, so it is shown verbatim instead of being re-laid-out.
+- **PCAPNG Write-Back** — A capture opened as `.pcapng` is saved as PCAPNG, keeping the interface description, snaplen and timestamp resolution. Previously any `.pcapng` was silently rewritten as little-endian/microsecond classic PCAP on save, dropping every interface description and block comment. Export-as follows the extension you choose.
+- **Headless CLI** — `validate`, `edit`, `send` and `stats` run without a GUI, for CI and batch use. Edits go through the same Verify-Before-Commit transaction as the GUI. Exit codes 0/1/2. See [`docs/pfcheck-cli.md`](docs/pfcheck-cli.md).
+- **Send History** — Per-packet send results are retained for the run instead of only the most recent one being visible, and can be exported as CSV from the packet-list context menu.
 - **Layout Persistence** — Window geometry, splitter positions, and panel visibility are saved to `%APPDATA%/ProtocolForge/layout.json` and restored on next launch.
 
 ---
@@ -100,8 +106,8 @@ ProtocolForge/
 ├── ProtocolForge.csproj       # .NET 8, Avalonia 12.0.5, CommunityToolkit.Mvvm 8.4.2, DataGrid 12.0.1
 │
 ├── Assets/Lang/               # Localization dictionaries — en-US.json + zh-CN.json (embedded as resources)
-│   ├── en-US.json            # English UI strings (148 keys)
-│   └── zh-CN.json            # 简体中文 UI strings (148 keys, identical key set)
+│   ├── en-US.json            # English UI strings (203 keys)
+│   └── zh-CN.json            # 简体中文 UI strings (203 keys, identical key set)
 │
 ├── Models/                    # Domain objects
 │   ├── Packet.cs              # Single packet: raw data, modifications, address/port, layers
@@ -156,7 +162,7 @@ ProtocolForge/
 
 A standalone verification harness lives in `tests/pf-verify/` (an independent console
 project referencing `ProtocolForge`). It exercises the runtime service layer against the
-sample capture (supply one with `PF_CAPTURE`; capture-dependent groups are skipped when absent) — edit-fence verdicts on a fixed frame, Verify-Before-Commit
+sample capture (point `PF_CAPTURE` at one to use your own traffic; when it is unset the harness generates a synthetic 4413-frame capture into the temp directory and deletes it after, so only `G17-13` skips) — edit-fence verdicts on a fixed frame, Verify-Before-Commit
 legal/illegal scenarios (commit, offset-drift abort, length-change rejection, byte-identity
 guarantees), the tshark version gate (real env + fake old/current binaries via `TSHARK_PATH`),
 read-only loading, hex-edit code-surface checks, and localization dictionary checks (GROUP 11). Run with

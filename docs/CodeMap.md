@@ -665,7 +665,7 @@ Rungs 1-3（foreach socket，label=AF_PACKET/UDP/IP raw）:
 
 | 项 | 事实（以代码为准） |
 |---|---|
-| tshark 版本门槛 | **2.6.0**（TsharkService.cs:373 `VersionCompare(version, "2.6.0") < 0`）。全仓无 4.0 门禁；`tests/pf-verify/Program.cs:169` 仅有一处文本提及 4.0（注释，非门禁）。 |
+| tshark 版本门槛 | **2.6.0**（TsharkService.cs:373 `VersionCompare(version, "2.6.0") < 0`）。全仓无 4.0 门禁；`tests/pf-verify/Program.cs` 中仅 G2b 断言的 detail 字符串提及 4.0（非门禁）。 |
 | `OpenPcapCommand` / `ExportPcapCommand` | 空实现 + 从未绑定。真实打开/另存路径是代码后置对话框（MainWindow.axaml.cs）→ `LoadFileAsync` / `ExportToFileAsync`。 |
 | `ApplyFieldEdit` / `ApplyHexStringEdit` | 旧路径，未调用。活路径：树 = `ConvertRawValue` + `EditTransactionService`；hex = `ApplyModification` 直写。 |
 | 窗口标题脏指示 | 标题**静态**；脏显示在状态栏 `Modified: N`；关闭警告仅 `Debug.WriteLine`，**无对话框**。 |

@@ -29,7 +29,11 @@ protocol-forge/
 | Packet injection rung ladder | `ProtocolForge/Services/PacketSendService.cs` | Npcap/BPF/AF_PACKET/IP/UDP fallback |
 | Manual DI composition | `ProtocolForge/App.axaml.cs` | All services constructed here in order |
 | Cross-panel orchestration | `ProtocolForge/ViewModels/MainWindowViewModel.cs` | Event wiring, read-only propagation |
-| Verification harness | `tests/pf-verify/Program.cs` | Run: `dotnet run --project tests/pf-verify` |
+| Verification harness | `tests/pf-verify/Program.cs` | Run: `dotnet run --project tests/pf-verify`. Generates its own 4413-frame fixture when `PF_CAPTURE` is unset |
+| Headless CLI | `ProtocolForge/Cli/HeadlessCli.cs` | `validate`/`edit`/`send`/`stats`; branched from `Program.Main` before Avalonia starts. Exit 0/1/2 |
+| Statistics taps | `ProtocolForge/Services/TsharkService.cs` → `RunStatisticsTapAsync` | tshark `-z`. Taps ignore `-Y`; the filter goes in the tap argument |
+| PCAPNG writing | `ProtocolForge/Services/PcapngWriter.cs` | SHB/IDB/EPB, single section. `PacketExportOptions.Pcapng` selects it |
+| Enum interpretations | `ProtocolForge/Services/EnumCatalog.cs` | Session-scoped, harvested from PDML during dissection. Not a spec table |
 | Marker types | `ProtocolForge/Models/TsharkJsonModels.cs` | "legacy" — most parsing is manual |
 
 ## CONVENTIONS
@@ -53,18 +57,19 @@ protocol-forge/
 
 ## UNIQUE STYLES
 
-- Commit messages are in Chinese, `file(s) +Δlines` summary format (e.g. `TsharkService.cs +187:版本检测/门禁…`).
+- Commit messages are in **English**, `file(s) +Δlines: summary` format (e.g. `TsharkService.cs +187:version detection/gate…`). The `Δlines` subject style was inherited from the pre-open-source fork (whose history is Chinese); this repo's history is English from the squash forward.
 - README is fully bilingual (README.md EN, README.zh-CN.md ZH).
-- tshark version gate minimum is **2.6.0** everywhere — code (`TsharkService.VersionCompare`, `TsharkService.cs:373`) and README agree; there is no 4.0 gate anywhere in the app. The only textual "4.0" left in the repo is a comment in `tests/pf-verify/Program.cs:169` (not a gate).
+- tshark version gate minimum is **2.6.0** everywhere — code (`TsharkService.VersionCompare`, `TsharkService.cs:373`) and README agree; there is no 4.0 gate anywhere in the app. The only textual "4.0" left in the code is the G2b assertion's detail string in `tests/pf-verify/Program.cs` (not a gate).
 - Packet send failures / status text mixed Chinese/English in UI.
 
 ## COMMANDS
 
 ```bash
-dotnet build                              # Build solution (does NOT build tests/pf-verify)
+dotnet build                              # Build solution (compiles tests/pf-verify too; does not run it)
 dotnet run --project ProtocolForge        # Run app
 dotnet run --project ProtocolForge -- path/to/capture.pcap   # Open file on launch
 dotnet run --project tests/pf-verify      # Verify harness (needs tshark ≥3.6.2; PF_CAPTURE=<file.pcap> enables capture-dependent groups)
+dotnet run --project tests/pf-verify -- --only 54   # Print only GROUP 54 (--group <title-text> matches banner titles)
 ./packaging/linux/publish-linux.sh        # Multi-file Linux AppImage + deb (requires appimagetool)
 ./packaging/windows/publish-windows.ps1   # Multi-file Windows x64 ZIP (PowerShell)
 ```
@@ -77,9 +82,9 @@ dotnet run --project tests/pf-verify      # Verify harness (needs tshark ≥3.6.
 - **Free tier** — everything currently shipped is free and unlimited; the daily send cap was removed on 2026-09-29. `Packet.SendSelected` defaults to false.
 - **trace.log** is written under `LocalApplicationData/ProtocolForge/logs/` (`%LOCALAPPDATA%/ProtocolForge/logs/trace.log` on Windows, `~/.local/share/ProtocolForge/logs/trace.log` on Linux, `~/Library/Application Support/ProtocolForge/logs/trace.log` on macOS) via a `TextWriterTraceListener`; settings remain under ApplicationData.
 - Capture files can exceed 180k packets; list loading is streamed (`-T fields` line-by-line) and protocol trees build per-packet on demand (~0.4s/packet) — never design for full-file tree parsing.
-- **Real captures are local-only and never committed** — `.gitignore` ignores `*.pcap`/`*.pcapng` and CI rejects new or modified ones. Exercise capture-dependent code paths with `PF_CAPTURE=<path>`; a capture-less run reports those groups as `SKIP` and still exits 0.
-- **`tests/pf-verify` is NOT in the solution** — `dotnet build` skips it; run it explicitly (`dotnet run --project tests/pf-verify`), and `ProtocolForge.sln` only contains the app project.
+- **Real captures are local-only and never committed** — `.gitignore` ignores `*.pcap`/`*.pcapng` and CI rejects new or modified ones. When `PF_CAPTURE` is unset the harness **generates** a 4413-frame synthetic capture into the temp directory and deletes it after, so the capture-dependent groups run in CI; a bare run reports 378 PASS / 0 FAIL / 1 SKIP, the one skip being `G17-13` (needs the ≥180k-packet pcapng that cannot be synthesised). Point `PF_CAPTURE` at a capture **smaller than 4413 frames** and `G1`/`G16`/`G19` fail rather than skip.
+- **`tests/pf-verify` is in the solution** — `dotnet build` compiles it (harness compile errors surface in the default build) but does not run it; run it explicitly (`dotnet run --project tests/pf-verify`). Its output can be filtered with `--only <group#>` / `--group <title-text>`; filtering is **output-only** — every group still executes and FAIL lines always print, so a filtered run can never look green. New group banners and detail lines must go through the harness's `Banner(n, title)` / `Detail(text)` helpers, otherwise they leak through the filter. `LocalizationService.SetCurrent` re-publishes even when the language is unchanged (the Avalonia `Application` can appear after the first call), so group order cannot leave XAML resources empty.
 - **QA gate (docs/RealDeviceQA.md)**: `dotnet build` must be 0 warnings / 0 errors, and `tests/pf-verify` must print "ALL GROUPS PASS" (it may append a `(N group(s) skipped — no capture fixture)` note when `PF_CAPTURE` is unset).
 - **`.gitignore` and `.editorconfig` both exist** — `.gitignore` covers `bin/ obj/ artifacts/ release/`, IDE/OS files, `.env*`, `*.log`, agent working state (`.omo/ .gstack/ .workflow/`), and `*.pcap`/`*.pcapng` (real captures are local-only and CI rejects them). `.editorconfig` mirrors `.gitattributes` exactly (LF for `*.sh`/`*.yml`/`*.yaml`, CRLF for `*.cs`/`*.axaml`/etc., with deliberately no global `[*] end_of_line` rule). There is still no analyzer or lint config, so style is otherwise matched by hand (4-space indent, file-scoped namespaces, Chinese comments).
-- **Localization dictionaries hold 148 keys each** (`Assets/Lang/en-US.json` + `zh-CN.json`, identical key sets).
-- **CI** — `.github/workflows/ci.yml` builds with warnings-as-errors, runs the `pf-verify` harness, and rejects added or modified `.pcap`/`.pcapng`. `pf-verify` is a hand-rolled assertion console app (not xUnit/NUnit) and is not referenced by the solution, so `dotnet build` alone does not run it.
+- **Localization dictionaries hold 203 keys each** (`Assets/Lang/en-US.json` + `zh-CN.json`, identical key sets).
+- **CI** — `.github/workflows/ci.yml` builds with warnings-as-errors, runs the `pf-verify` harness, and rejects added or modified `.pcap`/`.pcapng`. `pf-verify` is a hand-rolled assertion console app (not xUnit/NUnit); it is part of the solution, so `dotnet build` compiles it, but `dotnet build` alone does not run it.

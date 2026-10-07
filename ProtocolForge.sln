@@ -5,6 +5,8 @@ VisualStudioVersion = 17.14.36705.20 d17.14
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProtocolForge", "ProtocolForge\ProtocolForge.csproj", "{FC146D47-3730-4D2E-9411-E60392C16E4F}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "pf-verify", "tests\pf-verify\PfVerify.csproj", "{6E45C4C5-16F9-464A-B7DA-84899431229E}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -15,6 +17,10 @@ Global
 		{FC146D47-3730-4D2E-9411-E60392C16E4F}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{FC146D47-3730-4D2E-9411-E60392C16E4F}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{FC146D47-3730-4D2E-9411-E60392C16E4F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6E45C4C5-16F9-464A-B7DA-84899431229E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6E45C4C5-16F9-464A-B7DA-84899431229E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6E45C4C5-16F9-464A-B7DA-84899431229E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6E45C4C5-16F9-464A-B7DA-84899431229E}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
