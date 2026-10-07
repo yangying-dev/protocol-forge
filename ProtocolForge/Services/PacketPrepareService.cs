@@ -112,13 +112,117 @@ public static class PacketPrepareService
     /// </summary>
     public static int FindIpOffset(byte[] frame)
     {
-        if (frame.Length >= 14 && frame[12] == 0x08 && frame[13] == 0x00)
-            return 14;
-        if (frame.Length >= 14 && frame[12] == 0x86 && frame[13] == 0xDD)
-            return 14;
+        int offset = FindIpOffsetSkippingVlan(frame);
+        if (offset >= 0)
+            return offset;
         int version = frame[0] >> 4;
         return version is 4 or 6 ? 0 : -1;
     }
+
+    private const ushort EtherTypeIpv4 = 0x0800;
+    private const ushort EtherTypeIpv6 = 0x86DD;
+    private const ushort EtherTypeVlan = 0x8100;
+    private const ushort EtherTypeQinQ = 0x88A8;
+    private const ushort EtherTypeVlan9100 = 0x9100;
+
+    /// <summary>
+    /// Offset of the IP header when the frame carries an Ethernet-II header, stepping
+    /// over any stack of 802.1Q/802.1ad tags. Returns -1 when the frame is a bare
+    /// datagram or the ethertype chain does not end in IPv4/IPv6.
+    /// </summary>
+    private static int FindIpOffsetSkippingVlan(byte[] frame)
+    {
+        int offset = 12;
+        // Two bytes are enough to read the ethertype; requiring four would skip a
+        // minimal 14-byte Ethernet-II header with no payload at all.
+        while (offset + 2 <= frame.Length)
+        {
+            ushort type = (ushort)((frame[offset] << 8) | frame[offset + 1]);
+            offset += 2;
+            if (type is EtherTypeVlan or EtherTypeQinQ or EtherTypeVlan9100)
+            {
+                offset += 2; // TCI: PCP/DEI/VID
+                continue;
+            }
+            return type is EtherTypeIpv4 or EtherTypeIpv6 ? offset : -1;
+        }
+        return -1;
+    }
+
+    /// <summary>
+    /// Inserts an 802.1Q tag (or replaces the outermost existing one). Single-tagged
+    /// frames gain 4 bytes; QinQ stacks keep their inner tags. A frame too short to hold
+    /// an Ethernet-II header is returned untouched rather than half-patched.
+    /// </summary>
+    public static byte[] ApplyVlanTag(byte[] frame, ushort vid, ushort pcp = 0)
+    {
+        const int etherHeader = 14;
+        if (frame.Length < etherHeader || (vid & 0x0FFF) != vid)
+            return frame;
+
+        if (HasVlanTag(frame))
+        {
+            // Same length, same offsets, so only the TCI changes. This still copies:
+            // callers hand in a live packet buffer (EffectiveData), and rewriting a
+            // packet's VID as a side effect of *sending* it would corrupt the capture.
+            var retagged = (byte[])frame.Clone();
+            ushort tci = (ushort)((pcp << 13) | vid);
+            retagged[14] = (byte)(tci >> 8);
+            retagged[15] = (byte)tci;
+            return retagged;
+        }
+
+        var tagged = new byte[frame.Length + 4];
+        Array.Copy(frame, 0, tagged, 0, 12);              // destination + source MAC
+        tagged[12] = unchecked((byte)(EtherTypeVlan >> 8));   // TPID
+        tagged[13] = unchecked((byte)EtherTypeVlan);
+        ushort tciOut = (ushort)((pcp << 13) | vid);
+        tagged[14] = (byte)(tciOut >> 8);                  // TCI
+        tagged[15] = (byte)tciOut;
+        tagged[16] = frame[12];                            // inner ethertype
+        tagged[17] = frame[13];
+        Array.Copy(frame, etherHeader, tagged, etherHeader + 4, frame.Length - etherHeader);
+        return tagged;
+    }
+
+    /// <summary>True when the frame carries an 802.1Q or 802.1ad tag.</summary>
+    public static bool HasVlanTag(byte[] frame) =>
+        frame.Length >= 18 && ReadEtherType(frame, 12) is EtherTypeVlan or EtherTypeQinQ;
+
+    /// <summary>
+    /// True when the frame has an Ethernet-II header a tag could be added to. A length
+    /// check is not enough: a bare IP datagram is comfortably longer than 14 bytes, so
+    /// this asks whether the ethertype chain actually resolves to IPv4/IPv6.
+    /// <see cref="FindIpOffset"/> returns 0 for a bare datagram and a positive offset only
+    /// when a real Ethernet-II header is present.
+    /// </summary>
+    public static bool HasEthernetHeader(byte[] frame) => FindIpOffset(frame) > 0;
+
+    /// <summary>The VID of the outermost tag, or -1 when the frame has none.</summary>
+    public static int GetVlanId(byte[] frame) =>
+        HasVlanTag(frame) ? ReadEtherType(frame, 14) & 0x0FFF : -1;
+
+    /// <summary>
+    /// Removes the outermost 802.1Q tag, shifting the payload back 4 bytes. A frame
+    /// with no tag, or one that would be left too short to hold an Ethernet-II header,
+    /// is returned untouched.
+    /// </summary>
+    public static byte[] StripVlanTag(byte[] frame)
+    {
+        const int etherHeader = 14;
+        if (frame.Length < etherHeader + 4)
+            return frame;
+        if (ReadEtherType(frame, 12) is not (EtherTypeVlan or EtherTypeQinQ))
+            return frame;
+
+        var stripped = new byte[frame.Length - 4];
+        Array.Copy(frame, 0, stripped, 0, 12);
+        Array.Copy(frame, etherHeader + 2, stripped, 12, frame.Length - etherHeader - 2);
+        return stripped;
+    }
+
+    private static ushort ReadEtherType(byte[] frame, int offset) =>
+        (ushort)((frame[offset] << 8) | frame[offset + 1]);
 
     /// <summary>Internet checksum (RFC 1071) over a byte range.</summary>
     private static ushort InternetChecksum(byte[] data, int offset, int length)
