@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
@@ -81,6 +82,68 @@ public partial class MainWindow : Window
         if (vm?.PacketList.SelectedPacket is not { } packet)
             return;
         await vm.ToolBar.SendPacketsAsync(new[] { packet });
+    }
+
+    private async void OnStatisticsTapChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (ViewModel is not null && ViewModel.SelectedStatisticsTap is not null)
+            await ViewModel.LoadStatisticsCommand.ExecuteAsync(null);
+    }
+
+    private async void OnRefreshStatisticsClick(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not null)
+            await ViewModel.LoadStatisticsCommand.ExecuteAsync(null);
+    }
+
+    private void OnFindKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (ViewModel is null)
+            return;
+        if (e.Key == Key.Enter)
+        {
+            e.Handled = true;
+            ViewModel.FindNext();
+        }
+        else if (e.Key == Key.Escape)
+        {
+            e.Handled = true;
+            ViewModel.FindText = string.Empty;
+        }
+    }
+
+    private void OnFocusFindBox(object? sender, RoutedEventArgs e) => FindBox.Focus();
+
+    private async void OnFilterKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter)
+            return;
+        e.Handled = true;
+        if (ViewModel is not null)
+            await ViewModel.ApplyFilterCommand.ExecuteAsync(null);
+    }
+
+    private async void OnExportSendHistoryClick(object? sender, RoutedEventArgs e)
+    {
+        var vm = ViewModel;
+        if (vm is null || vm.ToolBar.SendHistory.Count == 0)
+            return;
+
+        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            SuggestedFileName = "send-history.csv",
+            DefaultExtension = "csv",
+            FileTypeChoices = [new FilePickerFileType("CSV") { Patterns = ["*.csv"] }],
+        });
+        if (file is null)
+            return;
+
+        vm.ToolBar.ExportSendHistory(file.Path.LocalPath);
+    }
+
+    private void OnClearSendHistoryClick(object? sender, RoutedEventArgs e)
+    {
+        ViewModel?.ToolBar.ClearSendHistory();
     }
 
     private enum UnsavedCloseAction
@@ -532,9 +595,15 @@ public partial class MainWindow : Window
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = LocalizationService.Resolve("Dlg.ExportPcap"),
-            DefaultExtension = "pcap",
+            // PCAPNG is offered because export-as follows the chosen extension; without
+            // it the writer this build ships would be unreachable from the UI.
+            DefaultExtension = "pcapng",
             FileTypeChoices =
             [
+                new FilePickerFileType(LocalizationService.Resolve("Dlg.PcapNgFile"))
+                {
+                    Patterns = ["*.pcapng"],
+                },
                 new FilePickerFileType(LocalizationService.Resolve("Dlg.PcapFile"))
                 {
                     Patterns = ["*.pcap"],

@@ -87,6 +87,7 @@ public sealed class TsharkService
         PacketDocument document,
         string filePath,
         IProgress<double>? progress = null,
+        string? displayFilter = null,
         CancellationToken ct = default)
     {
         if (!File.Exists(filePath))
@@ -101,6 +102,10 @@ public sealed class TsharkService
         document.PacketCount = rawResult.Packets.Count;
         document.LinkLayerType = rawResult.LinkLayerType;
         document.Snaplen = rawResult.Snaplen;
+        document.IsPcapNg = rawResult.IsPcapNg;
+        document.SourceBigEndian = !rawResult.IsLittleEndian;
+        document.SourceNanoseconds = rawResult.IsNanoSeconds;
+        document.InterfaceCount = rawResult.InterfaceCount;
 
         // Phase 2: single streamed "-T fields" pass producing the Wireshark
         // column texts per packet. Source/Destination come from _ws.col.* which
@@ -136,6 +141,14 @@ public sealed class TsharkService
         };
         psi.ArgumentList.Add("-r");
         psi.ArgumentList.Add(filePath);
+        // A display filter is applied by tshark, not by post-filtering the rows, so
+        // the grid never holds packets the user excluded. Rows keep their original
+        // frame.number, which is what maps them back to the raw ingest array below.
+        if (!string.IsNullOrWhiteSpace(displayFilter))
+        {
+            psi.ArgumentList.Add("-Y");
+            psi.ArgumentList.Add(displayFilter);
+        }
         psi.ArgumentList.Add("-T");
         psi.ArgumentList.Add("fields");
         psi.ArgumentList.Add("-E");
@@ -421,6 +434,7 @@ public sealed class TsharkService
         document.PacketCount = rawResult.Packets.Count;
         document.LinkLayerType = rawResult.LinkLayerType;
         document.Snaplen = rawResult.Snaplen;
+        document.InterfaceCount = rawResult.InterfaceCount;
 
         int idx = 0;
         foreach (var (timestamp, rawData) in rawResult.Packets)
@@ -680,6 +694,171 @@ public sealed class TsharkService
         return output;
     }
 
+    /// <summary>
+    /// Runs a tshark statistics tap (<c>-z tap[,filter]</c>) and returns its output
+    /// lines, verbatim apart from the banner and separator rules.
+    ///
+    /// The lines are not re-parsed into a table on purpose. tshark lays each tap out
+    /// differently — conv/endpoints use a two-row pipe-delimited header, io,phs is an
+    /// indented tree, expert is tab-separated — so any column model here would be
+    /// wrong for most of them. tshark already pads its own output for humans.
+    ///
+    /// The filter is appended to the tap argument rather than passed as <c>-Y</c>:
+    /// a statistics tap ignores the display filter and reports "Filter:&lt;No
+    /// Filter&gt;" instead, because <c>-Y</c> post-filters the tap's output rather
+    /// than its input. Only the filter-taking taps accept it; the rest report over the
+    /// whole file.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> RunStatisticsTapAsync(
+        string filePath,
+        string tap,
+        string? displayFilter = null,
+        CancellationToken ct = default)
+    {
+        if (!File.Exists(filePath))
+            throw new FileNotFoundException("PCAP file not found", filePath);
+
+        EnsureTsharkAvailable();
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = _tsharkPath!,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
+        };
+        psi.ArgumentList.Add("-r");
+        psi.ArgumentList.Add(filePath);
+        psi.ArgumentList.Add("-q");
+        psi.ArgumentList.Add("-z");
+        psi.ArgumentList.Add(FilterTakingTap(tap, displayFilter));
+
+        using var process = new Process { StartInfo = psi };
+        process.Start();
+
+        var lines = new List<string>();
+        string? line;
+        while ((line = await process.StandardOutput.ReadLineAsync(ct)) != null)
+        {
+            if (line.StartsWith("Wireshark ", StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (line.StartsWith("====", StringComparison.Ordinal))
+                continue;
+            lines.Add(line);
+        }
+
+        await process.WaitForExitAsync(ct);
+        if (process.ExitCode != 0)
+        {
+            string err = (await process.StandardError.ReadToEndAsync(ct)).Trim();
+            TraceLog.Write($"Tap {tap} failed: exit={process.ExitCode} stderr={err}");
+            return [];
+        }
+
+        while (lines.Count > 0 && lines[^1].Trim().Length == 0)
+            lines.RemoveAt(lines.Count - 1);
+        return lines;
+    }
+
+    /// <summary>
+    /// Appends the filter to the taps that accept one. io,stat is time-bucketed and
+    /// io,phs is a hierarchy summary; neither takes a filter argument, and passing one
+    /// makes tshark reject the whole tap.
+    /// </summary>
+    private static string FilterTakingTap(string tap, string? displayFilter)
+    {
+        if (string.IsNullOrWhiteSpace(displayFilter))
+            return tap;
+
+        string head = tap.Split(',')[0];
+        bool takesFilter = head is "conv" or "endpoints" or "tree" or "frame";
+        return takesFilter ? tap + "," + displayFilter : tap;
+    }
+
+    /// <summary>
+    /// Returns the reassembled payload of a TCP or UDP stream as raw bytes.
+    ///
+    /// tshark hides <c>tcp.reassembled.data</c> from field output, so the stream is
+    /// read through the follow tap instead, which is the one path that emits the
+    /// reassembled octets. It wraps at a fixed width, so the hex lines are joined
+    /// before decoding.
+    ///
+    /// This is read-only: reassembled bytes span more than the selected frame, so they
+    /// have no offset in the packet and cannot be edited here.
+    /// </summary>
+    public async Task<byte[]?> GetReassembledStreamAsync(
+        string filePath,
+        string protocol,
+        string streamId,
+        string? displayFilter = null,
+        CancellationToken ct = default)
+    {
+        if (!File.Exists(filePath))
+            throw new FileNotFoundException("PCAP file not found", filePath);
+        if (protocol is not ("tcp" or "udp"))
+            throw new ArgumentException($"Cannot follow {protocol}.", nameof(protocol));
+
+        EnsureTsharkAvailable();
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = _tsharkPath!,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
+        };
+        psi.ArgumentList.Add("-r");
+        psi.ArgumentList.Add(filePath);
+        if (!string.IsNullOrWhiteSpace(displayFilter))
+        {
+            psi.ArgumentList.Add("-Y");
+            psi.ArgumentList.Add(displayFilter);
+        }
+        psi.ArgumentList.Add("-q");
+        psi.ArgumentList.Add("-z");
+        psi.ArgumentList.Add($"follow,{protocol},raw,{streamId}");
+
+        using var process = new Process { StartInfo = psi };
+        process.Start();
+
+        var hex = new StringBuilder();
+        string? line;
+        while ((line = await process.StandardOutput.ReadLineAsync(ct)) != null)
+        {
+            string trimmed = line.Trim();
+            // Skip the banner, the follow header and the two node lines; everything
+            // after them is payload, wrapped at a fixed column.
+            if (trimmed.Length == 0 || trimmed.StartsWith('=') ||
+                trimmed.StartsWith("Follow:", StringComparison.Ordinal) ||
+                trimmed.StartsWith("Filter:", StringComparison.Ordinal) ||
+                trimmed.StartsWith("Node ", StringComparison.Ordinal))
+            {
+                continue;
+            }
+            hex.Append(trimmed);
+        }
+
+        await process.WaitForExitAsync(ct);
+        if (hex.Length == 0)
+            return null;
+
+        try
+        {
+            return Convert.FromHexString(hex.ToString());
+        }
+        catch (FormatException)
+        {
+            TraceLog.Write($"Reassembled stream {streamId} returned non-hex output; discarded.");
+            return null;
+        }
+    }
+
     private async Task<IReadOnlyList<string>> RunTsharkFilterRowsAsync(
         string filePath, string displayFilter, IReadOnlyList<string> fields, CancellationToken ct)
     {
@@ -919,6 +1098,7 @@ public sealed class TsharkService
         }
 
         ParseJsonrawObject(layerValue, hasDisplay ? displayLayer : default, pdmlLookup, pdmlTypeLookup, pdmlHiddenNames, pdmlHiddenPositions, layer.Fields, protocolName, layer, offsetBias: offsetBias, pdmlAnonSpans: pdmlAnonSpans, pdmlNamePositions: pdmlNamePositions);
+        AttachEnumOptions(layer.Fields);
 
         if (protoShowNames != null &&
             protoShowNames.TryGetValue((protocolName, layerOffset), out var showname))
@@ -931,6 +1111,36 @@ public sealed class TsharkService
         }
 
         packet.Layers.Add(layer);
+    }
+
+    /// <summary>
+    /// Feeds each numeric leaf to <see cref="EnumCatalog"/> and attaches what it has
+    /// collected. Integer fields only: a name for "3" is noise in a dropdown.
+    /// </summary>
+    private static void AttachEnumOptions(System.Collections.ObjectModel.ObservableCollection<ProtocolField> fields)
+    {
+        foreach (var field in fields)
+        {
+            if (field.Children.Count > 0)
+            {
+                AttachEnumOptions(field.Children);
+                continue;
+            }
+
+            if (field.Kind is not (FieldKind.UInt or FieldKind.Int) ||
+                string.IsNullOrEmpty(field.OriginalPdmlName) ||
+                field.RawBytes.Length == 0)
+            {
+                continue;
+            }
+
+            string rawHex = Convert.ToHexString(field.RawBytes).ToLowerInvariant();
+            EnumCatalog.Observe(field.OriginalPdmlName, field.DisplayValue, rawHex);
+
+            var options = EnumCatalog.OptionsFor(field.OriginalPdmlName);
+            if (options.Count > 0)
+                field.EnumOptions = new System.Collections.ObjectModel.ObservableCollection<EnumOption>(options);
+        }
     }
 
     private static int GetLayerOffset(JsonElement layerValue)

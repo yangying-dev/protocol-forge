@@ -227,6 +227,9 @@ public sealed class FragmentContextProvider : IPacketContextProvider
 /// fully reassembled message. The whole-capture stream scan runs lazily on the
 /// first <see cref="CollectFramesAsync"/> call.
 /// </summary>
+/// <summary>One TCP stream: its tshark stream id and the frames belonging to it.</summary>
+public sealed record StreamIndex(string StreamId, IReadOnlyList<int> Frames);
+
 public sealed class TcpStreamContextProvider : IPacketContextProvider
 {
     public const int DefaultBudget = 2000;
@@ -245,6 +248,49 @@ public sealed class TcpStreamContextProvider : IPacketContextProvider
     }
 
     public string Name => "tcp-stream";
+
+    /// <summary>
+    /// Every TCP stream in the capture with its frame numbers, ordered by stream id.
+    ///
+    /// The scan that builds this already runs for reassembly, so exposing it costs
+    /// nothing extra; it was simply being thrown away. Returns empty until
+    /// <see cref="CollectFramesAsync"/> has triggered the lazy scan.
+    /// </summary>
+    public async Task<IReadOnlyList<StreamIndex>> GetStreamsAsync(CancellationToken ct = default)
+    {
+        await GetOrStartScanAsync(ct);
+        if (_streamFrames is null)
+            return [];
+
+        return _streamFrames
+            .OrderBy(kv => kv.Key, StringComparer.Ordinal)
+            .Select(kv => new StreamIndex(kv.Key, kv.Value.OrderBy(n => n).ToList()))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Drops the cached scan so the next query re-reads the capture. A committed edit
+    /// can move a frame between streams — tshark keys streams on the four-tuple and its
+    /// SYN/FIN boundaries, so editing a port or address rewrites the answer — and a
+    /// length-changing edit shifts which frames exist in the index at all. Cheap by
+    /// design: it only drops state, the rescan happens on the next query.
+    /// </summary>
+    public void Invalidate()
+    {
+        lock (_gate)
+        {
+            _scan = null;
+            _streamFrames = null;
+            _frameStreams = null;
+        }
+    }
+
+    /// <summary>The stream a given frame belongs to, or null when it is not TCP.</summary>
+    public async Task<string?> GetStreamOfFrameAsync(int frameNumber, CancellationToken ct = default)
+    {
+        await GetOrStartScanAsync(ct);
+        return _frameStreams is not null && _frameStreams.TryGetValue(frameNumber, out string? s) ? s : null;
+    }
 
     public async Task<IReadOnlyList<int>> CollectFramesAsync(
         int targetFrame,

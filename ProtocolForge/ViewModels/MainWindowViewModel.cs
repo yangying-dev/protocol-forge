@@ -135,8 +135,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         ProtocolTreeViewModel protocolTree,
         HexEditorViewModel hexEditor,
         ToolBarViewModel? toolBar = null,
-        LayoutService? layoutService = null)
+        LayoutService? layoutService = null,
+        EditHistoryService? history = null,
+        SessionStateService? session = null)
     {
+        _history = history ?? new EditHistoryService();
+        _session = session ?? new SessionStateService();
         _tshark = tshark;
         _pcapExport = pcapExport;
         _editorService = editorService;
@@ -152,6 +156,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         ProtocolTree.FieldSelected += OnFieldSelected;
         ProtocolTree.LayerSelected += OnLayerSelected;
         ProtocolTree.FieldEdited += OnFieldEdited;
+        ProtocolTree.HistoryChanged += RaiseHistoryState;
+        HexEditor.HistoryChanged += RaiseHistoryState;
         HexEditor.HexEdited += OnHexEdited;
         HexEditor.FieldFoundAtOffset += OnHexFieldFound;
 
@@ -198,12 +204,6 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
     // Commands
 
-    [RelayCommand]
-    private async Task OpenPcapAsync()
-    {
-        await Task.CompletedTask;
-    }
-
     public async Task LoadFileAsync(string filePath)
     {
         if (string.IsNullOrWhiteSpace(filePath)) return;
@@ -215,6 +215,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         {
             var document = new PacketDocument { FilePath = filePath };
             PacketList.LoadFromDocument(document);
+            EnumCatalog.Reset();
 
             var progress = new Progress<double>(p => LoadProgress = p);
 
@@ -226,11 +227,17 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             }
             else
             {
-                await _tshark.LoadPcapAsync(document, filePath, progress);
+                await _tshark.LoadPcapAsync(document, filePath, progress, _displayFilter);
             }
 
             Document = document;
             FileName = Path.GetFileName(filePath);
+            _loadedFilePath = filePath;
+            _history.Clear();
+            TcpStreams.Clear();
+            _session.NoteOpened(filePath);
+            RaiseHistoryState();
+            OnPropertyChanged(nameof(RecentFiles));
             TotalPackets = document.PacketCount;
             ModifiedPackets = 0;
 
@@ -239,7 +246,15 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             if (document.SelectedPacket != null)
                 OnPacketSelected(document.SelectedPacket);
 
+            await LoadTcpStreamsCommand.ExecuteAsync(null);
             ShowStatus("Status.LoadedPackets", document.PacketCount, FileName);
+
+            if (document.InterfaceCount > 1)
+            {
+                ShowStatus("Status.MultiInterfaceFile", document.InterfaceCount);
+                TraceLog.Write($"Capture declares {document.InterfaceCount} interfaces; "
+                    + "the per-packet interface id is not preserved and a save writes one interface.");
+            }
         }
         catch (Exception ex)
         {
@@ -250,6 +265,385 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             IsLoading = false;
             LoadProgress = 0;
         }
+    }
+
+    private readonly EditHistoryService _history;
+    private readonly SessionStateService _session;
+
+    [ObservableProperty]
+    private bool _canUndo;
+
+    [ObservableProperty]
+    private bool _canRedo;
+
+    public ObservableCollection<string> RecentFiles => new(_session.RecentFiles);
+
+    private string? _loadedFilePath;
+    private string _displayFilter = string.Empty;
+
+    [ObservableProperty]
+    private string _findText = string.Empty;
+
+    [ObservableProperty]
+    private int _findMatchCount;
+
+    /// <summary>
+    /// Searches forward through the packet list for <see cref="FindText"/>, then
+    /// through the selected packet's protocol tree. The tree hit reuses
+    /// TreeSelectRequested, which already expands ancestors and reveals the node,
+    /// so find-in-tree costs nothing beyond the walk.
+    /// </summary>
+    [RelayCommand]
+    public void FindNext() => Find(forward: true);
+
+    [RelayCommand]
+    public void FindPrevious() => Find(forward: false);
+
+    private void Find(bool forward)
+    {
+        string needle = FindText?.Trim() ?? string.Empty;
+        if (needle.Length == 0)
+        {
+            FindMatchCount = 0;
+            ShowStatus("Status.FindEmpty");
+            return;
+        }
+
+        if (FindInPacketList(needle, forward))
+            return;
+
+        // A tree hit only exists for the selected packet, so the list search must
+        // have already moved the selection there.
+        if (FindInTree(needle))
+            return;
+
+        ShowStatus("Status.FindNotFound", needle);
+    }
+
+    private bool FindInPacketList(string needle, bool forward)
+    {
+        var packets = PacketList.Packets;
+        if (packets.Count == 0)
+            return false;
+
+        int current = PacketList.SelectedPacket?.Index ?? -1;
+        int step = forward ? 1 : -1;
+        int start = current >= 0 ? current : (forward ? -1 : packets.Count);
+
+        for (int i = start + step; i >= 0 && i < packets.Count; i += step)
+        {
+            if (!RowMatches(packets[i], needle))
+                continue;
+
+            PacketList.SelectedPacket = packets[i];
+            PacketList.SelectedIndex = i;
+            FindMatchCount++;
+            ShowStatus("Status.FindMatch", needle, packets[i].PacketNumber);
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool RowMatches(Packet p, string needle)
+    {
+        return Contains(p.SourceAddress, needle)
+            || Contains(p.DestinationAddress, needle)
+            || Contains(p.ProtocolName, needle)
+            || Contains(p.InfoText, needle)
+            || Contains(p.Summary, needle);
+    }
+
+    private static bool Contains(string? haystack, string needle) =>
+        !string.IsNullOrEmpty(haystack) &&
+        haystack.Contains(needle, StringComparison.OrdinalIgnoreCase);
+
+    private bool FindInTree(string needle)
+    {
+        var packet = PacketList.SelectedPacket;
+        if (packet == null || ProtocolTree == null)
+            return false;
+
+        foreach (var layer in packet.Layers)
+        {
+            var hit = Flatten(layer.Fields).FirstOrDefault(f =>
+                Contains(f.Name, needle) || Contains(f.DisplayValue, needle));
+            if (hit is null)
+                continue;
+
+            ProtocolTree.SelectFieldOnTree(hit);
+            FindMatchCount++;
+            ShowStatus("Status.FindMatchField", needle, hit.Name);
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// tshark display filter applied to the packet list. Applied by tshark at load
+    /// time, so the grid only ever holds matching packets.
+    /// </summary>
+    [ObservableProperty]
+    private string _filterText = string.Empty;
+
+    /// <summary>
+    /// Reloads the capture with <see cref="FilterText"/> as a tshark display filter.
+    /// An unparseable filter makes tshark exit non-zero, so the previous list is
+    /// left untouched and the reason is surfaced instead of the grid emptying.
+    /// </summary>
+    [RelayCommand]
+    private async Task ApplyFilterAsync()
+    {
+        if (_loadedFilePath is null)
+        {
+            ShowStatus("Status.FilterNoFile");
+            return;
+        }
+
+        string candidate = FilterText?.Trim() ?? string.Empty;
+        string previous = _displayFilter;
+        _displayFilter = candidate;
+
+        try
+        {
+            await LoadFileAsync(_loadedFilePath);
+            if (_displayFilter.Length > 0)
+                ShowStatus("Status.FilterApplied", _displayFilter, TotalPackets);
+        }
+        catch (Exception ex)
+        {
+            _displayFilter = previous;
+            ShowStatus("Status.FilterInvalid", candidate, ex.Message);
+            await LoadFileAsync(_loadedFilePath);
+        }
+    }
+
+    [RelayCommand]
+    private async Task ClearFilterAsync()
+    {
+        FilterText = string.Empty;
+        await ApplyFilterCommand.ExecuteAsync(null);
+    }
+
+    /// <summary>TCP streams discovered in the loaded capture, for the follow-stream list.</summary>
+    public ObservableCollection<StreamIndex> TcpStreams { get; } = [];
+
+    [ObservableProperty]
+    private StreamIndex? _selectedTcpStream;
+
+    /// <summary>
+    /// Picking a stream in the combo filters the list to that conversation. Without this
+    /// hook the method below was never reached, so the combo only changed the label.
+    /// </summary>
+    partial void OnSelectedTcpStreamChanged(StreamIndex? value) =>
+        _ = ApplySelectedStreamFilterAsync(value);
+
+    /// <summary>
+    /// Populates the TCP stream list. The index comes from the same scan that already
+    /// runs for reassembly, so this does not launch another tshark pass unless the
+    /// capture has no TCP at all.
+    /// </summary>
+    [RelayCommand]
+    private async Task LoadTcpStreamsAsync()
+    {
+        TcpStreams.Clear();
+        if (Document?.ContextProviders is null)
+            return;
+
+        foreach (var provider in Document.ContextProviders)
+        {
+            if (provider is not TcpStreamContextProvider tcp)
+                continue;
+            foreach (var stream in await tcp.GetStreamsAsync())
+                TcpStreams.Add(stream);
+            break;
+        }
+    }
+
+    /// <summary>
+    /// Filters the packet list down to the selected stream by reusing the display
+    /// filter, so the grid shows exactly that conversation.
+    /// </summary>
+    private TcpStreamContextProvider? FindTcpStreamProvider() =>
+        Document?.ContextProviders?.OfType<TcpStreamContextProvider>().FirstOrDefault();
+
+    private async Task ApplySelectedStreamFilterAsync(StreamIndex? value)
+    {
+        if (value is null)
+            return;
+        FilterText = "tcp.stream eq " + value.StreamId;
+        await ApplyFilterCommand.ExecuteAsync(null);
+    }
+
+    /// <summary>
+    /// Rebuilds the TCP stream index once the edited bytes are actually on disk.
+    ///
+    /// Timing matters here. <c>tcp.stream</c> is assigned by tshark across the whole
+    /// file, from the four-tuple and dissection order: measured against tshark 4.2.2, a
+    /// single-packet file always reports stream 0 no matter which stream the frame really
+    /// belongs to, so the value cannot be recovered from the per-packet reparse an edit
+    /// already does. And a whole-file rescan reads the saved file, which mid-edit is still
+    /// the pre-edit bytes. Therefore an unsaved edit has no well-defined stream index, and
+    /// the honest moment to refresh is right after the save.
+    ///
+    /// Editing a payload length does not invalidate the index at all — stream numbering
+    /// ignores IP total length and TCP sequence numbers. What does invalidate it is a
+    /// four-tuple edit, which is exactly what a save makes observable.
+    /// </summary>
+    private async Task RefreshStreamIndexAfterSaveAsync()
+    {
+        var provider = FindTcpStreamProvider();
+        if (provider is null)
+            return;
+
+        try
+        {
+            provider.Invalidate();
+            await LoadTcpStreamsCommand.ExecuteAsync(null);
+
+            // The combo was bound to instances from the previous index; re-point it at the
+            // rebuilt one so the selection stays valid.
+            var previous = SelectedTcpStream?.StreamId;
+            if (previous is not null)
+                SelectedTcpStream = TcpStreams.FirstOrDefault(s => s.StreamId == previous);
+        }
+        catch (Exception ex)
+        {
+            TraceLog.Write($"Stream index refresh after save failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>Reassembled stream bytes, formatted as hex dump lines for the viewer.</summary>
+    public ObservableCollection<string> ReassembledLines { get; } = [];
+
+    [ObservableProperty]
+    private bool _showReassembled;
+
+    [ObservableProperty]
+    private string _reassembledStatus = string.Empty;
+
+    /// <summary>
+    /// Fetches the reassembled payload of the selected TCP stream and shows it as a
+    /// read-only hex dump. Read-only by necessity: reassembled bytes span more than the
+    /// selected frame, so they have no offset in the packet to edit against.
+    /// </summary>
+    [RelayCommand]
+    private async Task ShowReassembledBytesAsync()
+    {
+        ReassembledLines.Clear();
+        if (_loadedFilePath is null || SelectedTcpStream is null)
+        {
+            ReassembledStatus = LocalizationService.Resolve("Rv.NoStream");
+            return;
+        }
+
+        try
+        {
+            var bytes = await _tshark.GetReassembledStreamAsync(
+                _loadedFilePath, "tcp", SelectedTcpStream.StreamId, _displayFilter);
+
+            if (bytes is null || bytes.Length == 0)
+            {
+                ReassembledStatus = LocalizationService.Resolve("Rv.Empty", SelectedTcpStream.StreamId);
+                return;
+            }
+
+            foreach (string line in FormatHexDump(bytes))
+                ReassembledLines.Add(line);
+
+            ShowReassembled = true;
+            ReassembledStatus = LocalizationService.Resolve(
+                "Rv.Loaded", SelectedTcpStream.StreamId, bytes.Length);
+        }
+        catch (Exception ex)
+        {
+            ReassembledStatus = LocalizationService.Resolve("Rv.Failed", ex.Message);
+        }
+    }
+
+    /// <summary>Wireshark-style 16-byte rows with an ASCII gutter.</summary>
+    private static IEnumerable<string> FormatHexDump(byte[] bytes)
+    {
+        const int perRow = 16;
+        for (int offset = 0; offset < bytes.Length; offset += perRow)
+        {
+            int take = Math.Min(perRow, bytes.Length - offset);
+            var hex = new System.Text.StringBuilder();
+            var ascii = new System.Text.StringBuilder();
+            for (int i = 0; i < take; i++)
+            {
+                byte b = bytes[offset + i];
+                hex.Append(b.ToString("X2")).Append(' ');
+                ascii.Append(b >= 32 && b <= 126 ? (char)b : '.');
+            }
+            yield return $"{offset:X8}  {hex.ToString().PadRight(perRow * 3)} {ascii}";
+        }
+    }
+
+    [RelayCommand]
+    private async Task UndoAsync()
+    {
+        if (PacketList.SelectedPacket is not { } packet)
+        {
+            ShowStatus("Status.NothingToUndo");
+            return;
+        }
+        if (_history.Undo(packet) is not { } entry)
+        {
+            ShowStatus("Status.NothingToUndo");
+            return;
+        }
+
+        await AfterHistoryMoveAsync(packet, "Status.Undone", entry);
+    }
+
+    [RelayCommand]
+    private async Task RedoAsync()
+    {
+        if (PacketList.SelectedPacket is not { } packet)
+        {
+            ShowStatus("Status.NothingToRedo");
+            return;
+        }
+        if (_history.Redo(packet) is not { } entry)
+        {
+            ShowStatus("Status.NothingToRedo");
+            return;
+        }
+
+        await AfterHistoryMoveAsync(packet, "Status.Redone", entry);
+    }
+
+    /// <summary>
+    /// Reloads the capture after an undo/redo so the protocol tree matches the restored
+    /// bytes. Restoring bytes alone would leave the tree describing the previous frame,
+    /// which for a length-changing edit means every later offset is stale.
+    /// </summary>
+    private async Task AfterHistoryMoveAsync(Packet packet, string statusKey, EditHistoryService.Entry entry)
+    {
+        ModifiedPackets = Document?.GetModifiedPackets().Count() ?? 0;
+        if (Document != null)
+            Document.HasUnsavedChanges = ModifiedPackets > 0;
+
+        if (_loadedFilePath is not null)
+        {
+            string keep = _displayFilter;
+            _displayFilter = string.Empty;
+            await LoadFileAsync(_loadedFilePath);
+            _displayFilter = keep;
+        }
+
+        RaiseHistoryState();
+        HexEditor.RefreshBytes();
+        HexEditor.RefreshAddressInfo();
+        ShowStatus(statusKey, entry.PacketNumber);
+    }
+
+    private void RaiseHistoryState()
+    {
+        CanUndo = _history.CanUndo;
+        CanRedo = _history.CanRedo;
     }
 
     /// <summary>
@@ -321,32 +715,20 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                 IncludeUnmodified = true,
                 LinkLayerType = Document.LinkLayerType,
                 Snaplen = Document.Snaplen,
+                Pcapng = Document.IsPcapNg,
+                BigEndian = Document.SourceBigEndian,
+                NanosecondResolution = Document.SourceNanoseconds,
             };
             await _pcapExport.ExportAsync(Document.Packets, options);
             Document.HasUnsavedChanges = false;
             ModifiedPackets = 0;
+            await RefreshStreamIndexAfterSaveAsync();
             ShowStatus("Status.Saved", Document.PacketCount, Path.GetFileName(Document.FilePath));
         }
         catch (Exception ex)
         {
             ShowStatus("Status.SaveFailed", ex.Message);
         }
-    }
-
-    [RelayCommand]
-    private async Task ExportPcapAsync()
-    {
-        if (IsReadOnly)
-        {
-            ShowStatus("Status.ReadOnlyExport");
-            return;
-        }
-        if (Document == null || TotalPackets == 0)
-        {
-            ShowStatus("Status.NoPacketsExport");
-            return;
-        }
-        await Task.CompletedTask;
     }
 
     public async Task ExportToFileAsync(string outputPath)
@@ -366,6 +748,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                 ExportOnlyModified = false,
                 IncludeUnmodified = true,
                 LinkLayerType = Document.LinkLayerType,
+                Snaplen = Document.Snaplen,
+                // Export-as follows the extension the user actually chose, so a
+                // .pcapng source can be deliberately written out as classic pcap.
+                Pcapng = outputPath.EndsWith(".pcapng", StringComparison.OrdinalIgnoreCase),
+                BigEndian = Document.SourceBigEndian,
+                NanosecondResolution = Document.SourceNanoseconds,
             };
 
             var packets = options.IncludeUnmodified
@@ -750,6 +1138,76 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                         srcPort, dstPort),
                 _ => layer.DisplayText,
             };
+        }
+    }
+    [ObservableProperty]
+    private bool _showStatistics;
+
+    /// <summary>
+    /// The tshark taps offered in the statistics panel. Each answers a question an
+    /// operator actually asks of a 3GPP capture, and every one is a single tshark
+    /// invocation away — the engine was already a dependency, it was just never asked.
+    /// IO graphs are deliberately absent: they need a plotting stack, which this
+    /// project does not take a dependency on.
+    /// </summary>
+    public IReadOnlyList<string> StatisticsTaps { get; } =
+        ["conv,ip", "conv,tcp", "conv,udp", "conv,sctp", "endpoints,ip", "io,phs", "io,stat,0", "expert"];
+
+    [ObservableProperty]
+    private string? _selectedStatisticsTap;
+
+    [ObservableProperty]
+    private string _statisticsStatus = string.Empty;
+
+    /// <summary>
+    /// Tap output as aligned text lines. tshark pads its own columns for humans, so
+    /// imposing a column model would lose fidelity — and the row width differs per
+    /// tap (io,stat emits an interval label plus counters, expert emits severity and
+    /// group), which makes a fixed grid awkward anyway.
+    /// </summary>
+    public ObservableCollection<string> StatisticsLines { get; } = [];
+
+    /// <summary>
+    /// Runs the selected tap against the loaded capture. Reuses the display filter so
+    /// the statistics describe exactly the rows the user is looking at.
+    /// </summary>
+    [RelayCommand]
+    public async Task LoadStatisticsAsync()
+    {
+        StatisticsLines.Clear();
+        StatisticsStatus = string.Empty;
+
+        if (_loadedFilePath is null || SelectedStatisticsTap is null)
+        {
+            StatisticsStatus = LocalizationService.Resolve("Stats.NoFile");
+            return;
+        }
+
+        try
+        {
+            var lines = await _tshark.RunStatisticsTapAsync(
+                _loadedFilePath, SelectedStatisticsTap, _displayFilter);
+
+            foreach (var line in lines)
+                StatisticsLines.Add(line);
+
+            StatisticsStatus = lines.Count == 0
+                ? LocalizationService.Resolve("Stats.Empty", SelectedStatisticsTap)
+                : LocalizationService.Resolve("Stats.Rows", lines.Count);
+        }
+        catch (Exception ex)
+        {
+            StatisticsStatus = LocalizationService.Resolve("Stats.Failed", ex.Message);
+        }
+    }
+
+    private static IEnumerable<Models.ProtocolField> Flatten(IEnumerable<Models.ProtocolField> fields)
+    {
+        foreach (var f in fields)
+        {
+            yield return f;
+            foreach (var c in Flatten(f.Children))
+                yield return c;
         }
     }
 }

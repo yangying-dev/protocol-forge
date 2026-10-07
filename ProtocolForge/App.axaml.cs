@@ -20,6 +20,20 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            desktop.MainWindow = ComposeMainWindow(desktop.Args);
+        }
+
+        base.OnFrameworkInitializationCompleted();
+    }
+
+    /// <summary>
+    /// Builds the whole object graph and returns the main window. Extracted from the
+    /// lifetime callback so the verification harness can mount the real window with the
+    /// real view models under Avalonia.Headless — duplicating the graph in the harness
+    /// would let it drift away from what the app actually runs.
+    /// </summary>
+    public static MainWindow ComposeMainWindow(IReadOnlyList<string>? args)
+    {
             // ── Manual Dependency Injection ──
             // Simple DI without external containers.
             // Each service is instantiated once (singleton-scoped per app instance).
@@ -57,17 +71,21 @@ public partial class App : Application
 
             var protocolEditor = new ProtocolEditorService();
             var editTransaction = new EditTransactionService(pcapExport, tshark);
+            var editHistory = new EditHistoryService();
+            var sessionState = new SessionStateService();
             var networkInterfaceService = new NetworkInterfaceService();
             var packetSendService = new PacketSendService();
 
             var packetList = new PacketListViewModel();
-            var protocolTree = new ProtocolTreeViewModel(protocolEditor, editTransaction);
-            var hexEditor = new HexEditorViewModel(protocolEditor);
+            var protocolTree = new ProtocolTreeViewModel(protocolEditor, editTransaction, editHistory);
+            var hexEditor = new HexEditorViewModel(protocolEditor, editHistory);
             var toolBar = new ToolBarViewModel(networkInterfaceService, packetSendService, packetList);
 
             var mainViewModel = new MainWindowViewModel(
                 tshark, pcapExport, protocolEditor,
-                packetList, protocolTree, hexEditor, toolBar);
+                packetList, protocolTree, hexEditor, toolBar,
+                layoutService: null,
+                editHistory, sessionState);
 
             // ── Tshark availability gate ──
             // Detects tshark once at startup. When missing or < 2.6.0 the app runs
@@ -85,16 +103,12 @@ public partial class App : Application
 
             // Open a PCAP path passed on the command line (documented in README).
             // Done after the window is shown so bindings / layout are ready.
-            if (desktop.Args is { Length: > 0 } cmdArgs &&
-                !string.IsNullOrWhiteSpace(cmdArgs[0]))
+            if (args is { Count: > 0 } && !string.IsNullOrWhiteSpace(args[0]))
             {
-                var path = cmdArgs[0];
+                var path = args[0];
                 mainWindow.Opened += async (_, _) => await mainViewModel.LoadFileAsync(path);
             }
 
-            desktop.MainWindow = mainWindow;
-        }
-
-        base.OnFrameworkInitializationCompleted();
+            return mainWindow;
     }
 }

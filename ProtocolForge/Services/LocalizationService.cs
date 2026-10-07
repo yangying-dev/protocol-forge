@@ -51,11 +51,15 @@ public sealed class LocalizationService
     /// </summary>
     public static void SetCurrent(AppLanguage language)
     {
-        if (_current?.Language == language)
-            return;
-        _current = new LocalizationService(language);
+        // Same-language calls must still publish: Application.Current can appear after the
+        // first SetCurrent (headless/composition order), and skipping the publish here left
+        // XAML resources empty with no error to point at it.
+        if (_current?.Language != language)
+        {
+            _current = new LocalizationService(language);
+            LanguageChanged?.Invoke(null, EventArgs.Empty);
+        }
         ApplyToAvalonia();
-        LanguageChanged?.Invoke(null, EventArgs.Empty);
     }
 
     /// <summary>

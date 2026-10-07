@@ -2,6 +2,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:ProtocolForge.ViewModels"
         xmlns:models="using:ProtocolForge.Models"
+        xmlns:sys="using:System"
+        xmlns:svc="using:ProtocolForge.Services"
         xmlns:controls="using:ProtocolForge.Views.Controls"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -22,6 +24,11 @@
                 <Separator />
                 <MenuItem Header="{DynamicResource L10n.Mnu.ResetMods}" Click="OnResetClicked" />
                 <Separator />
+                <MenuItem Header="{DynamicResource L10n.Mnu.Undo}" InputGesture="Ctrl+Z"
+                          Command="{Binding UndoCommand}" IsEnabled="{Binding CanUndo}" />
+                <MenuItem Header="{DynamicResource L10n.Mnu.Redo}" InputGesture="Ctrl+Y"
+                          Command="{Binding RedoCommand}" IsEnabled="{Binding CanRedo}" />
+                <Separator />
                 <MenuItem Header="{DynamicResource L10n.Mnu.TsharkPath}" Click="OnPickTsharkClicked" />
                 <Separator />
                 <MenuItem Header="{DynamicResource L10n.Mnu.Exit}" Click="OnExitClicked" />
@@ -33,8 +40,13 @@
                           Command="{Binding ToggleProtocolTreeCommand}" ToggleType="CheckBox" />
                 <MenuItem Header="{DynamicResource L10n.Mnu.HexEditor}" IsChecked="{Binding ShowHexEditor}"
                           Command="{Binding ToggleHexEditorCommand}" ToggleType="CheckBox" />
+                <MenuItem Header="{DynamicResource L10n.Panel.Statistics}" IsChecked="{Binding ShowStatistics}"
+                          ToggleType="CheckBox" />
                 <Separator />
                 <MenuItem Header="{DynamicResource L10n.Mnu.ResetLayout}" Click="OnResetLayoutClicked" />
+            </MenuItem>
+            <MenuItem Header="{DynamicResource L10n.Find.Label}">
+                <MenuItem Header="{DynamicResource L10n.Find.Label}" InputGesture="Ctrl+F" Click="OnFocusFindBox" />
             </MenuItem>
             <MenuItem Header="{DynamicResource L10n.Lang.Menu}">
                 <MenuItem x:Name="MenuLangZhCn" Header="{DynamicResource L10n.Lang.ZhCn}" Click="OnMenuLangZhCnClicked" ToggleType="CheckBox"/>
@@ -50,7 +62,7 @@
         <!-- ════════════════ Toolbar ════════════════ -->
         <Border Grid.Row="1" Name="ToolBarPanel"
                 Background="#F0F0F0" Padding="8,4" BorderBrush="#CCC" BorderThickness="0,0,0,1">
-            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*">
+            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto">
                 <!-- Start Button -->
                 <Button Grid.Column="0" Name="StartSendBtn"
                         Command="{Binding ToolBar.StartSendCommand}"
@@ -93,14 +105,29 @@
                 </Button>
 
                 <!-- Auto-fix toggle -->
-                <CheckBox Grid.Column="3" Name="AutoFixCheckBox"
+                <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                    <ComboBox Name="VlanModeCombo" Width="92" Height="28" FontSize="12"
+                              ItemsSource="{Binding ToolBar.VlanModes}"
+                              SelectedItem="{Binding ToolBar.VlanMode}"
+                              ToolTip.Tip="{DynamicResource L10n.Tip.Vlan}" />
+                    <TextBox Name="VlanIdBox" Width="58" Height="28" FontSize="12"
+                             Text="{Binding ToolBar.VlanId, Mode=TwoWay}"
+                             IsVisible="{Binding ToolBar.IsVlanIdVisible}"
+                             ToolTip.Tip="{DynamicResource L10n.Btn.VlanId}" />
+                </StackPanel>
+                <CheckBox Grid.Column="4" Name="MultiNicCheckBox" Margin="4,0,0,0"
+                          Content="{DynamicResource L10n.Btn.MultiNic}"
+                          IsChecked="{Binding ToolBar.MultiNicSend}"
+                          VerticalAlignment="Center"
+                          ToolTip.Tip="{DynamicResource L10n.Tip.MultiNic}" />
+                <CheckBox Grid.Column="5" Name="AutoFixCheckBox"
                           Content="{DynamicResource L10n.Btn.AutoFix}"
                           IsChecked="{Binding ToolBar.AutoFixFrames}"
                           VerticalAlignment="Center" Margin="12,0,4,0"
                           FontSize="12" ToolTip.Tip="{DynamicResource L10n.Tip.AutoFix}" />
 
                 <!-- Send interval -->
-                <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="4"
+                <StackPanel Grid.Column="6" Orientation="Horizontal" Spacing="4"
                             VerticalAlignment="Center" Margin="8,0,4,0">
                     <TextBlock Text="{DynamicResource L10n.Btn.Interval}" FontSize="12" VerticalAlignment="Center" Margin="0,0,4,0" />
                     <NumericUpDown Value="{Binding ToolBar.SendIntervalMs}"
@@ -109,7 +136,7 @@
                 </StackPanel>
 
                 <!-- Loop count -->
-                <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="4"
+                <StackPanel Grid.Column="7" Orientation="Horizontal" Spacing="4"
                             VerticalAlignment="Center" Margin="8,0,4,0">
                     <TextBlock Text="{DynamicResource L10n.Btn.Loops}" FontSize="12" VerticalAlignment="Center" Margin="0,0,4,0" />
                     <NumericUpDown Value="{Binding ToolBar.LoopCount}"
@@ -118,7 +145,7 @@
                 </StackPanel>
 
                 <!-- Sent/Failed Status -->
-                <StackPanel Grid.Column="7" Orientation="Horizontal" Spacing="8"
+                <StackPanel Grid.Column="8" Orientation="Horizontal" Spacing="8"
                             VerticalAlignment="Center" Margin="4,0,8,0"
                             IsVisible="{Binding ToolBar.IsSending}">
                     <TextBlock FontSize="12" Foreground="#4CAF50" FontWeight="SemiBold">
@@ -130,7 +157,7 @@
                 </StackPanel>
 
                 <!-- Network Adapter Dropdown -->
-                <ComboBox Grid.Column="8" Name="NetworkAdapterCombo"
+                <ComboBox Grid.Column="9" Name="NetworkAdapterCombo"
                           ItemsSource="{Binding ToolBar.AvailableInterfaces}"
                           SelectedItem="{Binding ToolBar.SelectedInterface}"
                           DisplayMemberBinding="{Binding DisplayName}"
@@ -138,6 +165,11 @@
                           HorizontalAlignment="Stretch"
                           VerticalAlignment="Center"
                           PlaceholderText="{DynamicResource L10n.Btn.PlaceholderAdapter}" />
+                <Button Grid.Column="10" Margin="4,0,0,0" Height="28" Padding="8,0"
+                        FontSize="12" VerticalAlignment="Center"
+                        Content="{DynamicResource L10n.Btn.RescanAdapters}"
+                        ToolTip.Tip="{DynamicResource L10n.Btn.TipRescanAdapters}"
+                        Command="{Binding ToolBar.RefreshInterfacesCommand}" />
             </Grid>
         </Border>
 
@@ -177,11 +209,41 @@
                     <!-- Top bar: packet count + file name -->
                     <Border Grid.Row="0" Background="#F0F0F0" Padding="10,4,10,3"
                             BorderBrush="#CCC" BorderThickness="0,0,0,1">
-                        <Grid ColumnDefinitions="Auto,*,Auto">
+                        <Grid ColumnDefinitions="Auto,*,Auto,Auto">
                             <TextBlock Grid.Column="0"
                                        Text="{Binding PacketsDisplay}"
                                        FontWeight="SemiBold" FontSize="12" />
-                            <TextBlock Grid.Column="2" FontSize="12" Foreground="#888"
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4"
+                                        VerticalAlignment="Center">
+                                <TextBox Name="FilterBox" Width="240" FontSize="12"
+                                         FontFamily="Consolas, monospace"
+                                         VerticalContentAlignment="Center"
+                                         Text="{Binding FilterText, Mode=TwoWay}"
+                                         PlaceholderText="{DynamicResource L10n.Filter.Placeholder}"
+                                         ToolTip.Tip="{DynamicResource L10n.Filter.Label}"
+                                         KeyDown="OnFilterKeyDown" />
+                                <TextBox Name="FindBox" Width="180" FontSize="12"
+                                         FontFamily="Consolas, monospace"
+                                         VerticalContentAlignment="Center"
+                                         Text="{Binding FindText, Mode=TwoWay}"
+                                         PlaceholderText="{DynamicResource L10n.Find.Placeholder}"
+                                         ToolTip.Tip="{DynamicResource L10n.Find.Label}"
+                                         KeyDown="OnFindKeyDown" />
+                                <Button Content="↓" FontSize="12" Padding="6,2"
+                                        Command="{Binding FindNextCommand}"
+                                        ToolTip.Tip="{DynamicResource L10n.Find.Label}" />
+                                <Button Content="↑" FontSize="12" Padding="6,2"
+                                        Command="{Binding FindPreviousCommand}"
+                                        ToolTip.Tip="{DynamicResource L10n.Find.Label}" />
+                                <Button Content="{DynamicResource L10n.Filter.Apply}"
+                                        FontSize="12" Padding="8,2"
+                                        Command="{Binding ApplyFilterCommand}" />
+                                <Button Content="{DynamicResource L10n.Filter.Clear}"
+                                        FontSize="12" Padding="8,2"
+                                        Command="{Binding ClearFilterCommand}" />
+                            </StackPanel>
+                            <TextBlock Grid.Column="3" FontSize="12" Foreground="#888"
+                                       Margin="10,0,0,0" VerticalAlignment="Center"
                                        Text="{Binding FileName}" />
                         </Grid>
                     </Border>
@@ -207,6 +269,11 @@
                                 <Separator />
                                 <MenuItem Header="{DynamicResource L10n.Ctx.SendThisPacket}" Click="OnSendThisPacketClick"
                                           ToolTip.Tip="{DynamicResource L10n.Tip.SendRow}" />
+                                <Separator />
+                                <MenuItem Header="{DynamicResource L10n.Ctx.ExportSendHistory}" Click="OnExportSendHistoryClick"
+                                          IsEnabled="{Binding ToolBar.SendHistory.Count}" />
+                                <MenuItem Header="{DynamicResource L10n.Ctx.ClearSendHistory}" Click="OnClearSendHistoryClick"
+                                          IsEnabled="{Binding ToolBar.SendHistory.Count}" />
                             </ContextMenu>
                         </DataGrid.ContextMenu>
                         <DataGrid.Columns>
@@ -336,6 +403,82 @@
                     </Grid>
                 </Border>
             </Grid>
+
+            <!-- ═══ Bottom: Statistics (tshark -z taps) ═══ -->
+            <GridSplitter Grid.Row="1" Name="StatsSplitter"
+                          Background="#CCC" Height="4"
+                          HorizontalAlignment="Stretch"
+                          ResizeDirection="Rows"
+                          ResizeBehavior="PreviousAndNext"
+                          IsVisible="{Binding ShowStatistics}" />
+
+            <Border Grid.Row="2" Name="StatisticsPanel"
+                    BorderBrush="#CCC" BorderThickness="0,0,0,0"
+                    IsVisible="{Binding ShowStatistics}">
+                <Grid RowDefinitions="Auto,*">
+                    <Border Grid.Row="0" Background="#F0F0F0" Padding="10,4"
+                            BorderBrush="#CCC" BorderThickness="0,0,0,1">
+                        <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto">
+                            <TextBlock Grid.Column="0" FontWeight="SemiBold" FontSize="13"
+                                       VerticalAlignment="Center"
+                                       Text="{DynamicResource L10n.Panel.Statistics}" />
+                            <ComboBox Grid.Column="1" Margin="10,0" Height="24"
+                                      FontSize="12" HorizontalAlignment="Left"
+                                      MinWidth="200"
+                                      ItemsSource="{Binding StatisticsTaps}"
+                                      SelectedItem="{Binding SelectedStatisticsTap}"
+                                      SelectionChanged="OnStatisticsTapChanged" />
+                            <ComboBox Grid.Column="2" Margin="10,0,4,0" Height="24"
+                                      FontSize="12" MinWidth="170"
+                                      ItemsSource="{Binding TcpStreams}"
+                                      SelectedItem="{Binding SelectedTcpStream}"
+                                      ToolTip.Tip="{DynamicResource L10n.Stats.FollowStream}"
+                                      PlaceholderText="{DynamicResource L10n.Stats.FollowStream}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate DataType="svc:StreamIndex" x:DataType="svc:StreamIndex">
+                                        <TextBlock FontSize="12">
+                                            <Run Text="{Binding StreamId}" />
+                                            <Run Text=" (" /><Run Text="{Binding Frames.Count}" /><Run Text=")" />
+                                        </TextBlock>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                            <Button Grid.Column="3" Margin="4,0" Padding="8,2" FontSize="12"
+                                    Content="{DynamicResource L10n.Rv.Show}"
+                                    ToolTip.Tip="{DynamicResource L10n.Rv.Title}"
+                                    Command="{Binding ShowReassembledBytesCommand}" />
+                            <Button Grid.Column="4" Margin="4,0" Padding="8,2" FontSize="12"
+                                    Content="{DynamicResource L10n.Stats.Refresh}"
+                                    Click="OnRefreshStatisticsClick" />
+                            <TextBlock Grid.Column="5" Margin="8,0" FontSize="11" Foreground="#888"
+                                       VerticalAlignment="Center"
+                                       Text="{Binding StatisticsStatus}" />
+                        </Grid>
+                    </Border>
+                    <ListBox Grid.Row="1" Name="ReassembledList"
+                             ItemsSource="{Binding ReassembledLines}"
+                             IsVisible="{Binding ShowReassembled}"
+                             Background="#FAFAFA" BorderThickness="0"
+                             FontFamily="Consolas, monospace" FontSize="11">
+                        <ListBox.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel />
+                            </ItemsPanelTemplate>
+                        </ListBox.ItemsPanel>
+                    </ListBox>
+                    <ListBox Grid.Row="1" Name="StatisticsList"
+                             ItemsSource="{Binding StatisticsLines}"
+                             IsVisible="{Binding !ShowReassembled}"
+                             Background="White" BorderThickness="0"
+                             FontFamily="Consolas, monospace" FontSize="11">
+                        <ListBox.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel />
+                            </ItemsPanelTemplate>
+                        </ListBox.ItemsPanel>
+                    </ListBox>
+                </Grid>
+            </Border>
         </Grid>
 
         <!-- ════════════════ Status Bar ════════════════ -->
