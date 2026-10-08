@@ -1406,6 +1406,45 @@ try
             try { File.Delete(g19Temp); } catch { }
         }
     }
+
+    // Structural port-pair gate (fixture-independent): ports must be extracted for
+    // any layer carrying tshark's srcport/dstport signature — not only udp/tcp/sctp —
+    // and a lone "port" field on an application layer must not pollute the columns.
+    var g19Syn = new Packet { RawData = new byte[8] };
+    g19Syn.RawData[0] = 0x04; g19Syn.RawData[1] = 0xD2; // src 1234
+    g19Syn.RawData[2] = 0x00; g19Syn.RawData[3] = 0x50; // dst 80
+    var g19Lay = new ProtocolLayer { ProtocolName = "dccp" };
+    var g19Hdr = new ProtocolField { Name = "hdr", Offset = -1, Length = 0 };
+    g19Hdr.Children.Add(new ProtocolField { Name = "srcport", Offset = 0, Length = 2 });
+    g19Hdr.Children.Add(new ProtocolField { Name = "dstport", Offset = 2, Length = 2 });
+    g19Lay.Fields.Add(g19Hdr);
+    g19Syn.Layers.Add(g19Lay);
+    HexEditorViewModel.ReExtractAddressInfo(g19Syn);
+    Report("G19-08 non-listed transport (dccp) nested port pair extracted",
+        g19Syn.SourcePort == 1234 && g19Syn.DestinationPort == 80,
+        $"src={g19Syn.SourcePort} dst={g19Syn.DestinationPort}");
+
+    var g19Pol = new Packet { RawData = new byte[4] };
+    g19Pol.RawData[0] = 0x16; g19Pol.RawData[1] = 0x2E; // lone 5678
+    var g19App = new ProtocolLayer { ProtocolName = "app" };
+    g19App.Fields.Add(new ProtocolField { Name = "port", Offset = 0, Length = 2 });
+    g19Pol.Layers.Add(g19App);
+    HexEditorViewModel.ReExtractAddressInfo(g19Pol);
+    Report("G19-09 lone port field cannot pass the pair gate",
+        g19Pol.SourcePort == -1 && g19Pol.DestinationPort == -1,
+        $"src={g19Pol.SourcePort} dst={g19Pol.DestinationPort}");
+
+    var g19Tcp = new Packet { RawData = new byte[4] };
+    g19Tcp.RawData[0] = 0x1F; g19Tcp.RawData[1] = 0x90; // src 8080
+    g19Tcp.RawData[2] = 0x00; g19Tcp.RawData[3] = 0x50; // dst 80
+    var g19TcpLay = new ProtocolLayer { ProtocolName = "tcp" };
+    g19TcpLay.Fields.Add(new ProtocolField { Name = "srcport", Offset = 0, Length = 2 });
+    g19TcpLay.Fields.Add(new ProtocolField { Name = "dstport", Offset = 2, Length = 2 });
+    g19Tcp.Layers.Add(g19TcpLay);
+    HexEditorViewModel.ReExtractAddressInfo(g19Tcp);
+    Report("G19-10 flat tcp port pair still extracted",
+        g19Tcp.SourcePort == 8080 && g19Tcp.DestinationPort == 80,
+        $"src={g19Tcp.SourcePort} dst={g19Tcp.DestinationPort}");
 }
 catch (Exception ex)
 {

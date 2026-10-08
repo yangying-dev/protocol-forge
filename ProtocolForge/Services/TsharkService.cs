@@ -1175,8 +1175,10 @@ public sealed class TsharkService
     }
 
     /// <summary>
-    /// Extracts source/destination addresses and ports from parsed layers
-    /// by scanning for well-known ip.src, ip.dst, udp.srcport, tcp.srcport fields.
+    /// Extracts source/destination addresses and ports from parsed layers:
+    /// ip/ipv6 layers for addresses (the complete IP set by construction), and any
+    /// layer whose fields form a tshark-style srcport/dstport pair for ports —
+    /// a structural check, not a protocol allow-list.
     /// </summary>
     private static void ExtractAddressInfo(Packet packet)
     {
@@ -1192,9 +1194,9 @@ public sealed class TsharkService
                 case "ipv6":
                     ScanAddressFields(layer.Fields, packet, isV6: true);
                     break;
-                case "udp":
-                case "tcp":
-                    ScanPortFields(layer.Fields, packet, proto);
+                default:
+                    if (layer.HasPortFields)
+                        ScanPortFields(layer.Fields, packet, proto);
                     break;
             }
         }

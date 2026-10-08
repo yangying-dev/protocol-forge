@@ -389,9 +389,9 @@ public sealed partial class HexEditorViewModel : ObservableObject
                 case "ipv6":
                     ScanAddressFields(layer.Fields, packet, true);
                     break;
-                case "udp":
-                case "tcp":
-                    ScanPortFields(layer.Fields, packet);
+                default:
+                    if (layer.HasPortFields)
+                        ScanPortFields(layer.Fields, packet);
                     break;
             }
         }

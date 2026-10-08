@@ -1353,9 +1353,15 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             {
                 "ip" or "ipv4" => LocalizationService.Resolve("Layer.Ipv4", srcAddr, dstAddr),
                 "ipv6" => LocalizationService.Resolve("Layer.Ipv6", srcAddr, dstAddr),
-                "udp" or "tcp" when srcPort > 0 || dstPort > 0 =>
+                _ when (srcPort > 0 || dstPort > 0) && layer.HasPortFields =>
                     LocalizationService.Resolve("Layer.TcpUdpPorts",
-                        LocalizationService.Resolve(layer.ProtocolName == "tcp" ? "Layer.Tcp" : "Layer.Udp"),
+                        layer.ProtocolName.ToLowerInvariant() switch
+                        {
+                            "tcp" => LocalizationService.Resolve("Layer.Tcp"),
+                            "udp" => LocalizationService.Resolve("Layer.Udp"),
+                            "sctp" => LocalizationService.Resolve("Layer.Sctp"),
+                            _ => layer.ProtocolName.ToUpperInvariant(),
+                        },
                         srcPort, dstPort),
                 _ => layer.DisplayText,
             };
