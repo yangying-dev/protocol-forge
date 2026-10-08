@@ -470,7 +470,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         await ApplyFilterCommand.ExecuteAsync(null);
     }
 
-    /// <summary>TCP streams discovered in the loaded capture, for the follow-stream list.</summary>
+    /// <summary>Streams (TCP + UDP) discovered in the loaded capture, for the follow-stream list.</summary>
     public ObservableCollection<StreamIndex> TcpStreams { get; } = [];
 
     [ObservableProperty]
@@ -484,9 +484,10 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _ = ApplySelectedStreamFilterAsync(value);
 
     /// <summary>
-    /// Populates the TCP stream list. The index comes from the same scan that already
-    /// runs for reassembly, so this does not launch another tshark pass unless the
-    /// capture has no TCP at all.
+    /// Populates the stream list from every provider that indexes conversations
+    /// (TCP for its reassembly index, UDP for its conversation index). The scans
+    /// come from work the providers already do, so this does not launch another
+    /// tshark pass unless the capture has no such traffic at all.
     /// </summary>
     [RelayCommand]
     private async Task LoadTcpStreamsAsync()
@@ -497,26 +498,29 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
         foreach (var provider in Document.ContextProviders)
         {
-            if (provider is not TcpStreamContextProvider tcp)
+            IReadOnlyList<StreamIndex> streams;
+            if (provider is TcpStreamContextProvider tcp)
+                streams = await tcp.GetStreamsAsync();
+            else if (provider is UdpStreamContextProvider udp)
+                streams = await udp.GetStreamsAsync();
+            else
                 continue;
-            foreach (var stream in await tcp.GetStreamsAsync())
+
+            foreach (var stream in streams)
                 TcpStreams.Add(stream);
-            break;
         }
     }
 
     /// <summary>
     /// Filters the packet list down to the selected stream by reusing the display
-    /// filter, so the grid shows exactly that conversation.
+    /// filter, so the grid shows exactly that conversation. The stream field follows
+    /// the stream's own protocol (tcp.stream / udp.stream).
     /// </summary>
-    private TcpStreamContextProvider? FindTcpStreamProvider() =>
-        Document?.ContextProviders?.OfType<TcpStreamContextProvider>().FirstOrDefault();
-
     private async Task ApplySelectedStreamFilterAsync(StreamIndex? value)
     {
         if (value is null)
             return;
-        FilterText = "tcp.stream eq " + value.StreamId;
+        FilterText = $"{value.Protocol}.stream eq {value.StreamId}";
         await ApplyFilterCommand.ExecuteAsync(null);
     }
 
@@ -537,20 +541,34 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     /// </summary>
     private async Task RefreshStreamIndexAfterSaveAsync()
     {
-        var provider = FindTcpStreamProvider();
-        if (provider is null)
+        bool found = false;
+        foreach (var provider in Document?.ContextProviders ?? [])
+        {
+            switch (provider)
+            {
+                case TcpStreamContextProvider tcp:
+                    tcp.Invalidate();
+                    found = true;
+                    break;
+                case UdpStreamContextProvider udp:
+                    udp.Invalidate();
+                    found = true;
+                    break;
+            }
+        }
+        if (!found)
             return;
 
         try
         {
-            provider.Invalidate();
             await LoadTcpStreamsCommand.ExecuteAsync(null);
 
             // The combo was bound to instances from the previous index; re-point it at the
             // rebuilt one so the selection stays valid.
-            var previous = SelectedTcpStream?.StreamId;
+            var previous = SelectedTcpStream;
             if (previous is not null)
-                SelectedTcpStream = TcpStreams.FirstOrDefault(s => s.StreamId == previous);
+                SelectedTcpStream = TcpStreams.FirstOrDefault(
+                    s => s.Protocol == previous.Protocol && s.StreamId == previous.StreamId);
         }
         catch (Exception ex)
         {
@@ -568,7 +586,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private string _reassembledStatus = string.Empty;
 
     /// <summary>
-    /// Fetches the reassembled payload of the selected TCP stream and shows it as a
+    /// Fetches the reassembled payload of the selected stream (TCP or UDP) and shows
+    /// it as a
     /// read-only hex dump. Read-only by necessity: reassembled bytes span more than the
     /// selected frame, so they have no offset in the packet to edit against.
     /// </summary>
@@ -585,7 +604,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         try
         {
             var bytes = await _tshark.GetReassembledStreamAsync(
-                _loadedFilePath, "tcp", SelectedTcpStream.StreamId, _displayFilter);
+                _loadedFilePath, SelectedTcpStream.Protocol, SelectedTcpStream.StreamId, _displayFilter);
 
             if (bytes is null || bytes.Length == 0)
             {

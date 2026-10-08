@@ -116,10 +116,11 @@ public sealed class TsharkService
         int total = rawResult.Packets.Count;
 
         // Context providers (SDP signaling, IP fragment groups, TCP stream
-        // reassembly) are attached to the document but do NOT scan here: each
-        // provider runs its whole-capture tshark scan lazily on the first
-        // per-packet tree build that needs it, so captures that never touch
-        // such packets pay zero extra tshark processes.
+        // reassembly, the UDP conversation index) are attached to the document
+        // but do NOT scan here: each provider runs its whole-capture tshark
+        // scan lazily on the first per-packet tree build or stream query that
+        // needs it, so captures that never touch such packets pay zero extra
+        // tshark processes.
         async Task<IReadOnlyList<string>> RowReader(string filter, IReadOnlyList<string> fields, CancellationToken c)
             => await RunTsharkFilterRowsAsync(filePath, filter, fields, c);
         document.ContextProviders =
@@ -127,6 +128,7 @@ public sealed class TsharkService
             new SdpContextProvider(RowReader),
             new FragmentContextProvider(RowReader),
             new TcpStreamContextProvider(RowReader),
+            new UdpStreamContextProvider(RowReader),
         ];
 
         var psi = new ProcessStartInfo

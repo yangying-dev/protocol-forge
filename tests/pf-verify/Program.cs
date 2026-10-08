@@ -3414,7 +3414,7 @@ catch (Exception ex)
     Report("G43 group execution", false, ex.ToString());
 }
 
-// ══ GROUP 44: FS-01..04 follow-stream index is exposed ══
+// ══ GROUP 44: FS-01..07 follow-stream index is exposed ══
 Banner(44, "follow-stream index");
 try
 {
@@ -3429,7 +3429,10 @@ try
     byte[] g44A = FixtureEth(FixtureIpv4(g44Req, 6, 1), 0x0800);
     byte[] g44A2 = FixtureEth(FixtureIpv4(g44Req2, 6, 2), 0x0800);
     byte[] g44B = FixtureEth(FixtureIpv4(g44Other, 6, 3), 0x0800);
-    await File.WriteAllBytesAsync(g44Src, BuildFixturePcap(g44A, g44A2, g44B));
+    // One UDP conversation (same 5-tuple twice) — frames 4 and 5 of the fixture.
+    byte[] g44U1 = FixtureEth(FixtureIpv4(FixtureUdp(5000, 5001, new byte[] { 1, 2, 3, 4 }), 17, 4), 0x0800);
+    byte[] g44U2 = FixtureEth(FixtureIpv4(FixtureUdp(5000, 5001, new byte[] { 5, 6, 7, 8 }), 17, 5), 0x0800);
+    await File.WriteAllBytesAsync(g44Src, BuildFixturePcap(g44A, g44A2, g44B, g44U1, g44U2));
 
     var g44Doc = new PacketDocument { FilePath = g44Src };
     var g44Tshark = new TsharkService(new PcapIngestService(), new PcapExportService());
@@ -3457,6 +3460,28 @@ try
 
         var g44None = await g44Provider.GetStreamOfFrameAsync(9999);
         Report("FS-04 a frame that is not TCP maps to no stream", g44None is null, $"owner={g44None}");
+
+        var g44UdpFrame = await g44Provider.GetStreamOfFrameAsync(4);
+        Report("FS-05 the TCP index does not claim UDP frames", g44UdpFrame is null,
+            $"owner={g44UdpFrame}");
+    }
+
+    var g44UdpProvider = g44Doc.ContextProviders.OfType<UdpStreamContextProvider>().FirstOrDefault();
+    Report("FS-06 the document carries a UDP stream provider", g44UdpProvider is not null,
+        g44UdpProvider is null ? "missing" : g44UdpProvider.Name);
+
+    if (g44UdpProvider is not null)
+    {
+        var g44UdpStreams = await g44UdpProvider.GetStreamsAsync();
+        var g44UdpOne = g44UdpStreams.Count == 1 ? g44UdpStreams[0] : null;
+        Report("FS-07 the UDP index reports one conversation covering both UDP frames",
+            g44UdpOne is not null
+            && g44UdpOne.Protocol == "udp"
+            && g44UdpOne.Frames.Count == 2
+            && g44UdpOne.Frames.Contains(4) && g44UdpOne.Frames.Contains(5),
+            g44UdpOne is null
+                ? $"streams={g44UdpStreams.Count}"
+                : $"protocol={g44UdpOne.Protocol}, frames=[{string.Join(",", g44UdpOne.Frames)}]");
     }
 }
 catch (Exception ex)
