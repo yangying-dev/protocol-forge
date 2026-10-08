@@ -57,11 +57,12 @@ so no real operator capture is involved and reproducing them does not require co
 - **Toolbar UI** — Start/Pause/Stop send controls with a network adapter dropdown, send interval and loop count inputs, an Auto-fix toggle, live sent/failed counters, and a status bar.
 - **Display Filter** — A tshark display filter applied to the packet list. The filter is evaluated by tshark at load time, so the grid only ever holds matching packets and every row keeps the frame number its bytes came from. Reachable from the View menu and the panel header; Enter in the box applies it.
 - **Find** — Search the packet list columns and the selected packet's protocol tree, forward or backward. A tree hit expands and reveals the matching node rather than rebuilding the tree.
-- **Statistics Panel** — Runs `conv,*`, `endpoints,ip`, `io,phs` (protocol hierarchy), `io,stat` and `expert` taps, honouring the display filter where the tap accepts one. Toggle from the View menu. tshark pads its own output for humans, so it is shown verbatim instead of being re-laid-out.
+- **Statistics Panel** — Runs `conv,*`, `endpoints,ip`, `io,phs` (protocol hierarchy), `io,stat` and `expert` taps, honouring the display filter where the tap accepts one. Shown from the View menu; like every panel it is a dockable pane. tshark pads its own output for humans, so it is shown verbatim instead of being re-laid-out.
 - **PCAPNG Write-Back** — A capture opened as `.pcapng` is saved as PCAPNG, keeping the interface description, snaplen and timestamp resolution. Previously any `.pcapng` was silently rewritten as little-endian/microsecond classic PCAP on save, dropping every interface description and block comment. Export-as follows the extension you choose.
 - **Headless CLI** — `validate`, `edit`, `send` and `stats` run without a GUI, for CI and batch use. Edits go through the same Verify-Before-Commit transaction as the GUI. Exit codes 0/1/2. See [`docs/pfcheck-cli.md`](docs/pfcheck-cli.md).
 - **Send History** — Per-packet send results are retained for the run instead of only the most recent one being visible, and can be exported as CSV from the packet-list context menu.
-- **Layout Persistence** — Window geometry, splitter positions, and panel visibility are saved to `%APPDATA%/ProtocolForge/layout.json` and restored on next launch.
+- **Dockable Layout** — The packet list, protocol tree, hex editor and statistics are panes of a visual-studio-style dock (Dock 12.1): drag a pane header to re-dock it, group panes as tabs, float them in their own window, or close and re-open them from the View menu. The arrangement persists in `%APPDATA%/ProtocolForge/docklayout.json`.
+- **Layout Persistence** — Window geometry and panel visibility are saved to `%APPDATA%/ProtocolForge/layout.json` (the dock arrangement goes to `docklayout.json`, above) and restored on next launch.
 
 ---
 
@@ -103,7 +104,7 @@ so no real operator capture is involved and reproducing them does not require co
 ProtocolForge/
 ├── App.axaml.cs              # Application entry — manual DI composition
 ├── Program.cs                 # Avalonia bootstrap
-├── ProtocolForge.csproj       # .NET 8, Avalonia 12.0.5, CommunityToolkit.Mvvm 8.4.2, DataGrid 12.0.1
+├── ProtocolForge.csproj       # .NET 8, Avalonia 12.1.3, Dock 12.1.0.7, CommunityToolkit.Mvvm 8.4.2, DataGrid 12.1.2
 │
 ├── Assets/Lang/               # Localization dictionaries — en-US.json + zh-CN.json (embedded as resources)
 │   ├── en-US.json            # English UI strings (203 keys)
@@ -126,7 +127,7 @@ ProtocolForge/
 │   ├── PcapIngestService.cs   # Raw PCAP byte reader (handles endianness, µs/ns timestamps)
 │   ├── PcapExportService.cs   # PCAP writer — overwrite save, export-as, and single-packet reparse temp files
 │   ├── ProtocolEditorService.cs # Edit fence (CheckTreeEditFence), field-level edits, offset lookup, hex ↔ byte conversion (0x-prefixed hex)
-│   ├── LayoutService.cs       # Window layout persistence (JSON in %APPDATA%)
+│   ├── LayoutService.cs       # Layout persistence (JSON in %APPDATA%): window geometry + visibility (layout.json), dock arrangement (docklayout.json)
 │   ├── NetworkInterfaceService.cs  # Cross-platform network adapter scanner
 │   ├── PacketSendService.cs   # Raw packet injection with rung ladder fallback (L2 → IP → UDP)
 │   ├── PacketPrepareService.cs # Pre-send preparation: checksum/length repair, source address injection
@@ -141,12 +142,18 @@ ProtocolForge/
 │   ├── ProtocolTreeViewModel.cs # Protocol layer/field tree, field click → hex highlight, inline value editing (Enter/Esc/click-away), VBC commit, tree reveal for hex selection
 │   ├── HexEditorViewModel.cs  # Hex rendering + REPLACE-only inline hex editing, selection/highlight, edited-byte marking, reverse-sync events
 │   ├── ToolBarViewModel.cs    # Start/Pause/Stop send commands, interval/loops, interface dropdown
+│   ├── Panes.cs               # The four dockable panes (packet list / protocol tree / hex / statistics)
+│   ├── DockLayoutFactory.cs   # Default dock layout + pane ids, InitLayout host wiring
 │   └── ViewModelBase.cs       # Common ObservableObject base class
 │
 ├── Views/                     # Avalonia XAML + code-behind
-│   ├── MainWindow.axaml       # Full window layout: menu, toolbar, packet list, splitter, tree, hex
-│   ├── MainWindow.axaml.cs    # File dialogs, layout restore/save, menu handlers
+│   ├── MainWindow.axaml       # Full window layout: menu, toolbar, and the dock host (DockControl)
+│   ├── MainWindow.axaml.cs    # File dialogs, window-geometry restore/save, menu handlers
 │   └── Controls/
+│       ├── PacketListPaneView.axaml(.cs) # Dock pane: filter box + packet DataGrid + context menu
+│       ├── ProtocolTreePaneView.axaml(.cs) # Dock pane: protocol tree
+│       ├── HexEditorPaneView.axaml(.cs) # Dock pane: hex viewer + offsets/offset-range labels
+│       ├── StatisticsPaneView.axaml(.cs) # Dock pane: statistics tap picker + output
 │       ├── HexEditor.axaml.cs # Custom hex viewer: 16-byte rows, click/keyboard navigation, visual state
 │       ├── HexEditor.axaml    # Minimal XAML — everything built in code-behind
 │       ├── ProtocolTreeView.axaml  # TreeView with field data templates
@@ -270,7 +277,7 @@ The native L2 rung is never bundled or silently installed: on Windows the app on
 
 > **End users**: download a **self-contained** release — the .NET 8 runtime is bundled, so you install **nothing** but Wireshark (below). No separate .NET install needed.
 - **Wireshark / tshark (≥ 2.6.0)** — Protocol parsing requires tshark 2.6.0 or later on PATH (or via `TSHARK_PATH`). Older tshark versions open the app in read-only mode. Download from [wireshark.org](https://www.wireshark.org/download.html).
-- **.NET 8 SDK** (8.0.421 or later, **builders/contributors only**) — required to compile from source; not needed to run a self-contained build.
+- **.NET 10 SDK** (10.0.100 or later, pinned by `global.json`, **builders/contributors only**) — required to compile from source (the target framework is still net8.0); not needed to run a self-contained build.
   - Linux: `sudo apt install tshark`
   - macOS: `brew install wireshark`
   - Windows 10/11 x64: install Wireshark; keep the Npcap option enabled (selected by default). The app does not bundle Npcap.

@@ -53,6 +53,7 @@
   "Grid.Length": "长度",
   "Grid.Info": "信息",
 
+  "Panel.PacketList": "数据包列表",
   "Panel.ProtocolTree": "协议树",
   "Panel.HexEditor": "十六进制编辑器",
 

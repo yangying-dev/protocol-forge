@@ -1,8 +1,13 @@
 using System.ComponentModel;
 using System.Collections.ObjectModel;
 using System.Linq;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Dock.Model.Controls;
+using Dock.Model.Core;
+using Dock.Model.Core.Events;
+using Dock.Serializer.SystemTextJson;
 using ProtocolForge.Models;
 using ProtocolForge.Services;
 
@@ -14,6 +19,14 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private readonly PcapExportService _pcapExport;
     private readonly ProtocolEditorService _editorService;
     private readonly LayoutService _layoutService;
+    private readonly DockSerializer _dockSerializer = new();
+
+    public DockLayoutFactory Factory { get; }
+
+    [ObservableProperty]
+    private IRootDock? _layout;
+
+    public event EventHandler? FindFocusRequested;
 
     // Per-packet version counter so an older in-flight display refresh never
     // overwrites the tree with stale data after the user edited again.
@@ -174,11 +187,41 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             }
         };
 
-        // Restore panel visibility from saved layout
+        Factory = new DockLayoutFactory();
+        IRootDock? restoredLayout = null;
+        var dockJson = _layoutService.LoadDockLayout();
+        if (dockJson is not null)
+        {
+            try
+            {
+                restoredLayout = _dockSerializer.Deserialize<IRootDock>(dockJson);
+            }
+            catch (Exception ex)
+            {
+                TraceLog.Write($"VM.DockLayout corrupt, falling back to default: {ex.Message}");
+            }
+        }
+
+        var layout = restoredLayout ?? Factory.CreateLayout();
+        Factory.InitLayout(layout);
+        Layout = layout;
+        AttachPaneHosts(layout);
+        Factory.DockableHidden += OnDockableHidden;
+        Factory.DockableRestored += OnDockableRestored;
+
         var saved = _layoutService.Load();
-        ShowPacketList = saved.ShowPacketList;
-        ShowProtocolTree = saved.ShowProtocolTree;
-        ShowHexEditor = saved.ShowHexEditor;
+        if (restoredLayout is not null)
+        {
+            // The dock JSON is authoritative for pane visibility when restored;
+            // only the OriginalOwner back-links (lost across restart) need repair.
+            RewireHiddenPaneOwners(layout);
+        }
+        else
+        {
+            ApplyLegacyVisibility(saved);
+        }
+        SyncPaneVisibility();
+        RetitlePanes();
 
         // Re-resolve the last status + derived display strings on language switch.
         LocalizationService.LanguageChanged += OnLanguageChanged;
@@ -200,6 +243,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(PacketsDisplay));
         OnPropertyChanged(nameof(FileDisplay));
         OnPropertyChanged(nameof(ModifiedDisplay));
+        RetitlePanes();
     }
 
     // Commands
@@ -823,41 +867,199 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void TogglePacketList()
-    {
-        ShowPacketList = !ShowPacketList;
-        SaveLayout();
-    }
+    private void TogglePacketList() => TogglePane(DockLayoutFactory.PacketListId);
 
     [RelayCommand]
-    private void ToggleProtocolTree()
-    {
-        ShowProtocolTree = !ShowProtocolTree;
-        SaveLayout();
-    }
+    private void ToggleProtocolTree() => TogglePane(DockLayoutFactory.ProtocolTreeId);
 
     [RelayCommand]
-    private void ToggleHexEditor()
+    private void ToggleHexEditor() => TogglePane(DockLayoutFactory.HexEditorId);
+
+    [RelayCommand]
+    private void ToggleStatistics() => TogglePane(DockLayoutFactory.StatisticsId);
+
+    private void TogglePane(string paneId)
     {
-        ShowHexEditor = !ShowHexEditor;
+        if (IsPaneHidden(paneId))
+            RestorePane(paneId);
+        else
+            HidePane(paneId);
+    }
+
+    private void HidePane(string paneId)
+    {
+        if (Layout is null || IsPaneHidden(paneId))
+            return;
+        if (FindPane(paneId) is { } pane)
+            Factory.HideDockable(pane);
+    }
+
+    private void RestorePane(string paneId)
+    {
+        if (Layout is null || !IsPaneHidden(paneId))
+            return;
+        if (FindPane(paneId) is { } pane)
+            Factory.RestoreDockable(pane);
+    }
+
+    private PaneDock? FindPane(string paneId)
+    {
+        if (Layout is not { } root)
+            return null;
+        if (root.HiddenDockables?.FirstOrDefault(d => d.Id == paneId) is PaneDock hiddenPane)
+            return hiddenPane;
+        return Factory.Find(root, d => d.Id == paneId).OfType<PaneDock>().FirstOrDefault();
+    }
+
+    private bool IsPaneHidden(string paneId) =>
+        Layout?.HiddenDockables?.Any(d => d.Id == paneId) == true;
+
+    private void SyncPaneVisibility()
+    {
+        ShowPacketList = !IsPaneHidden(DockLayoutFactory.PacketListId);
+        ShowProtocolTree = !IsPaneHidden(DockLayoutFactory.ProtocolTreeId);
+        ShowHexEditor = !IsPaneHidden(DockLayoutFactory.HexEditorId);
+        ShowStatistics = !IsPaneHidden(DockLayoutFactory.StatisticsId);
+    }
+
+    private void OnDockableHidden(object? sender, DockableHiddenEventArgs e)
+    {
+        if (e.Dockable is PaneDock pane)
+            pane.OriginalOwnerId = pane.OriginalOwner?.Id;
+        SyncPaneVisibility();
+        // Deferred: a restore fires mid-restore (OriginalOwner branch not yet run),
+        // so serialize only once the whole dock operation has completed.
+        Dispatcher.UIThread.Post(SaveLayout);
+    }
+
+    private void OnDockableRestored(object? sender, DockableRestoredEventArgs e)
+    {
+        if (e.Dockable is PaneDock pane)
+            pane.OriginalOwnerId = null;
+        SyncPaneVisibility();
+        Dispatcher.UIThread.Post(SaveLayout);
+    }
+
+    private void ApplyLegacyVisibility(LayoutState saved)
+    {
+        if (!saved.ShowPacketList)
+            HidePane(DockLayoutFactory.PacketListId);
+        if (!saved.ShowProtocolTree)
+            HidePane(DockLayoutFactory.ProtocolTreeId);
+        if (!saved.ShowHexEditor)
+            HidePane(DockLayoutFactory.HexEditorId);
+        // Pre-migration the statistics checkbox never showed the panel, so no user
+        // of the old layout ever had it visible — start hidden on a fresh layout.
+        HidePane(DockLayoutFactory.StatisticsId);
+    }
+
+    private void RewireHiddenPaneOwners(IRootDock root)
+    {
+        foreach (var pane in root.HiddenDockables?.OfType<PaneDock>().ToList() ?? [])
+        {
+            if (pane.OriginalOwnerId is { } ownerId &&
+                Factory.Find(root, d => d.Id == ownerId).OfType<IDock>().FirstOrDefault() is { } owner)
+            {
+                pane.OriginalOwner = owner;
+            }
+        }
+    }
+
+    private void AttachPaneHosts(IDockable dockable)
+    {
+        if (dockable is PaneDock pane)
+            pane.Host = this;
+        if (dockable is IDock { VisibleDockables: not null } dock)
+        {
+            foreach (var child in dock.VisibleDockables)
+                AttachPaneHosts(child);
+        }
+    }
+
+    private void RetitlePanes()
+    {
+        if (Layout is not { } root)
+            return;
+        foreach (var pane in EnumeratePanes(root)
+                     .Concat(root.HiddenDockables?.OfType<PaneDock>() ?? []))
+        {
+            pane.Title = pane.Id switch
+            {
+                DockLayoutFactory.PacketListId => LocalizationService.Resolve("Panel.PacketList"),
+                DockLayoutFactory.ProtocolTreeId => LocalizationService.Resolve("Panel.ProtocolTree"),
+                DockLayoutFactory.HexEditorId => LocalizationService.Resolve("Panel.HexEditor"),
+                DockLayoutFactory.StatisticsId => LocalizationService.Resolve("Panel.Statistics"),
+                _ => pane.Title,
+            };
+        }
+    }
+
+    private static IEnumerable<PaneDock> EnumeratePanes(IDock dock)
+    {
+        foreach (var dockable in dock.VisibleDockables ?? [])
+        {
+            if (dockable is PaneDock pane)
+            {
+                yield return pane;
+            }
+            else if (dockable is IDock child)
+            {
+                foreach (var childPane in EnumeratePanes(child))
+                    yield return childPane;
+            }
+        }
+    }
+
+    public void RequestFindFocus() => FindFocusRequested?.Invoke(this, EventArgs.Empty);
+
+    public void ResetDockLayout()
+    {
+        var layout = Factory.CreateLayout();
+        Factory.InitLayout(layout);
+        Layout = layout;
+        AttachPaneHosts(layout);
+        HidePane(DockLayoutFactory.StatisticsId);
+        SyncPaneVisibility();
+        RetitlePanes();
         SaveLayout();
     }
 
     // Layout persistence
-    public void SaveLayout(double topRatio = 0.35, double bottomRatio = 0.5,
-        double winX = -1, double winY = -1, double winW = 1200, double winH = 800, int winState = 0)
+    public void SaveLayout()
     {
-        _layoutService.Save(new LayoutState
+        PersistLayoutState();
+    }
+
+    public void SaveLayout(double winX, double winY, double winW, double winH, int winState)
+    {
+        var state = _layoutService.Load();
+        state.WindowX = winX;
+        state.WindowY = winY;
+        state.WindowWidth = winW;
+        state.WindowHeight = winH;
+        state.WindowState = winState;
+        PersistLayoutState(state);
+    }
+
+    private void PersistLayoutState(LayoutState? state = null)
+    {
+        state ??= _layoutService.Load();
+        state.ShowPacketList = ShowPacketList;
+        state.ShowProtocolTree = ShowProtocolTree;
+        state.ShowHexEditor = ShowHexEditor;
+        _layoutService.Save(state);
+
+        if (Layout is { } layout)
         {
-            TopRowRatio = topRatio,
-            BottomLeftRatio = bottomRatio,
-            WindowX = winX, WindowY = winY,
-            WindowWidth = winW, WindowHeight = winH,
-            WindowState = winState,
-            ShowPacketList = ShowPacketList,
-            ShowProtocolTree = ShowProtocolTree,
-            ShowHexEditor = ShowHexEditor,
-        });
+            try
+            {
+                _layoutService.SaveDockLayout(_dockSerializer.Serialize(layout));
+            }
+            catch (Exception ex)
+            {
+                TraceLog.Write($"VM.SaveDockLayout failed: {ex.Message}");
+            }
+        }
     }
 
     // Event Handlers

@@ -1,0 +1,70 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ProtocolForge.ViewModels"
+             xmlns:svc="using:ProtocolForge.Services"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="300"
+             x:Class="ProtocolForge.Views.Controls.StatisticsPaneView"
+             x:DataType="vm:MainWindowViewModel">
+    <Grid RowDefinitions="Auto,*">
+        <Border Grid.Row="0" Background="#F0F0F0" Padding="10,4"
+                BorderBrush="#CCC" BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto">
+                <ComboBox Grid.Column="0" Margin="0,0,10,0" Height="24"
+                          FontSize="12" HorizontalAlignment="Left"
+                          MinWidth="200"
+                          ItemsSource="{Binding StatisticsTaps}"
+                          SelectedItem="{Binding SelectedStatisticsTap}"
+                          SelectionChanged="OnStatisticsTapChanged" />
+                <ComboBox Grid.Column="1" Margin="10,0,4,0" Height="24"
+                          FontSize="12" MinWidth="170"
+                          ItemsSource="{Binding TcpStreams}"
+                          SelectedItem="{Binding SelectedTcpStream}"
+                          ToolTip.Tip="{DynamicResource L10n.Stats.FollowStream}"
+                          PlaceholderText="{DynamicResource L10n.Stats.FollowStream}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate DataType="svc:StreamIndex" x:DataType="svc:StreamIndex">
+                            <TextBlock FontSize="12">
+                                <Run Text="{Binding StreamId}" />
+                                <Run Text=" (" /><Run Text="{Binding Frames.Count}" /><Run Text=")" />
+                            </TextBlock>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <Button Grid.Column="2" Margin="4,0" Padding="8,2" FontSize="12"
+                        Content="{DynamicResource L10n.Rv.Show}"
+                        ToolTip.Tip="{DynamicResource L10n.Rv.Title}"
+                        Command="{Binding ShowReassembledBytesCommand}" />
+                <Button Grid.Column="3" Margin="4,0" Padding="8,2" FontSize="12"
+                        Content="{DynamicResource L10n.Stats.Refresh}"
+                        Click="OnRefreshStatisticsClick" />
+                <TextBlock Grid.Column="4" Margin="8,0" FontSize="11" Foreground="#888"
+                           VerticalAlignment="Center"
+                           Text="{Binding StatisticsStatus}" />
+            </Grid>
+        </Border>
+        <ListBox Grid.Row="1" Name="ReassembledList"
+                 ItemsSource="{Binding ReassembledLines}"
+                 IsVisible="{Binding ShowReassembled}"
+                 Background="#FAFAFA" BorderThickness="0"
+                 FontFamily="Consolas, monospace" FontSize="11">
+            <ListBox.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <StackPanel />
+                </ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
+        </ListBox>
+        <ListBox Grid.Row="1" Name="StatisticsList"
+                 ItemsSource="{Binding StatisticsLines}"
+                 IsVisible="{Binding !ShowReassembled}"
+                 Background="White" BorderThickness="0"
+                 FontFamily="Consolas, monospace" FontSize="11">
+            <ListBox.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <StackPanel />
+                </ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
+        </ListBox>
+    </Grid>
+</UserControl>

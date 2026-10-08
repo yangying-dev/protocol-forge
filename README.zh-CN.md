@@ -59,7 +59,9 @@ ProtocolForge 是一款跨平台桌面应用程序，用于检查、编辑和重
   3. **UDP 套接字** — 传输层回退（无需特权）
   发送由可配置的**发送间隔（毫秒）**和**循环次数**驱动。**Auto-fix** 开关会在注入前修复 IPv4/IPv6 与 TCP/UDP 校验和，并将源地址改写为所选接口自身的地址。
 - **工具栏 UI** — 开始/暂停/停止发送控制、网络适配器下拉菜单、发送间隔与循环次数输入框、Auto-fix 开关、实时发送/失败计数器和状态栏。
-- **布局持久化** — 窗口几何位置、分隔条位置和面板可见性保存到 `%APPDATA%/ProtocolForge/layout.json`，下次启动时恢复。
+- **统计面板** — 运行 `conv,*`、`endpoints,ip`、`io,phs`（协议层级）、`io,stat` 和 `expert` 统计 tap（tap 接受显示过滤器时遵循过滤器），通过 **视图** 菜单打开；与其他面板一样是可停靠窗格。tshark 按人类阅读习惯补齐空格，因此原样展示而不重新排版。
+- **可停靠布局** — 报文列表、协议树、十六进制编辑器和统计面板均为 visual-studio 风格的停靠窗格（Dock 12.1）：拖动窗格标题可重新停靠、以分页方式组合、浮动到独立窗口，或关闭后从视图菜单重新打开。布局保存到 `%APPDATA%/ProtocolForge/docklayout.json`。
+- **布局持久化** — 窗口几何位置和面板可见性保存到 `%APPDATA%/ProtocolForge/layout.json`（停靠布局保存到 `docklayout.json`，见上），下次启动时恢复。
 
 ---
 
@@ -101,7 +103,7 @@ ProtocolForge 是一款跨平台桌面应用程序，用于检查、编辑和重
 ProtocolForge/
 ├── App.axaml.cs              # 应用入口 — 手动 DI 组合
 ├── Program.cs                 # Avalonia 启动
-├── ProtocolForge.csproj       # .NET 8, Avalonia 12.0.5, CommunityToolkit.Mvvm 8.4.2, DataGrid 12.0.1
+├── ProtocolForge.csproj       # .NET 8, Avalonia 12.1.3, Dock 12.1.0.7, CommunityToolkit.Mvvm 8.4.2, DataGrid 12.1.2
 │
 ├── Assets/Lang/               # 本地化字典 — en-US.json + zh-CN.json（作为嵌入资源）
 │   ├── en-US.json            # 英文界面字符串（202 个键）
@@ -124,7 +126,7 @@ ProtocolForge/
 │   ├── PcapIngestService.cs   # 原始 PCAP 字节读取器（处理字节序、µs/ns 时间戳）
 │   ├── PcapExportService.cs   # PCAP 写入器 — 覆盖保存、另存为、单包重解析临时文件
 │   ├── ProtocolEditorService.cs # 编辑栅栏（CheckTreeEditFence）、字段级编辑、偏移量查找、十六进制↔字节转换
-│   ├── LayoutService.cs       # 窗口布局持久化（JSON 保存在 %APPDATA%）
+│   ├── LayoutService.cs       # 布局持久化（JSON 保存在 %APPDATA%）：窗口几何/可见性（layout.json）、停靠布局（docklayout.json）
 │   ├── NetworkInterfaceService.cs  # 跨平台网络适配器扫描器
 │   ├── PacketContextProvider.cs # tshark 域内上下文扫描（SDP、IP 分片、TCP 重传），按需惰性执行
 │   ├── PacketSendService.cs   # 原始报文注入，带发送档位（rung）阶梯回退（L2 → IP → UDP）
@@ -140,12 +142,18 @@ ProtocolForge/
 │   ├── ProtocolTreeViewModel.cs # 协议层/字段树、字段点击 → 十六进制高亮、内联值编辑（Enter/Esc/点击外部）、VBC 提交、为 hex 选择定位树节点
 │   ├── HexEditorViewModel.cs  # 十六进制渲染 + 仅替换（REPLACE-only）内联编辑、选择/高亮、已修改字节标记、反向同步事件
 │   ├── ToolBarViewModel.cs    # 开始/暂停/停止发送命令、间隔/循环、接口下拉菜单
+│   ├── Panes.cs               # 四个可停靠窗格（报文列表 / 协议树 / 十六进制 / 统计）
+│   ├── DockLayoutFactory.cs   # 默认停靠布局与窗格 Id、InitLayout 宿主接线
 │   └── ViewModelBase.cs       # 公共 ObservableObject 基类
 │
 ├── Views/                     # Avalonia XAML + 代码后置
-│   ├── MainWindow.axaml       # 完整窗口布局：菜单、工具栏、报文列表、分隔条、协议树、十六进制
-│   ├── MainWindow.axaml.cs    # 文件对话框、布局恢复/保存、菜单处理
+│   ├── MainWindow.axaml       # 完整窗口布局：菜单、工具栏与停靠宿主（DockControl）
+│   ├── MainWindow.axaml.cs    # 文件对话框、窗口几何恢复/保存、菜单处理
 │   └── Controls/
+│       ├── PacketListPaneView.axaml(.cs) # 停靠窗格：过滤框 + 报文 DataGrid + 右键菜单
+│       ├── ProtocolTreePaneView.axaml(.cs) # 停靠窗格：协议树
+│       ├── HexEditorPaneView.axaml(.cs) # 停靠窗格：十六进制查看器 + 偏移标签
+│       ├── StatisticsPaneView.axaml(.cs) # 停靠窗格：统计 tap 选择器与输出
 │       ├── HexEditor.axaml.cs # 自定义十六进制查看器：16字节行、点击/键盘导航、视觉状态
 │       ├── HexEditor.axaml    # 极简 XAML — 所有内容在代码后置中构建
 │       ├── ProtocolTreeView.axaml  # 带字段数据模板的 TreeView
@@ -266,7 +274,7 @@ ProtocolForge/
   - Linux: `sudo apt install tshark`
   - macOS: `brew install wireshark`
   - Windows 10/11 x64：安装 Wireshark；保留 Npcap 选项（默认勾选）。应用不捆绑 Npcap。
-- **.NET 8 SDK**（8.0.421 或更新版本，**仅构建/贡献者需要**）——仅编译源码时需要；运行自包含构建产物则不需要。
+- **.NET 10 SDK**（10.0.100 或更新版本，由 `global.json` 固定，**仅构建/贡献者需要**）——仅编译源码时需要（目标框架仍为 net8.0）；运行自包含构建产物则不需要。
 
 ### 构建和运行
 

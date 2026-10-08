@@ -3572,6 +3572,11 @@ int RunHeadlessRenderOnly()
             throw;
         }
 
+        string g54DockPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "ProtocolForge", "docklayout.json");
+        byte[]? g54DockBackup = File.Exists(g54DockPath) ? File.ReadAllBytes(g54DockPath) : null;
+
         var g54Window = App.ComposeMainWindow(null);
         g54Window.Width = 1400;
         g54Window.Height = 900;
@@ -3600,11 +3605,27 @@ int RunHeadlessRenderOnly()
             }
         }
 
+        bool g54StatsShownInitially = g54Vm.ShowStatistics;
         var g54Stats = ByName<ListBox>(g54Window, "StatisticsList");
         var g54Reasm = ByName<ListBox>(g54Window, "ReassembledList");
-        Report("HG-03 the panel controls the fix touched are present in the visual tree",
-            g54Stats is not null && g54Reasm is not null,
-            $"statistics={g54Stats is not null}, reassembled={g54Reasm is not null}");
+
+        // The statistics pane is hidden by default, and Dock materialises a pane's
+        // content only while it is visible — so presence must track ShowStatistics
+        // in both states, and showing it via the menu must realise both lists.
+        bool g54PresenceTracksFlag =
+            (g54Stats is not null) == g54Vm.ShowStatistics &&
+            (g54Reasm is not null) == g54Vm.ShowStatistics;
+        if (!g54Vm.ShowStatistics)
+        {
+            g54Vm.ToggleStatisticsCommand.Execute(null);
+            Pump();
+            g54Stats = ByName<ListBox>(g54Window, "StatisticsList");
+            g54Reasm = ByName<ListBox>(g54Window, "ReassembledList");
+        }
+        bool g54Shown = g54Vm.ShowStatistics && g54Stats is not null && g54Reasm is not null;
+        Report("HG-03 the statistics pane materialises when the View menu shows it",
+            g54PresenceTracksFlag && g54Shown,
+            $"defaultHidden={g54StatsShownInitially == false}, presenceMatchedFlag={g54PresenceTracksFlag}, shownAfterToggle={g54Shown}");
 
         // The regression a compiled-XAML check cannot catch: both lists sit in Grid.Row=1
         // and used to paint on top of each other.
@@ -3650,6 +3671,13 @@ int RunHeadlessRenderOnly()
             g54MultiOn && g54MultiOff && g54Targets,
             $"on={g54MultiOn}, off={g54MultiOff}, targets={g54Bar.TargetInterfaces.Count}");
 
+        // Back to the pre-HG-03 visibility so the screenshot shows the default layout.
+        if (g54StatsShownInitially != g54Vm.ShowStatistics)
+        {
+            g54Vm.ToggleStatisticsCommand.Execute(null);
+            Pump();
+        }
+
         Pump();
         var g54Frame = g54Window.CaptureRenderedFrame();
         Report("HG-08 the platform produced a rendered frame",
@@ -3666,7 +3694,7 @@ int RunHeadlessRenderOnly()
             return 0;
         }
 
-        g54Frame.Save(g54Png);
+        g54Frame.Save(g54Png, new PngBitmapEncoderOptions());
 
         int g54W = g54Frame.PixelSize.Width, g54H = g54Frame.PixelSize.Height;
         int g54Colors = 0;
@@ -3703,6 +3731,11 @@ int RunHeadlessRenderOnly()
         Detail($"    headless render: {g54Png}");
         g54Window.Close();
         Pump();
+
+        if (g54DockBackup is not null)
+            File.WriteAllBytes(g54DockPath, g54DockBackup);
+        else if (File.Exists(g54DockPath))
+            File.Delete(g54DockPath);
     }
     catch (Exception ex)
     {

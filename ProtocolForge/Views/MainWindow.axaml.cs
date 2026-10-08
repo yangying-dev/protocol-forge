@@ -26,125 +26,10 @@ public partial class MainWindow : Window
         UpdateLanguageMenuChecks();
         LocalizationService.LanguageChanged += (_, _) => UpdateLanguageMenuChecks();
         RestoreLayout();
-        DataContextChanged += OnDataContextChanged;
     }
 
-    private bool _selectionSyncWired;
     private bool _allowClose;
     private bool _closePromptOpen;
-
-    private void OnDataContextChanged(object? sender, EventArgs e)
-    {
-        if (ViewModel == null)
-            return;
-
-        if (_selectionSyncWired)
-            return;
-
-        _selectionSyncWired = true;
-        ViewModel.PacketList.SendSelectionChanged += SyncHeaderSelectAllCheckBox;
-        SyncHeaderSelectAllCheckBox();
-    }
-
-    private void SyncHeaderSelectAllCheckBox()
-    {
-        if (ViewModel != null)
-            SelectAllSendCheckBox.IsChecked = ViewModel.PacketList.AllSelectedForSend;
-    }
-
-    private void OnSelectAllSendToggle(object? sender, RoutedEventArgs e)
-    {
-        if (ViewModel == null || SelectAllSendCheckBox.IsChecked is null)
-            return;
-        ViewModel.PacketList.AllSelectedForSend = SelectAllSendCheckBox.IsChecked.Value;
-    }
-
-    // ─── Packet List Context Menu ───
-
-    private void OnSelectAllSendClick(object? sender, RoutedEventArgs e)
-    {
-        ViewModel?.PacketList.SelectAllForSend();
-    }
-
-    private void OnClearSendSelectionClick(object? sender, RoutedEventArgs e)
-    {
-        ViewModel?.PacketList.ClearSendSelection();
-    }
-
-    private void OnInvertSendSelectionClick(object? sender, RoutedEventArgs e)
-    {
-        ViewModel?.PacketList.InvertSendSelection();
-    }
-
-    private async void OnSendThisPacketClick(object? sender, RoutedEventArgs e)
-    {
-        var vm = ViewModel;
-        if (vm?.PacketList.SelectedPacket is not { } packet)
-            return;
-        await vm.ToolBar.SendPacketsAsync(new[] { packet });
-    }
-
-    private async void OnStatisticsTapChanged(object? sender, SelectionChangedEventArgs e)
-    {
-        if (ViewModel is not null && ViewModel.SelectedStatisticsTap is not null)
-            await ViewModel.LoadStatisticsCommand.ExecuteAsync(null);
-    }
-
-    private async void OnRefreshStatisticsClick(object? sender, RoutedEventArgs e)
-    {
-        if (ViewModel is not null)
-            await ViewModel.LoadStatisticsCommand.ExecuteAsync(null);
-    }
-
-    private void OnFindKeyDown(object? sender, KeyEventArgs e)
-    {
-        if (ViewModel is null)
-            return;
-        if (e.Key == Key.Enter)
-        {
-            e.Handled = true;
-            ViewModel.FindNext();
-        }
-        else if (e.Key == Key.Escape)
-        {
-            e.Handled = true;
-            ViewModel.FindText = string.Empty;
-        }
-    }
-
-    private void OnFocusFindBox(object? sender, RoutedEventArgs e) => FindBox.Focus();
-
-    private async void OnFilterKeyDown(object? sender, KeyEventArgs e)
-    {
-        if (e.Key != Key.Enter)
-            return;
-        e.Handled = true;
-        if (ViewModel is not null)
-            await ViewModel.ApplyFilterCommand.ExecuteAsync(null);
-    }
-
-    private async void OnExportSendHistoryClick(object? sender, RoutedEventArgs e)
-    {
-        var vm = ViewModel;
-        if (vm is null || vm.ToolBar.SendHistory.Count == 0)
-            return;
-
-        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
-        {
-            SuggestedFileName = "send-history.csv",
-            DefaultExtension = "csv",
-            FileTypeChoices = [new FilePickerFileType("CSV") { Patterns = ["*.csv"] }],
-        });
-        if (file is null)
-            return;
-
-        vm.ToolBar.ExportSendHistory(file.Path.LocalPath);
-    }
-
-    private void OnClearSendHistoryClick(object? sender, RoutedEventArgs e)
-    {
-        ViewModel?.ToolBar.ClearSendHistory();
-    }
 
     private enum UnsavedCloseAction
     {
@@ -269,7 +154,6 @@ public partial class MainWindow : Window
         {
             var state = _layoutService.Load();
 
-            // Restore window geometry
             if (state.WindowX >= 0 && state.WindowY >= 0)
             {
                 Position = new PixelPoint((int)state.WindowX, (int)state.WindowY);
@@ -277,21 +161,6 @@ public partial class MainWindow : Window
             Width = state.WindowWidth;
             Height = state.WindowHeight;
             WindowState = (WindowState)state.WindowState;
-
-            // Restore splitter positions via row/column definitions
-            // Top row ratio: e.g., "2*,5*,3*" → top=2/(2+3)=0.4
-            double topRatio = Math.Clamp(state.TopRowRatio, 0.15, 0.75);
-            double bottomRatio = Math.Clamp(state.BottomLeftRatio, 0.15, 0.85);
-
-            double topStar = topRatio;
-            double bottomStar = 1.0 - topRatio;
-            ContentGrid.RowDefinitions[0].Height = new GridLength(topStar, GridUnitType.Star);
-            ContentGrid.RowDefinitions[2].Height = new GridLength(bottomStar, GridUnitType.Star);
-
-            double leftStar = bottomRatio;
-            double rightStar = 1.0 - bottomRatio;
-            BottomGrid.ColumnDefinitions[0].Width = new GridLength(leftStar, GridUnitType.Star);
-            BottomGrid.ColumnDefinitions[2].Width = new GridLength(rightStar, GridUnitType.Star);
         }
         catch { /* use defaults */ }
     }
@@ -300,28 +169,15 @@ public partial class MainWindow : Window
     {
         if (ViewModel == null) return;
 
-        double totalTopStar = ContentGrid.RowDefinitions[0].Height.Value
-                            + ContentGrid.RowDefinitions[2].Height.Value;
-        double topRatio = totalTopStar > 0
-            ? ContentGrid.RowDefinitions[0].Height.Value / totalTopStar
-            : 0.35;
-
-        double totalBottomStar = BottomGrid.ColumnDefinitions[0].Width.Value
-                               + BottomGrid.ColumnDefinitions[2].Width.Value;
-        double bottomRatio = totalBottomStar > 0
-            ? BottomGrid.ColumnDefinitions[0].Width.Value / totalBottomStar
-            : 0.5;
-
-        TraceLog.Write($"MW.SaveLayout topRatio={topRatio} bottomRatio={bottomRatio}");
-
         ViewModel.SaveLayout(
-            topRatio, bottomRatio,
             Position.X, Position.Y,
             Width, Height,
             (int)WindowState);
     }
 
     // ─── Menu Event Handlers ───
+
+    private void OnFocusFindBox(object? sender, RoutedEventArgs e) => ViewModel?.RequestFindFocus();
 
     private async void OnOpenPcapClicked(object? sender, RoutedEventArgs e)
     {
@@ -456,12 +312,7 @@ public partial class MainWindow : Window
 
     private void OnResetLayoutClicked(object? sender, RoutedEventArgs e)
     {
-        // Reset to default ratios
-        ContentGrid.RowDefinitions[0].Height = new GridLength(2, GridUnitType.Star);
-        ContentGrid.RowDefinitions[2].Height = new GridLength(3, GridUnitType.Star);
-        BottomGrid.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
-        BottomGrid.ColumnDefinitions[2].Width = new GridLength(1, GridUnitType.Star);
-        SaveLayout();
+        ViewModel?.ResetDockLayout();
     }
 
     private void OnAboutClicked(object? sender, RoutedEventArgs e)

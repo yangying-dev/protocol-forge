@@ -1,0 +1,160 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ProtocolForge.ViewModels"
+             xmlns:models="using:ProtocolForge.Models"
+             xmlns:controls="using:ProtocolForge.Views.Controls"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="400"
+             x:Class="ProtocolForge.Views.Controls.PacketListPaneView"
+             x:DataType="vm:MainWindowViewModel">
+    <Grid RowDefinitions="Auto,*">
+        <!-- Top bar: packet count + file name -->
+        <Border Grid.Row="0" Background="#F0F0F0" Padding="10,4,10,3"
+                BorderBrush="#CCC" BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                <TextBlock Grid.Column="0"
+                           Text="{Binding PacketsDisplay}"
+                           FontWeight="SemiBold" FontSize="12" />
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4"
+                            VerticalAlignment="Center">
+                    <TextBox Name="FilterBox" Width="240" FontSize="12"
+                             FontFamily="Consolas, monospace"
+                             VerticalContentAlignment="Center"
+                             Text="{Binding FilterText, Mode=TwoWay}"
+                             PlaceholderText="{DynamicResource L10n.Filter.Placeholder}"
+                             ToolTip.Tip="{DynamicResource L10n.Filter.Label}"
+                             KeyDown="OnFilterKeyDown" />
+                    <TextBox Name="FindBox" Width="180" FontSize="12"
+                             FontFamily="Consolas, monospace"
+                             VerticalContentAlignment="Center"
+                             Text="{Binding FindText, Mode=TwoWay}"
+                             PlaceholderText="{DynamicResource L10n.Find.Placeholder}"
+                             ToolTip.Tip="{DynamicResource L10n.Find.Label}"
+                             KeyDown="OnFindKeyDown" />
+                    <Button Content="↓" FontSize="12" Padding="6,2"
+                            Command="{Binding FindNextCommand}"
+                            ToolTip.Tip="{DynamicResource L10n.Find.Label}" />
+                    <Button Content="↑" FontSize="12" Padding="6,2"
+                            Command="{Binding FindPreviousCommand}"
+                            ToolTip.Tip="{DynamicResource L10n.Find.Label}" />
+                    <Button Content="{DynamicResource L10n.Filter.Apply}"
+                            FontSize="12" Padding="8,2"
+                            Command="{Binding ApplyFilterCommand}" />
+                    <Button Content="{DynamicResource L10n.Filter.Clear}"
+                            FontSize="12" Padding="8,2"
+                            Command="{Binding ClearFilterCommand}" />
+                </StackPanel>
+                <TextBlock Grid.Column="3" FontSize="12" Foreground="#888"
+                           Margin="10,0,0,0" VerticalAlignment="Center"
+                           Text="{Binding FileName}" />
+            </Grid>
+        </Border>
+
+        <!-- Packet list rows -->
+        <DataGrid Grid.Row="1" Name="PacketListView"
+                  ItemsSource="{Binding PacketList.Packets}"
+                  SelectedItem="{Binding PacketList.SelectedPacket}"
+                  IsReadOnly="True"
+                  AutoGenerateColumns="False"
+                  CanUserResizeColumns="True"
+                  CanUserSortColumns="True"
+                  controls:DoubleClickAutoFit.IsEnabled="True"
+                  GridLinesVisibility="Horizontal"
+                  HorizontalGridLinesBrush="#E0E0E0"
+                  Background="White"
+                  BorderThickness="0">
+            <DataGrid.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="{DynamicResource L10n.Ctx.SelectAll}" Click="OnSelectAllSendClick" />
+                    <MenuItem Header="{DynamicResource L10n.Ctx.InvertSelection}" Click="OnInvertSendSelectionClick" />
+                    <MenuItem Header="{DynamicResource L10n.Ctx.ClearSelection}" Click="OnClearSendSelectionClick" />
+                    <Separator />
+                    <MenuItem Header="{DynamicResource L10n.Ctx.SendThisPacket}" Click="OnSendThisPacketClick"
+                              ToolTip.Tip="{DynamicResource L10n.Tip.SendRow}" />
+                    <Separator />
+                    <MenuItem Header="{DynamicResource L10n.Ctx.ExportSendHistory}" Click="OnExportSendHistoryClick"
+                              IsEnabled="{Binding ToolBar.SendHistory.Count}" />
+                    <MenuItem Header="{DynamicResource L10n.Ctx.ClearSendHistory}" Click="OnClearSendHistoryClick"
+                              IsEnabled="{Binding ToolBar.SendHistory.Count}" />
+                </ContextMenu>
+            </DataGrid.ContextMenu>
+            <DataGrid.Columns>
+                <!-- No. with Send checkbox -->
+                <DataGridTemplateColumn Header="{DynamicResource L10n.Grid.No}" SortMemberPath="PacketNumber" Width="Auto" MinWidth="50">
+                    <DataGridTemplateColumn.Header>
+                        <StackPanel Orientation="Horizontal" Spacing="4"
+                                    Margin="4,0">
+                            <CheckBox Name="SelectAllSendCheckBox"
+                                      IsThreeState="True"
+                                      IsChecked="True"
+                                      VerticalAlignment="Center"
+                                      IsCheckedChanged="OnSelectAllSendToggle"
+                                      ToolTip.Tip="{DynamicResource L10n.Tip.SelectAllSend}" />
+                            <TextBlock Text="{DynamicResource L10n.Grid.No}" FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </DataGridTemplateColumn.Header>
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="models:Packet">
+                            <StackPanel Orientation="Horizontal" Spacing="6"
+                                        VerticalAlignment="Center" Margin="4,0">
+                                <CheckBox IsChecked="{Binding SendSelected}"
+                                          VerticalAlignment="Center"
+                                          ToolTip.Tip="{DynamicResource L10n.Tip.IncludePacket}" />
+                                <TextBlock Text="{Binding PacketNumber}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <!-- Time -->
+                <DataGridTemplateColumn Header="{DynamicResource L10n.Grid.Time}" SortMemberPath="TimestampDisplay" Width="Auto" MinWidth="230">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="models:Packet">
+                            <TextBlock Text="{Binding TimestampDisplay}" VerticalAlignment="Center" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <!-- Source (read-only) -->
+                <DataGridTemplateColumn Header="{DynamicResource L10n.Grid.Source}" SortMemberPath="SourceAddress" Width="Auto" MinWidth="120">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="models:Packet">
+                            <TextBlock Text="{Binding SourceAddress}" VerticalAlignment="Center" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <!-- Destination (read-only) -->
+                <DataGridTemplateColumn Header="{DynamicResource L10n.Grid.Destination}" SortMemberPath="DestinationAddress" Width="Auto" MinWidth="120">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="models:Packet">
+                            <TextBlock Text="{Binding DestinationAddress}" VerticalAlignment="Center" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <!-- Protocol -->
+                <DataGridTemplateColumn Header="{DynamicResource L10n.Grid.Protocol}" SortMemberPath="ProtocolName" Width="Auto">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="models:Packet">
+                            <TextBlock Text="{Binding ProtocolName}" VerticalAlignment="Center" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <!-- Length -->
+                <DataGridTemplateColumn Header="{DynamicResource L10n.Grid.Length}" SortMemberPath="Length" Width="Auto">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="models:Packet">
+                            <TextBlock Text="{Binding Length}" VerticalAlignment="Center" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <!-- Info -->
+                <DataGridTemplateColumn Header="{DynamicResource L10n.Grid.Info}" SortMemberPath="Summary" Width="*">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="models:Packet">
+                            <TextBlock Text="{Binding Summary}" VerticalAlignment="Center" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+    </Grid>
+</UserControl>

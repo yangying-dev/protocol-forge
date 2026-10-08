@@ -2,13 +2,16 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="ProtocolForge.App"
              xmlns:local="using:ProtocolForge"
+             xmlns:vm="using:ProtocolForge.ViewModels"
+             xmlns:controls="using:ProtocolForge.Views.Controls"
              RequestedThemeVariant="Default">
              <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
 
     <Application.Styles>
         <FluentTheme />
+        <DockFluentTheme DensityStyle="Normal" />
         <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml" />
-        
+
         <Style Selector="MenuItem:checked:toggle /template/ ContentControl#PART_ToggleIconPresenter">
             <Setter Property="Content">
                 <Template>
@@ -19,4 +22,21 @@
             </Setter>
         </Style>
     </Application.Styles>
+
+    <Application.DataTemplates>
+        <!-- Dock 的 ToolControl 把面板本体作为 Content 呈现;DataContext 换成宿主 VM 后,
+             面板 XAML 的绑定与迁移前的 MainWindow 内联布局完全一致。 -->
+        <DataTemplate DataType="vm:PacketListDock">
+            <controls:PacketListPaneView DataContext="{Binding Host}" />
+        </DataTemplate>
+        <DataTemplate DataType="vm:ProtocolTreeDock">
+            <controls:ProtocolTreePaneView DataContext="{Binding Host}" />
+        </DataTemplate>
+        <DataTemplate DataType="vm:HexEditorDock">
+            <controls:HexEditorPaneView DataContext="{Binding Host}" />
+        </DataTemplate>
+        <DataTemplate DataType="vm:StatisticsDock">
+            <controls:StatisticsPaneView DataContext="{Binding Host}" />
+        </DataTemplate>
+    </Application.DataTemplates>
 </Application>

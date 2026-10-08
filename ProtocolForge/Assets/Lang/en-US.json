@@ -53,6 +53,7 @@
   "Grid.Length": "Length",
   "Grid.Info": "Info",
 
+  "Panel.PacketList": "Packet List",
   "Panel.ProtocolTree": "Protocol Tree",
   "Panel.HexEditor": "Hex Editor",
 
