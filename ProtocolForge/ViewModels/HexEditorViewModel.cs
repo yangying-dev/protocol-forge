@@ -699,22 +699,41 @@ public sealed partial class HexEditorViewModel : ObservableObject
 
     private static string GetProtocolColor(string protocolName)
     {
-        var proto = protocolName.ToLowerInvariant();
-        return proto switch
+        if (string.IsNullOrEmpty(protocolName))
+            return "#CCB39DDB";
+
+        // FNV-1a over the lowercase protocol name → a stable hue bucket. Any protocol
+        // tshark can dissect gets its own highlight with no per-protocol code entry,
+        // and the same name always maps to the same color across runs and platforms.
+        uint hash = 2166136261; // FNV-1a offset basis
+        foreach (char c in protocolName.ToLowerInvariant())
         {
-            "pfcp" => "#CC81C784",    // Material Green 200 (light green tint)
-            "ngap" => "#CC90CAF9",    // Material Blue 200 (light blue tint)
-            "gtp" or "gtp-u" => "#CCFFCC80", // Material Orange 200
-            "nas" or "nas-eps" => "#CCF48FB1", // Material Pink 200
-            "s1ap" => "#CCCE93D8",    // Material Purple 200
-            "diameter" => "#CC80DEEA", // Material Cyan 200
-            "http" or "http2" => "#CCA1887F", // Material Brown 200
-            "sctp" => "#CCB0BEC5",    // Material Blue Grey 200
-            "udp" => "#CC9FA8DA",     // Material Indigo 200
-            "ip" => "#CCC5E1A5",      // Material Light Green 200
-            "eth" => "#CCE0E0E0",     // Light grey
-            _ => "#CCB39DDB",         // Material Deep Purple 200 (default)
+            hash ^= c;
+            hash *= 16777619; // FNV-1a prime
+        }
+
+        (int r, int g, int b) = HslToRgb(hash % 360, s: 0.55, l: 0.72);
+        return $"#CC{r:X2}{g:X2}{b:X2}"; // CC = translucency, hex text stays visible
+    }
+
+    /// <summary>HSL (h in degrees, s/l in 0..1) → 0..255 RGB channels.</summary>
+    private static (int R, int G, int B) HslToRgb(double h, double s, double l)
+    {
+        double c = (1 - Math.Abs(2 * l - 1)) * s;
+        double x = c * (1 - Math.Abs(h / 60 % 2 - 1));
+        double m = l - c / 2;
+        (double rr, double gg, double bb) = h switch
+        {
+            < 60 => (c, x, 0d),
+            < 120 => (x, c, 0d),
+            < 180 => (0d, c, x),
+            < 240 => (0d, x, c),
+            < 300 => (x, 0d, c),
+            _ => (c, 0d, x),
         };
+        return ((int)Math.Round((rr + m) * 255),
+                (int)Math.Round((gg + m) * 255),
+                (int)Math.Round((bb + m) * 255));
     }
 
     /// <summary>
