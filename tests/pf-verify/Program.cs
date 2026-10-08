@@ -413,6 +413,8 @@ try
     Report("G6 reverse sync: tree SelectFieldOnTree + view walk",
         mw.Contains("HexEditor.FieldFoundAtOffset") && tree.Contains("ContainerFromItem") && tree.Contains("TreeContainerFromItem"), "missing reverse sync");
     Report("G6 reverse sync bounded retry", tree.Contains("MaxSelectAttempts"), "missing retry bound");
+    Report("G6 reverse sync clears the previously revealed node",
+        tree.Contains("ProtocolTree.SelectedItem = null"), "stale tree highlight guard missing");
 }
 catch (Exception ex)
 {
@@ -3729,6 +3731,43 @@ int RunHeadlessRenderOnly()
             $"{g54Png} ({new FileInfo(g54Png).Length} bytes)");
 
         Detail($"    headless render: {g54Png}");
+
+        var g54TreeVm = g54Vm.ProtocolTree;
+        g54TreeVm.Layers.Clear();
+        var g54Layer = new ProtocolLayer { ProtocolName = "g54", DisplayText = "G54 reveal layer" };
+        var g54FieldA = new ProtocolField { Name = "g54.field.a", DisplayValue = "first", ParentLayer = g54Layer };
+        var g54FieldB = new ProtocolField { Name = "g54.field.b", DisplayValue = "second", ParentLayer = g54Layer };
+        g54Layer.Fields.Add(g54FieldA);
+        g54Layer.Fields.Add(g54FieldB);
+        g54TreeVm.Layers.Add(g54Layer);
+        g54TreeVm.IsEnabled = true;
+        for (int i = 0; i < 6; i++) Pump();
+
+        var g54Tree = ByName<TreeView>(g54Window, "ProtocolTree");
+        g54TreeVm.SelectFieldOnTree(g54FieldA);
+        for (int i = 0; i < 6; i++) Pump();
+        var g54AfterA = g54Tree?.GetRealizedTreeContainers().OfType<TreeViewItem>()
+            .Where(t => t.IsSelected).ToList() ?? [];
+
+        Report("HG-11 the first reveal highlights the target node",
+            g54AfterA.Count == 1 && ReferenceEquals(g54AfterA[0].DataContext, g54FieldA),
+            $"selectedCount={g54AfterA.Count}");
+
+        g54TreeVm.SelectFieldOnTree(g54FieldB);
+        for (int i = 0; i < 6; i++) Pump();
+        var g54AfterB = g54Tree?.GetRealizedTreeContainers().OfType<TreeViewItem>()
+            .Where(t => t.IsSelected).ToList() ?? [];
+
+        Report("HG-12 the second reveal leaves exactly one highlighted node",
+            g54AfterB.Count == 1,
+            $"selectedCount={g54AfterB.Count}, stale nodes would still be selected");
+        Report("HG-13 the highlighted node is the second field",
+            g54AfterB.Count == 1 && ReferenceEquals(g54AfterB[0].DataContext, g54FieldB),
+            $"selected={g54AfterB.FirstOrDefault()?.DataContext?.ToString() ?? "none"}");
+
+        g54TreeVm.LoadPacket(null);
+        for (int i = 0; i < 3; i++) Pump();
+
         g54Window.Close();
         Pump();
 
