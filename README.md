@@ -57,7 +57,7 @@ so no real operator capture is involved and reproducing them does not require co
 - **Toolbar UI** — Start/Pause/Stop send controls with a network adapter dropdown, send interval and loop count inputs, an Auto-fix toggle, live sent/failed counters, and a status bar.
 - **Display Filter** — A tshark display filter applied to the packet list. The filter is evaluated by tshark at load time, so the grid only ever holds matching packets and every row keeps the frame number its bytes came from. Reachable from the View menu and the panel header; Enter in the box applies it.
 - **Find** — Search the packet list columns and the selected packet's protocol tree, forward or backward. A tree hit expands and reveals the matching node rather than rebuilding the tree.
-- **Statistics Panel** — Runs `conv,*`, `endpoints,ip`, `io,phs` (protocol hierarchy), `io,stat` and `expert` taps, honouring the display filter where the tap accepts one. Shown from the View menu; like every panel it is a dockable pane. tshark pads its own output for humans, so it is shown verbatim instead of being re-laid-out.
+- **Statistics Panel** — Runs `conv,*`, `endpoints,ip`, `io,phs` (protocol hierarchy), `io,stat` and `expert` taps, honouring the display filter where the tap accepts one, and accepts any other tshark `-z` invocation typed into the panel. The follow-stream box covers TCP and UDP conversations. Shown from the View menu; like every panel it is a dockable pane. tshark pads its own output for humans, so it is shown verbatim instead of being re-laid-out.
 - **PCAPNG Write-Back** — A capture opened as `.pcapng` is saved as PCAPNG, keeping the interface description, snaplen and timestamp resolution. Previously any `.pcapng` was silently rewritten as little-endian/microsecond classic PCAP on save, dropping every interface description and block comment. Export-as follows the extension you choose.
 - **Headless CLI** — `validate`, `edit`, `send` and `stats` run without a GUI, for CI and batch use. Edits go through the same Verify-Before-Commit transaction as the GUI. Exit codes 0/1/2. See [`docs/pfcheck-cli.md`](docs/pfcheck-cli.md).
 - **Send History** — Per-packet send results are retained for the run instead of only the most recent one being visible, and can be exported as CSV from the packet-list context menu.
@@ -361,7 +361,7 @@ ProtocolForge doesn't ship protocol parsers — it relies entirely on tshark. To
 
 1. Ensure tshark has a dissector for it (most 3GPP protocols are supported in recent Wireshark)
 2. The three-pass jsonraw parser automatically handles any protocol tshark outputs
-3. To customize highlighting: add a color entry in `HexEditorViewModel.GetHighlightColor()` for the protocol name
+3. Highlighting needs no code: the protocol name is hashed to a stable hue, so a new protocol gets its own color automatically
 
 ### Adding a New Service
 
