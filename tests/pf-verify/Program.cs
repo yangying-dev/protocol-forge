@@ -4232,7 +4232,7 @@ catch (Exception ex)
     Report("G48 group execution", false, ex.ToString());
 }
 
-// ══ GROUP 47: RV-01..05 reassembled stream bytes ══// ══ GROUP 47: RV-01..05 reassembled stream bytes ══
+// ══ GROUP 47: RV-01..06 reassembled stream bytes ══// ══ GROUP 47: RV-01..06 reassembled stream bytes ══
 Banner(47, "reassembled stream bytes");
 try
 {
@@ -4275,6 +4275,15 @@ try
     catch (ArgumentException) { g47Threw = true; }
     Report("RV-05 a protocol that cannot be followed is refused explicitly", g47Threw,
         "sctp throws ArgumentException");
+
+    // http passes the follow gate but has no stream 99 — the tap returns nothing
+    // rather than failing, same as RV-04 for tcp.
+    byte[]? g47Http = null;
+    bool g47HttpThrew = false;
+    try { g47Http = await g47Tshark.GetReassembledStreamAsync(g47Src, "http", "99"); }
+    catch (ArgumentException) { g47HttpThrew = true; }
+    Report("RV-06 a followable protocol past the gate yields nothing for an unknown stream",
+        !g47HttpThrew && g47Http is null, g47HttpThrew ? "threw" : $"len={g47Http?.Length}");
 }
 catch (Exception ex)
 {

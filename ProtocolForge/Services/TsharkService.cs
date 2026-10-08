@@ -800,7 +800,10 @@ public sealed class TsharkService
     {
         if (!File.Exists(filePath))
             throw new FileNotFoundException("PCAP file not found", filePath);
-        if (protocol is not ("tcp" or "udp"))
+        // The output formats tshark's -z follow actually supports. Anything else
+        // (SCTP has no follow tap) is refused up front with a clear message instead
+        // of silently producing nothing from the process.
+        if (protocol is not ("tcp" or "udp" or "dccp" or "tls" or "http" or "http2" or "quic"))
             throw new ArgumentException($"Cannot follow {protocol}.", nameof(protocol));
 
         EnsureTsharkAvailable();
