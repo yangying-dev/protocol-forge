@@ -956,6 +956,29 @@ try
         && BytesEq(g15p9.AsSpan(14).ToArray(), g15f9.AsSpan(14).ToArray())
         && BytesEq(g15p9.AsSpan(6, 6).ToArray(), new byte[] { 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF }),
         $"len={g15p9.Length}, ip area intact, eth src rewritten");
+
+    // Vector 10: the RFC 4960 §A.5 check value — CRC32c over ASCII "123456789"
+    // must be 0xE3069283, pinning polynomial/init/final-XOR in one constant.
+    byte[] g15crcCheck = System.Text.Encoding.ASCII.GetBytes("123456789");
+    uint g15crcCheckGot = PacketPrepareService.ComputeCrc32c(g15crcCheck, 0, g15crcCheck.Length);
+    Report("G15t ComputeCrc32c matches the RFC 4960 check value",
+        g15crcCheckGot == 0xE3069283u, $"0x{g15crcCheckGot:X8}");
+
+    // Vector 11: IPv4 + SCTP with a bogus checksum — PrepareFrame must rewrite it,
+    // stored little-endian per RFC 4960 §3.10, consistent with a fresh recomputation
+    // over the checksum-zeroed SCTP section.
+    byte[] g15sctp = Concat(U16(1234, false), U16(5678, false), U32(0x11223344, false), U32(0xDEADBEEF, false));
+    byte[] g15ipS = Concat(new byte[] { 0x45, 0x00 }, U16(32, false), U16(1, false), U16(0x4000, false),
+        new byte[] { 0x40, 0x84, 0x00, 0x00 }, new byte[] { 10, 0, 0, 1 }, new byte[] { 10, 0, 0, 2 });
+    byte[] g15fS = Concat(new byte[] { 0x02, 0, 0, 0, 0, 1, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0x08, 0x00 }, g15ipS, g15sctp);
+    byte[] g15pS = PacketPrepareService.PrepareFrame(g15fS, g15iface);
+    byte[] g15sctpSection = g15pS.AsSpan(34, 12).ToArray();
+    uint g15stored = (uint)(g15sctpSection[8] | (g15sctpSection[9] << 8) | (g15sctpSection[10] << 16) | (g15sctpSection[11] << 24));
+    g15sctpSection[8] = 0; g15sctpSection[9] = 0; g15sctpSection[10] = 0; g15sctpSection[11] = 0;
+    uint g15crcRe = PacketPrepareService.ComputeCrc32c(g15sctpSection, 0, g15sctpSection.Length);
+    Report("G15u IPv4 SCTP CRC32c rewritten little-endian and self-consistent",
+        g15stored == g15crcRe && g15stored != 0xDEADBEEFu,
+        $"stored=0x{g15stored:X8}, recomputed=0x{g15crcRe:X8}");
 }
 catch (Exception ex)
 {

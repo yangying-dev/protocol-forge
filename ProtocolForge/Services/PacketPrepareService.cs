@@ -14,6 +14,7 @@ public static class PacketPrepareService
     /// Ethernet source MAC → interface MAC, IPv4 source address → interface IPv4,
     /// IPv4 header checksum and TCP/UDP checksums recomputed (UDP stays 0 when it
     /// was 0 — the IPv4 "checksum off" convention; IPv6 always gets a real one).
+    /// SCTP's CRC32c is always recomputed and stored little-endian per RFC 4960.
     /// </summary>
     public static byte[] PrepareFrame(byte[] frame, NetworkInterfaceInfo iface)
     {
@@ -68,6 +69,23 @@ public static class PacketPrepareService
                     PutChecksum(result, l4 + 6, TransportChecksum(result, ipOffset, l4, len, 17, false));
                 }
             }
+            else if (protocol == 132 && result.Length >= l4 + 12)
+            {
+                int len = ((result[ipOffset + 2] << 8) | result[ipOffset + 3]) - ihl;
+                if (len >= 12 && result.Length >= l4 + len)
+                {
+                    result[l4 + 8] = 0;
+                    result[l4 + 9] = 0;
+                    result[l4 + 10] = 0;
+                    result[l4 + 11] = 0;
+                    uint crc = ComputeCrc32c(result, l4, len);
+                    // RFC 4960 §3.10: CRC32c 以小端存放于 checksum 字段。
+                    result[l4 + 8] = (byte)crc;
+                    result[l4 + 9] = (byte)(crc >> 8);
+                    result[l4 + 10] = (byte)(crc >> 16);
+                    result[l4 + 11] = (byte)(crc >> 24);
+                }
+            }
         }
         else if (version == 6)
         {
@@ -99,6 +117,22 @@ public static class PacketPrepareService
                     result[l4 + 6] = 0;
                     result[l4 + 7] = 0;
                     PutChecksum(result, l4 + 6, TransportChecksum(result, ipOffset, l4, len, 17, true));
+                }
+            }
+            else if (nextHeader == 132 && result.Length >= l4 + 12)
+            {
+                int len = (result[ipOffset + 4] << 8) | result[ipOffset + 5];
+                if (len >= 12 && result.Length >= l4 + len)
+                {
+                    result[l4 + 8] = 0;
+                    result[l4 + 9] = 0;
+                    result[l4 + 10] = 0;
+                    result[l4 + 11] = 0;
+                    uint crc = ComputeCrc32c(result, l4, len);
+                    result[l4 + 8] = (byte)crc;
+                    result[l4 + 9] = (byte)(crc >> 8);
+                    result[l4 + 10] = (byte)(crc >> 16);
+                    result[l4 + 11] = (byte)(crc >> 24);
                 }
             }
         }
@@ -276,6 +310,23 @@ public static class PacketPrepareService
 
         ushort result = InternetChecksum(buffer, 0, pseudoLen + l4Length + ((l4Length & 1) == 1 ? 1 : 0));
         return result == 0 && protocol == 17 && !ipv6 ? ushort.MaxValue : result;
+    }
+
+    /// <summary>
+    /// CRC32c (Castagnoli) over frame[offset, offset+length) as SCTP defines it:
+    /// reflected polynomial 0x82F63B78, initial value and final XOR both 0xFFFFFFFF.
+    /// The check value for ASCII "123456789" is 0xE3069283.
+    /// </summary>
+    public static uint ComputeCrc32c(byte[] data, int offset, int length)
+    {
+        uint crc = 0xFFFFFFFF;
+        for (int i = offset; i < offset + length; i++)
+        {
+            crc ^= data[i];
+            for (int bit = 0; bit < 8; bit++)
+                crc = (crc & 1) != 0 ? (crc >> 1) ^ 0x82F63B78u : crc >> 1;
+        }
+        return crc ^ 0xFFFFFFFF;
     }
 
     private static void PutChecksum(byte[] data, int offset, ushort value)
