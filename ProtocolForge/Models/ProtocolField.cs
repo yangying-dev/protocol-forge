@@ -33,6 +33,9 @@ public enum FieldKind
 
     /// <summary>Text string.</summary>
     String,
+
+    /// <summary>Raw bytes edited as colon-separated hex of exactly the field's length (opaque IEs, GUIDs).</summary>
+    Bytes,
 }
 
 public sealed record EnumOption(string Label, string RawHex);

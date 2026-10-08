@@ -489,6 +489,7 @@ public sealed partial class ProtocolTreeViewModel : ObservableObject
             FieldKind.Mac => string.Join(":", bytes.Select(b => b.ToString("X2"))),
             FieldKind.Bcd => FormatBcdDigits(bytes),
             FieldKind.String => System.Text.Encoding.UTF8.GetString(bytes).TrimEnd('\0'),
+            FieldKind.Bytes => string.Join(":", bytes.Select(b => b.ToString("x2"))),
             _ => string.Empty,
         };
     }

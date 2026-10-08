@@ -694,6 +694,12 @@ try
     G12Vector("String too long → rejects", FieldKind.String, "ABCDEF", 2, true, null, "Value too long");
     G12Vector("String empty → rejects", FieldKind.String, "", 2, true, null, "Value cannot be empty");
     G12Vector("Unknown kind → rejects", FieldKind.Unknown, "5", 1, true, null, "is not editable");
+    G12Vector("Bytes colon-hex → 3 bytes", FieldKind.Bytes, "0a:0b:0c", 3, false, new byte[] { 0x0A, 0x0B, 0x0C }, null);
+    G12Vector("Bytes plain hex → 4 bytes", FieldKind.Bytes, "aabbccdd", 4, false, new byte[] { 0xAA, 0xBB, 0xCC, 0xDD }, null);
+    G12Vector("Bytes 0x-prefixed → 2 bytes", FieldKind.Bytes, "0xAABB", 2, false, new byte[] { 0xAA, 0xBB }, null);
+    G12Vector("Bytes length mismatch → rejects", FieldKind.Bytes, "aabb", 4, true, null, "field holds");
+    G12Vector("Bytes non-hex → rejects", FieldKind.Bytes, "zz", 1, true, null, "not valid hex bytes");
+    G12Vector("Bytes odd digit count → rejects", FieldKind.Bytes, "abc", 2, true, null, "not valid hex bytes");
     Report("G12b full conversion matrix", g12ok, g12detail.Length == 0 ? "all vectors passed" : g12detail);
 }
 catch (Exception ex)

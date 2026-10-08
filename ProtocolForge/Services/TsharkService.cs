@@ -2298,6 +2298,7 @@ public sealed class TsharkService
         "FT_IPv6" => FieldKind.IPv6,
         "FT_ETHER" => FieldKind.Mac,
         "FT_BACD" => FieldKind.Bcd,
+        "FT_BYTES" or "FT_GUID" => FieldKind.Bytes,
         "FT_STRING" or "FT_STRINGZ" or "FT_STRINGZPAD" or "FT_UINT_STRING" => FieldKind.String,
         _ => FieldKind.Unknown,
     };

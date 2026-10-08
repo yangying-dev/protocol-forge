@@ -109,6 +109,8 @@ public sealed class ProtocolEditorService
                 return ConvertMac(text);
             case FieldKind.Bcd:
                 return ConvertBcd(text, expectedLength);
+            case FieldKind.Bytes:
+                return ConvertBytes(text, expectedLength);
             case FieldKind.String:
                 var strBytes = System.Text.Encoding.UTF8.GetBytes(text);
                 if (strBytes.Length > expectedLength)
@@ -120,6 +122,34 @@ public sealed class ProtocolEditorService
             default:
                 throw new ArgumentException($"Field type {kind} is not editable.", nameof(kind));
         }
+    }
+
+    /// <summary>
+    /// Parses colon-hex (aa:bb:cc), plain hex (aabbcc) or 0x-prefixed hex into exactly
+    /// <paramref name="expectedLength"/> bytes. REPLACE-only editing means any length
+    /// mismatch is rejected rather than padded — offsets outside the span must stay valid.
+    /// </summary>
+    private static byte[] ConvertBytes(string text, int expectedLength)
+    {
+        string hexText = text.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? text[2..] : text;
+        hexText = hexText.Replace(":", string.Empty).Replace(" ", string.Empty);
+        if (hexText.Length == 0 || (hexText.Length & 1) != 0)
+            throw new ArgumentException($"'{text}' is not valid hex bytes.", nameof(text));
+
+        byte[] bytes;
+        try
+        {
+            bytes = Convert.FromHexString(hexText);
+        }
+        catch (FormatException)
+        {
+            throw new ArgumentException($"'{text}' is not valid hex bytes.", nameof(text));
+        }
+
+        if (bytes.Length != expectedLength)
+            throw new ArgumentException(
+                $"Value is {bytes.Length} bytes, field holds {expectedLength}.", nameof(text));
+        return bytes;
     }
 
     private static byte[] ConvertUInt(string text, int length)
