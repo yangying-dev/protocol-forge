@@ -1383,6 +1383,17 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private string? _selectedStatisticsTap;
 
+    /// <summary>
+    /// Operator-typed <c>-z</c> invocation that overrides the curated list while
+    /// non-empty. Picking a curated tap clears it, so the combo always shows what
+    /// will actually run.
+    /// </summary>
+    [ObservableProperty]
+    private string _customStatisticsTap = string.Empty;
+
+    partial void OnSelectedStatisticsTapChanged(string? value) =>
+        CustomStatisticsTap = string.Empty;
+
     [ObservableProperty]
     private string _statisticsStatus = string.Empty;
 
@@ -1396,7 +1407,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
     /// <summary>
     /// Runs the selected tap against the loaded capture. Reuses the display filter so
-    /// the statistics describe exactly the rows the user is looking at.
+    /// the statistics describe exactly the rows the user is looking at. A non-empty
+    /// custom tap wins over the curated list, so any <c>-z</c> invocation tshark
+    /// accepts runs here — the panel is not limited to the built-in taps.
     /// </summary>
     [RelayCommand]
     public async Task LoadStatisticsAsync()
@@ -1404,7 +1417,10 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         StatisticsLines.Clear();
         StatisticsStatus = string.Empty;
 
-        if (_loadedFilePath is null || SelectedStatisticsTap is null)
+        string? tap = string.IsNullOrWhiteSpace(CustomStatisticsTap)
+            ? SelectedStatisticsTap
+            : CustomStatisticsTap.Trim();
+        if (_loadedFilePath is null || tap is null)
         {
             StatisticsStatus = LocalizationService.Resolve("Stats.NoFile");
             return;
@@ -1412,14 +1428,13 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
         try
         {
-            var lines = await _tshark.RunStatisticsTapAsync(
-                _loadedFilePath, SelectedStatisticsTap, _displayFilter);
+            var lines = await _tshark.RunStatisticsTapAsync(_loadedFilePath, tap, _displayFilter);
 
             foreach (var line in lines)
                 StatisticsLines.Add(line);
 
             StatisticsStatus = lines.Count == 0
-                ? LocalizationService.Resolve("Stats.Empty", SelectedStatisticsTap)
+                ? LocalizationService.Resolve("Stats.Empty", tap)
                 : LocalizationService.Resolve("Stats.Rows", lines.Count);
         }
         catch (Exception ex)

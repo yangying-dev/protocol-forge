@@ -10,7 +10,7 @@
     <Grid RowDefinitions="Auto,*">
         <Border Grid.Row="0" Background="#F0F0F0" Padding="10,4"
                 BorderBrush="#CCC" BorderThickness="0,0,0,1">
-            <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto">
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto">
                 <ComboBox Grid.Column="0" Margin="0,0,10,0" Height="24"
                           FontSize="12" HorizontalAlignment="Left"
                           MinWidth="200"
@@ -26,20 +26,25 @@
                     <ComboBox.ItemTemplate>
                         <DataTemplate DataType="svc:StreamIndex" x:DataType="svc:StreamIndex">
                             <TextBlock FontSize="12">
-                                <Run Text="{Binding StreamId}" />
+                                <Run Text="{Binding Protocol}" /><Run Text=" " /><Run Text="{Binding StreamId}" />
                                 <Run Text=" (" /><Run Text="{Binding Frames.Count}" /><Run Text=")" />
                             </TextBlock>
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>
-                <Button Grid.Column="2" Margin="4,0" Padding="8,2" FontSize="12"
+                <TextBox Grid.Column="2" Margin="4,0" Height="24"
+                         FontSize="12" MinWidth="210"
+                         Text="{Binding CustomStatisticsTap}"
+                         PlaceholderText="{DynamicResource L10n.Stats.CustomTap}"
+                         KeyDown="OnCustomTapKeyDown" />
+                <Button Grid.Column="3" Margin="4,0" Padding="8,2" FontSize="12"
                         Content="{DynamicResource L10n.Rv.Show}"
                         ToolTip.Tip="{DynamicResource L10n.Rv.Title}"
                         Command="{Binding ShowReassembledBytesCommand}" />
-                <Button Grid.Column="3" Margin="4,0" Padding="8,2" FontSize="12"
+                <Button Grid.Column="4" Margin="4,0" Padding="8,2" FontSize="12"
                         Content="{DynamicResource L10n.Stats.Refresh}"
                         Click="OnRefreshStatisticsClick" />
-                <TextBlock Grid.Column="4" Margin="8,0" FontSize="11" Foreground="#888"
+                <TextBlock Grid.Column="5" Margin="8,0" FontSize="11" Foreground="#888"
                            VerticalAlignment="Center"
                            Text="{Binding StatisticsStatus}" />
             </Grid>

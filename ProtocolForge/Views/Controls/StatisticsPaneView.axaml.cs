@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using ProtocolForge.ViewModels;
 
@@ -23,5 +24,13 @@ public partial class StatisticsPaneView : UserControl
     {
         if (ViewModel is not null)
             await ViewModel.LoadStatisticsCommand.ExecuteAsync(null);
+    }
+
+    private async void OnCustomTapKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || ViewModel is null)
+            return;
+        e.Handled = true;
+        await ViewModel.LoadStatisticsCommand.ExecuteAsync(null);
     }
 }
