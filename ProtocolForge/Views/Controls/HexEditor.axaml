@@ -4,5 +4,5 @@
              x:Class="ProtocolForge.Views.Controls.HexEditor"
              x:DataType="vm:HexEditorViewModel">
 
-    <Grid Name="HexContentGrid" Background="White" Focusable="True" />
+    <Grid Name="HexContentGrid" Background="{DynamicResource PfSurfaceBrush}" Focusable="True" />
 </UserControl>

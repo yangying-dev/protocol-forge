@@ -8,8 +8,8 @@
              x:Class="ProtocolForge.Views.Controls.StatisticsPaneView"
              x:DataType="vm:MainWindowViewModel">
     <Grid RowDefinitions="Auto,*">
-        <Border Grid.Row="0" Background="#F0F0F0" Padding="10,4"
-                BorderBrush="#CCC" BorderThickness="0,0,0,1">
+        <Border Grid.Row="0" Background="{DynamicResource PfChromeBrush}" Padding="10,4"
+                BorderBrush="{DynamicResource PfBorderBrush}" BorderThickness="0,0,0,1">
             <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto">
                 <ComboBox Grid.Column="0" Margin="0,0,10,0" Height="24"
                           FontSize="12" HorizontalAlignment="Left"
@@ -44,7 +44,7 @@
                 <Button Grid.Column="4" Margin="4,0" Padding="8,2" FontSize="12"
                         Content="{DynamicResource L10n.Stats.Refresh}"
                         Click="OnRefreshStatisticsClick" />
-                <TextBlock Grid.Column="5" Margin="8,0" FontSize="11" Foreground="#888"
+                <TextBlock Grid.Column="5" Margin="8,0" FontSize="11" Foreground="{DynamicResource PfTextMutedBrush}"
                            VerticalAlignment="Center"
                            Text="{Binding StatisticsStatus}" />
             </Grid>
@@ -52,7 +52,7 @@
         <ListBox Grid.Row="1" Name="ReassembledList"
                  ItemsSource="{Binding ReassembledLines}"
                  IsVisible="{Binding ShowReassembled}"
-                 Background="#FAFAFA" BorderThickness="0"
+                 Background="{DynamicResource PfSurfaceAltBrush}" BorderThickness="0"
                  FontFamily="Consolas, monospace" FontSize="11">
             <ListBox.ItemsPanel>
                 <ItemsPanelTemplate>
@@ -63,7 +63,7 @@
         <ListBox Grid.Row="1" Name="StatisticsList"
                  ItemsSource="{Binding StatisticsLines}"
                  IsVisible="{Binding !ShowReassembled}"
-                 Background="White" BorderThickness="0"
+                 Background="{DynamicResource PfSurfaceBrush}" BorderThickness="0"
                  FontFamily="Consolas, monospace" FontSize="11">
             <ListBox.ItemsPanel>
                 <ItemsPanelTemplate>

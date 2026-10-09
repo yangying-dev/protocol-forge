@@ -4,7 +4,7 @@ using Avalonia.Styling;
 namespace ProtocolForge.Services;
 
 /// <summary>
-/// Runtime-switchable light/dark/system theme, mirroring <see cref="LocalizationService"/>:
+/// Runtime-switchable theme (system/light/dark and custom variants), mirroring <see cref="LocalizationService"/>:
 /// a single static entry point that applies <see cref="Application.RequestedThemeVariant"/>
 /// and raises <see cref="ThemeVariantChanged"/> when the choice actually changes.
 /// Persistence is not done here — the composition root subscribes and writes the value
@@ -12,11 +12,11 @@ namespace ProtocolForge.Services;
 /// </summary>
 public static class ThemeService
 {
-    public const string VariantDefault = "Default";
-    public const string VariantLight = "Light";
-    public const string VariantDark = "Dark";
+    public const string VariantDefault = AppThemes.System;
+    public const string VariantLight = AppThemes.Light;
+    public const string VariantDark = AppThemes.Dark;
 
-    /// <summary>The active theme variant ("Default" / "Light" / "Dark"); Default until set.</summary>
+    /// <summary>The active theme variant key ("Default" / "Light" / "Dark" / a custom key); Default until set.</summary>
     public static string CurrentVariant { get; private set; } = VariantDefault;
 
     /// <summary>Fired after the theme variant has actually changed.</summary>
@@ -58,18 +58,7 @@ public static class ThemeService
     }
 
     private static string Normalize(string? variant)
-    {
-        if (string.Equals(variant, VariantLight, StringComparison.OrdinalIgnoreCase))
-            return VariantLight;
-        if (string.Equals(variant, VariantDark, StringComparison.OrdinalIgnoreCase))
-            return VariantDark;
-        return VariantDefault;
-    }
+        => AppThemes.TryCanonical(variant, out string canonical) ? canonical : VariantDefault;
 
-    private static ThemeVariant ToThemeVariant(string variant) => variant switch
-    {
-        VariantLight => ThemeVariant.Light,
-        VariantDark => ThemeVariant.Dark,
-        _ => ThemeVariant.Default,
-    };
+    private static ThemeVariant ToThemeVariant(string variant) => AppThemes.ToVariant(variant);
 }

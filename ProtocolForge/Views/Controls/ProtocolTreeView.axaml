@@ -6,16 +6,16 @@
              x:DataType="vm:ProtocolTreeViewModel">
 
     <Grid RowDefinitions="Auto,*">
-        <Border Grid.Row="0" Background="#F0F0F0" Padding="8,4"
+        <Border Grid.Row="0" Background="{DynamicResource PfChromeBrush}" Padding="8,4"
                 IsVisible="{Binding IsEnabled}">
             <TextBlock Text="{Binding SelectedFieldInfo}"
-                       FontSize="11" Foreground="Gray"
+                       FontSize="11" Foreground="{DynamicResource PfTextMutedBrush}"
                        FontFamily="Consolas, monospace" />
         </Border>
 
         <TreeView Grid.Row="1" Name="ProtocolTree"
                   ItemsSource="{Binding Layers}"
-                  Background="White"
+                  Background="{DynamicResource PfSurfaceBrush}"
                   BorderThickness="0"
                   ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                   ScrollViewer.VerticalScrollBarVisibility="Auto">
@@ -44,11 +44,11 @@
                         </Border.ContextMenu>
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <TextBlock Text="{Binding Name}" FontSize="12"
-                                       FontWeight="SemiBold" Foreground="#1565C0" />
-                            <TextBlock Text=":" FontSize="12" Foreground="#888" />
+                                       FontWeight="SemiBold" Foreground="{DynamicResource PfFieldNameBrush}" />
+                            <TextBlock Text=":" FontSize="12" Foreground="{DynamicResource PfTextMutedBrush}" />
                             <TextBlock Text="{Binding DisplayValue}" FontSize="12"
                                        IsVisible="{Binding !IsEditing}"
-                                       Foreground="#424242" />
+                                       Foreground="{DynamicResource PfTextSecondaryBrush}" />
                             <TextBox Text="{Binding EditText}"
                                      IsVisible="{Binding IsEditingAndNotEnum}"
                                      Width="160" Padding="3,0"
@@ -81,7 +81,7 @@
                                 </StackPanel>
                                 <TextBlock Text="{Binding HexValue, StringFormat={}[{0}]}"
                                        IsVisible="{Binding ShowHex}"
-                                       FontSize="11" Foreground="#9E9E9E"
+                                       FontSize="11" Foreground="{DynamicResource PfTextSubtleBrush}"
                                        FontFamily="Consolas, monospace" />
                         </StackPanel>
                     </Border>
@@ -99,10 +99,10 @@
                 </Style>
                 <!-- Immediate, lightweight hover highlight (no gradient/transition). -->
                 <Style Selector="TreeViewItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-                    <Setter Property="Background" Value="#E8F0FE" />
+                    <Setter Property="Background" Value="{DynamicResource PfTreeHoverBrush}" />
                 </Style>
                 <Style Selector="TreeViewItem:selected /template/ ContentPresenter#PART_ContentPresenter">
-                    <Setter Property="Background" Value="#CCE0E0FF" />
+                    <Setter Property="Background" Value="{DynamicResource PfTreeSelectedBrush}" />
                 </Style>
             </TreeView.Styles>
         </TreeView>

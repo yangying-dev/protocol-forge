@@ -33,6 +33,12 @@ public partial class HexEditor : UserControl
     private ScrollViewer? _scrollViewer;
     private bool _rebuildQueued;
 
+    private IBrush _surfaceBrush = Brushes.White;
+    private IBrush _offsetTextBrush = new SolidColorBrush(Color.FromArgb(255, 100, 100, 100));
+    private IBrush _asciiTextBrush = Brushes.Black;
+    private IBrush _altRowBrush = new SolidColorBrush(Color.FromArgb(10, 0, 0, 0));
+    private IBrush _mutedTextBrush = Brushes.Gray;
+
     private struct HexRow
     {
         public Border Container;
@@ -47,7 +53,46 @@ public partial class HexEditor : UserControl
     public HexEditor()
     {
         InitializeComponent();
+        ActualThemeVariantChanged += (_, _) => ApplyTheme();
     }
+
+    private void ApplyTheme()
+    {
+        UpdateThemeBrushes();
+        if (_viewModel == null) return;
+
+        if (_viewModel.Bytes.Count == 0)
+        {
+            RebuildRows();
+            return;
+        }
+
+        if (_scrollViewer != null)
+            _scrollViewer.Background = _surfaceBrush;
+
+        foreach (var row in _rows)
+        {
+            row.Label.Foreground = _offsetTextBrush;
+            row.Container.Background = (row.BaseOffset / BytesPerRow) % 2 == 1
+                ? _altRowBrush
+                : Brushes.Transparent;
+        }
+        RefreshVisualState();
+    }
+
+    private void UpdateThemeBrushes()
+    {
+        _surfaceBrush = ThemeBrush("PfSurfaceBrush", _surfaceBrush);
+        _offsetTextBrush = ThemeBrush("PfHexOffsetTextBrush", _offsetTextBrush);
+        _asciiTextBrush = ThemeBrush("PfHexAsciiTextBrush", _asciiTextBrush);
+        _altRowBrush = ThemeBrush("PfHexAltRowBrush", _altRowBrush);
+        _mutedTextBrush = ThemeBrush("PfTextMutedBrush", _mutedTextBrush);
+    }
+
+    private IBrush ThemeBrush(string key, IBrush fallback) =>
+        this.TryFindResource(key, ActualThemeVariant, out var value) && value is IBrush brush
+            ? brush
+            : fallback;
 
     protected override void OnDataContextChanged(EventArgs e)
     {
@@ -151,6 +196,7 @@ public partial class HexEditor : UserControl
     private void RebuildRows()
     {
         TraceLog.Write($"RebuildRows ENTER (bytes={_viewModel?.Bytes.Count} scrollWasNull={_scrollViewer == null})");
+        UpdateThemeBrushes();
         var grid = HexContentGrid;
         grid.Children.Clear();
         _rows.Clear();
@@ -163,7 +209,7 @@ public partial class HexEditor : UserControl
             {
                 Text = LocalizationService.Resolve("Hex.NoPacketSelected"),
                 FontSize = 14,
-                Foreground = Brushes.Gray,
+                Foreground = _mutedTextBrush,
                 Margin = new Thickness(16, 12),
             });
             return;
@@ -175,7 +221,7 @@ public partial class HexEditor : UserControl
 
         var outerScroll = new ScrollViewer
         {
-            Background = Brushes.White,
+            Background = _surfaceBrush,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
         };
@@ -208,7 +254,7 @@ public partial class HexEditor : UserControl
                 FontFamily = MonospaceFont,
                 FontSize = 12,
                 Width = RowLabelWidth,
-                Foreground = new SolidColorBrush(Color.FromArgb(255, 100, 100, 100)),
+                Foreground = _offsetTextBrush,
                 VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
                 Margin = new Thickness(0, 0, 6, 0),
             };
@@ -339,7 +385,7 @@ public partial class HexEditor : UserControl
 
             // Highlight alternating row backgrounds for readability
             if (row % 2 == 1)
-                rowContainer.Background = new SolidColorBrush(Color.FromArgb(10, 0, 0, 0));
+                rowContainer.Background = _altRowBrush;
 
             rowContainer.Child = rowPanel;
             outerStack.Children.Add(rowContainer);
@@ -517,7 +563,7 @@ public partial class HexEditor : UserControl
                     row.HexCells[i].Background = GetByteBackground(hexByte);
                     row.HexTexts[i].Text = GetHexCellText(hexByte);
                     row.AsciiTexts[i].Text = GetAsciiCellText(hexByte);
-                    row.AsciiTexts[i].Foreground = hexByte.IsEditPending ? Brushes.Gray : Brushes.Black;
+                    row.AsciiTexts[i].Foreground = hexByte.IsEditPending ? _mutedTextBrush : _asciiTextBrush;
                 }
             }
         }

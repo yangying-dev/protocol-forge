@@ -12,11 +12,12 @@
         x:DataType="vm:MainWindowViewModel"
         Icon="/Assets/protocol-forge.ico"
         Title="{DynamicResource L10n.App.Title}"
+        Background="{DynamicResource PfSurfaceBrush}"
         MinWidth="900" MinHeight="600">
 
     <Grid Name="RootGrid" RowDefinitions="Auto,Auto,Auto,*,Auto">
         <!-- ════════════════ Menu Bar ════════════════ -->
-        <Menu Grid.Row="0">
+        <Menu Grid.Row="0" Background="{DynamicResource PfSurfaceBrush}">
             <MenuItem Header="{DynamicResource L10n.Mnu.File}">
                 <MenuItem Header="{DynamicResource L10n.Mnu.Open}" Click="OnOpenPcapClicked" InputGesture="Ctrl+O" />
                 <MenuItem Header="{DynamicResource L10n.Mnu.Save}" Click="OnSavePcapClicked" InputGesture="Ctrl+S" />
@@ -53,10 +54,20 @@
                 <MenuItem x:Name="MenuLangEnUs" Header="{DynamicResource L10n.Lang.EnUs}" Click="OnMenuLangEnUsClicked" ToggleType="CheckBox"/>
             </MenuItem>
             <MenuItem Header="{DynamicResource L10n.Mnu.Help}">
-                <MenuItem Header="{DynamicResource L10n.Theme.Menu}">
-                    <MenuItem x:Name="MenuThemeSystem" Header="{DynamicResource L10n.Theme.System}" Click="OnMenuThemeSystemClicked" ToggleType="CheckBox"/>
-                    <MenuItem x:Name="MenuThemeLight" Header="{DynamicResource L10n.Theme.Light}" Click="OnMenuThemeLightClicked" ToggleType="CheckBox"/>
-                    <MenuItem x:Name="MenuThemeDark" Header="{DynamicResource L10n.Theme.Dark}" Click="OnMenuThemeDarkClicked" ToggleType="CheckBox"/>
+                <MenuItem x:Name="MenuTheme" Header="{DynamicResource L10n.Theme.Menu}">
+                    <MenuItem Header="{DynamicResource L10n.Theme.System}" Tag="Default" Click="OnMenuThemeClicked" ToggleType="CheckBox"/>
+                    <MenuItem Header="{DynamicResource L10n.Theme.Light}" Tag="Light" Click="OnMenuThemeClicked" ToggleType="CheckBox"/>
+                    <MenuItem Header="{DynamicResource L10n.Theme.Dark}" Tag="Dark" Click="OnMenuThemeClicked" ToggleType="CheckBox"/>
+                    <Separator/>
+                    <MenuItem Header="{DynamicResource L10n.Theme.Midnight}" Tag="Midnight" Click="OnMenuThemeClicked" ToggleType="CheckBox"/>
+                    <MenuItem Header="{DynamicResource L10n.Theme.Aurora}" Tag="Aurora" Click="OnMenuThemeClicked" ToggleType="CheckBox"/>
+                    <MenuItem Header="{DynamicResource L10n.Theme.Nocturne}" Tag="Nocturne" Click="OnMenuThemeClicked" ToggleType="CheckBox"/>
+                    <MenuItem Header="{DynamicResource L10n.Theme.Ember}" Tag="Ember" Click="OnMenuThemeClicked" ToggleType="CheckBox"/>
+                    <MenuItem Header="{DynamicResource L10n.Theme.Graphite}" Tag="Graphite" Click="OnMenuThemeClicked" ToggleType="CheckBox"/>
+                    <Separator/>
+                    <MenuItem Header="{DynamicResource L10n.Theme.Solaris}" Tag="Solaris" Click="OnMenuThemeClicked" ToggleType="CheckBox"/>
+                    <MenuItem Header="{DynamicResource L10n.Theme.Celadon}" Tag="Celadon" Click="OnMenuThemeClicked" ToggleType="CheckBox"/>
+                    <MenuItem Header="{DynamicResource L10n.Theme.Sakura}" Tag="Sakura" Click="OnMenuThemeClicked" ToggleType="CheckBox"/>
                 </MenuItem>
                 <Separator />
                 <MenuItem Header="{DynamicResource L10n.Mnu.OpenSupportData}" Click="OnOpenLogDirClicked" />
@@ -67,7 +78,7 @@
 
         <!-- ════════════════ Toolbar ════════════════ -->
         <Border Grid.Row="1" Name="ToolBarPanel"
-                Background="#F0F0F0" Padding="8,4" BorderBrush="#CCC" BorderThickness="0,0,0,1">
+                Background="{DynamicResource PfChromeBrush}" Padding="8,4" BorderBrush="{DynamicResource PfBorderBrush}" BorderThickness="0,0,0,1">
             <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto">
                 <!-- Start Button -->
                 <Button Grid.Column="0" Name="StartSendBtn"
@@ -181,18 +192,18 @@
         </Border>
 
         <!-- ════════════════ Tshark Warning Banner ════════════════ -->
-        <Border Grid.Row="2" Background="#FFF3CD" BorderBrush="#F0B429"
+        <Border Grid.Row="2" Background="{DynamicResource PfWarningBackgroundBrush}" BorderBrush="{DynamicResource PfWarningBorderBrush}"
                 BorderThickness="0,0,0,1" Padding="10,6"
                 IsVisible="{Binding IsReadOnly}">
             <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                 <TextBlock Text="⚠" FontSize="14" VerticalAlignment="Center" />
                 <TextBlock Text="{Binding TsharkWarning}"
                            FontSize="12" FontWeight="SemiBold"
-                           Foreground="#7A5C00"
+                           Foreground="{DynamicResource PfWarningTextBrush}"
                            TextWrapping="Wrap"
                            VerticalAlignment="Center" />
                 <TextBlock Text="{DynamicResource L10n.Banner.Text}"
-                           FontSize="12" Foreground="#7A5C00"
+                           FontSize="12" Foreground="{DynamicResource PfWarningTextBrush}"
                            TextWrapping="Wrap"
                            VerticalAlignment="Center"
                            Margin="6,0,0,0" />
@@ -205,8 +216,8 @@
                      Factory="{Binding Factory}" />
 
         <!-- ════════════════ Status Bar ════════════════ -->
-        <Border Grid.Row="4" Background="#F5F5F5" Padding="10,5,12,5"
-                BorderBrush="#CCC" BorderThickness="0,1,0,0">
+        <Border Grid.Row="4" Background="{DynamicResource PfChromeBrush}" Padding="10,5,12,5"
+                BorderBrush="{DynamicResource PfBorderBrush}" BorderThickness="0,1,0,0">
             <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6"
                             VerticalAlignment="Center">
@@ -217,9 +228,9 @@
                                  IsVisible="{Binding IsLoading}" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="18">
-                    <TextBlock FontSize="12" Foreground="#757575"
+                    <TextBlock FontSize="12" Foreground="{DynamicResource PfTextSubtleBrush}"
                                Text="{Binding FileDisplay}" />
-                    <TextBlock FontSize="12" Foreground="#757575"
+                    <TextBlock FontSize="12" Foreground="{DynamicResource PfTextSubtleBrush}"
                                IsVisible="{Binding HasUnsavedChanges}"
                                Text="{Binding ModifiedDisplay}" />
                 </StackPanel>

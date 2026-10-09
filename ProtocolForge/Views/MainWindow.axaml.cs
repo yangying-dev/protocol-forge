@@ -451,32 +451,20 @@ public partial class MainWindow : Window
         MenuLangEnUs.IsChecked = cur == AppLanguage.EnUs;
     }
 
-    private void OnMenuThemeSystemClicked(object? sender, RoutedEventArgs e)
+    private void OnMenuThemeClicked(object? sender, RoutedEventArgs e)
     {
-        ThemeService.SetVariant(ThemeService.VariantDefault);
+        if (sender is MenuItem { Tag: string key })
+            ThemeService.SetVariant(key);
         // SetVariant is a no-op when already active (no ThemeVariantChanged), but the
         // ToggleType auto-toggle still flipped the check off — restore explicitly.
-        UpdateThemeMenuChecks();
-    }
-
-    private void OnMenuThemeLightClicked(object? sender, RoutedEventArgs e)
-    {
-        ThemeService.SetVariant(ThemeService.VariantLight);
-        UpdateThemeMenuChecks();
-    }
-
-    private void OnMenuThemeDarkClicked(object? sender, RoutedEventArgs e)
-    {
-        ThemeService.SetVariant(ThemeService.VariantDark);
         UpdateThemeMenuChecks();
     }
 
     private void UpdateThemeMenuChecks()
     {
         var cur = ThemeService.CurrentVariant;
-        MenuThemeSystem.IsChecked = cur == ThemeService.VariantDefault;
-        MenuThemeLight.IsChecked = cur == ThemeService.VariantLight;
-        MenuThemeDark.IsChecked = cur == ThemeService.VariantDark;
+        foreach (var item in MenuTheme.Items.OfType<MenuItem>())
+            item.IsChecked = item.Tag is string tag && string.Equals(tag, cur, StringComparison.OrdinalIgnoreCase);
     }
 
     // ─── File Dialogs ───
