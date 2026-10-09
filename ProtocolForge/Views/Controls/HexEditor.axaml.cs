@@ -82,16 +82,23 @@ public partial class HexEditor : UserControl
 
     private void UpdateThemeBrushes()
     {
-        _surfaceBrush = ThemeBrush("PfSurfaceBrush", _surfaceBrush);
-        _offsetTextBrush = ThemeBrush("PfHexOffsetTextBrush", _offsetTextBrush);
-        _asciiTextBrush = ThemeBrush("PfHexAsciiTextBrush", _asciiTextBrush);
-        _altRowBrush = ThemeBrush("PfHexAltRowBrush", _altRowBrush);
-        _mutedTextBrush = ThemeBrush("PfTextMutedBrush", _mutedTextBrush);
+        _surfaceBrush = ThemeBrush("SukiCardBackground", _surfaceBrush);
+        _offsetTextBrush = ThemeBrush("SukiMuteText", _offsetTextBrush);
+        _asciiTextBrush = ThemeBrush("SukiText", _asciiTextBrush);
+        _altRowBrush = ThemeBrush("SukiPrimaryColor3", _altRowBrush);
+        _mutedTextBrush = ThemeBrush("SukiMuteText", _mutedTextBrush);
     }
 
+    // SukiUI publishes its palette as Color values (not brushes), so accept either
+    // form and wrap a bare Color in a brush.
     private IBrush ThemeBrush(string key, IBrush fallback) =>
-        this.TryFindResource(key, ActualThemeVariant, out var value) && value is IBrush brush
-            ? brush
+        this.TryFindResource(key, ActualThemeVariant, out var value)
+            ? value switch
+            {
+                IBrush brush => brush,
+                Color color => new SolidColorBrush(color),
+                _ => fallback,
+            }
             : fallback;
 
     protected override void OnDataContextChanged(EventArgs e)

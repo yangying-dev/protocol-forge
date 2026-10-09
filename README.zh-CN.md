@@ -38,6 +38,7 @@ ProtocolForge 是一款跨平台桌面应用程序，用于检查、编辑和重
 - **Tshark 集成** — 双模式使用 tshark：一次流式 `-T fields` 传递填充报文列表（Source/Destination/Protocol/Info 列，在 tshark 解析过程中逐步填充）；协议详情树仅在选中报文时按需解析（`-T jsonraw`/`json`/`pdml`，字节偏移精确）。支持 Wireshark 能解析的所有协议（PFCP、NGAP、GTP-U、NAS、S1AP、HTTP/2、Diameter、SCTP 等）。
 - **Tshark 环境门禁** — 启动时及路径更改后，会检查已安装 tshark 的版本，最低要求 2.6.0。若 tshark 缺失或版本过低，应用仍可打开抓包文件，但进入**只读模式**：显示警告横幅，原始报文数据正常加载（地址等列显示为 `N/A`），但树/十六进制编辑、导出和报文注入均被禁用。可通过 **文件 → Tshark Path…** 在运行时重新选择 tshark 路径，找到有效 tshark 后会重新检测并解除门禁。所选路径会被持久化（也可用 `TSHARK_PATH` 环境变量覆盖）。
 - **双语界面（简体中文 / English）** — 全界面本地化，通过 **语言 / Language** 菜单（位于 View 与 Help 之间）即时切换语言，无需重启；语言偏好会被持久化，首次运行时自动检测系统区域设置。
+- **主题（SukiUI）** — 基于 [SukiUI](https://github.com/kikipoulet/SukiUI) 的统一运行时主题系统：在 **主题** 菜单里选择底色（**跟随系统 / 浅色 / 深色**）与配色皮肤（**蓝色 / 绿色 / 红色 / 橙色**），选择会被持久化。窗口外框、菜单和每个停靠面板都会跟随主题；标准 Dock 外框由 `SukiUI.Dock` 重新绘制，使面板与宿主外观统一。切换即时生效，无需重启。
 - **三遍式 jsonraw 解析器** — 仅遍历*选中报文*的 JSON 结构（而非整个文件）：
   1. 收集所有 `_raw` 数组（十六进制值、偏移量、长度）
   2. 处理 `_tree` 容器和子对象，递归构建字段嵌套
@@ -108,7 +109,7 @@ ProtocolForge 是一款跨平台桌面应用程序，用于检查、编辑和重
 ProtocolForge/
 ├── App.axaml.cs              # 应用入口 — 手动 DI 组合
 ├── Program.cs                 # Avalonia 启动
-├── ProtocolForge.csproj       # .NET 10, Avalonia 12.1.3, Dock 12.1.0.7, CommunityToolkit.Mvvm 8.4.2, DataGrid 12.1.2
+├── ProtocolForge.csproj       # .NET 10, Avalonia 12.1.3, Dock 12.1.0.7, SukiUI 7.0.1, CommunityToolkit.Mvvm 8.4.2, DataGrid 12.1.2
 │
 ├── Assets/Lang/               # 本地化字典 — en-US.json + zh-CN.json（作为嵌入资源）
 │   ├── en-US.json            # 英文界面字符串（210 个键）
@@ -404,6 +405,12 @@ ProtocolForge 不内置协议解析器 — 完全依赖 tshark。要支持新协
 | Avalonia.Controls.DataGrid | 12.1.2 | 报文列表网格：排序 + 双击列宽自适应 |
 | AvaloniaUI.DiagnosticsSupport | 2.2.3 | 仅开发用诊断集成（Debug 构建） |
 | CommunityToolkit.Mvvm | 8.4.2 | MVVM 源代码生成器（ObservableProperty、RelayCommand） |
+| Dock.Avalonia | 12.1.0.7 | Visual Studio 风格可停靠布局宿主 |
+| Dock.Avalonia.Themes.Fluent | 12.1.0.7 | Dock 基础外框主题（先于 SukiUI.Dock 加载） |
+| Dock.Model.Mvvm | 12.1.0.7 | Dock 模型类型（MVVM） |
+| Dock.Serializer.SystemTextJson | 12.1.0.7 | Dock 布局持久化（docklayout.json） |
+| SukiUI | 7.0.1 | 整套控件换肤（窗口、菜单、DataGrid、TreeView、Dock） |
+| SukiUI.Dock | 7.0.1 | 与 SukiUI 一致的 Dock 面板外框 |
 
 外部运行时依赖：用于协议解析的 **tshark ≥ 2.6.0**（Wireshark 的一部分）。
 

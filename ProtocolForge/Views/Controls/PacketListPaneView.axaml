@@ -10,8 +10,8 @@
              x:DataType="vm:MainWindowViewModel">
     <Grid RowDefinitions="Auto,*">
         <!-- Top bar: packet count + file name -->
-        <Border Grid.Row="0" Background="{DynamicResource PfChromeBrush}" Padding="10,4,10,3"
-                BorderBrush="{DynamicResource PfBorderBrush}" BorderThickness="0,0,0,1">
+        <Border Grid.Row="0" Background="{DynamicResource SukiStrongBackground}" Padding="10,4,10,3"
+                BorderBrush="{DynamicResource SukiBorderBrush}" BorderThickness="0,0,0,1">
             <Grid ColumnDefinitions="Auto,*,Auto,Auto">
                 <TextBlock Grid.Column="0"
                            Text="{Binding PacketsDisplay}"
@@ -45,7 +45,7 @@
                             FontSize="12" Padding="8,2"
                             Command="{Binding ClearFilterCommand}" />
                 </StackPanel>
-                <TextBlock Grid.Column="3" FontSize="12" Foreground="{DynamicResource PfTextMutedBrush}"
+                <TextBlock Grid.Column="3" FontSize="12" Foreground="{DynamicResource SukiMuteText}"
                            Margin="10,0,0,0" VerticalAlignment="Center"
                            Text="{Binding FileName}" />
             </Grid>
@@ -61,8 +61,8 @@
                   CanUserSortColumns="True"
                   controls:DoubleClickAutoFit.IsEnabled="True"
                   GridLinesVisibility="Horizontal"
-                  HorizontalGridLinesBrush="{DynamicResource PfGridLineBrush}"
-                  Background="{DynamicResource PfSurfaceBrush}"
+                  HorizontalGridLinesBrush="{DynamicResource SukiBorderBrush}"
+                  Background="{DynamicResource SukiCardBackground}"
                   BorderThickness="0">
             <DataGrid.ContextMenu>
                 <ContextMenu>

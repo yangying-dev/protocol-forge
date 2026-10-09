@@ -1,10 +1,11 @@
-<Window xmlns="https://github.com/avaloniaui"
+<suki:SukiWindow xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:ProtocolForge.ViewModels"
         xmlns:models="using:ProtocolForge.Models"
         xmlns:sys="using:System"
         xmlns:svc="using:ProtocolForge.Services"
         xmlns:controls="using:ProtocolForge.Views.Controls"
+        xmlns:suki="clr-namespace:SukiUI.Controls;assembly=SukiUI"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d" d:DesignWidth="1400" d:DesignHeight="900"
@@ -12,12 +13,12 @@
         x:DataType="vm:MainWindowViewModel"
         Icon="/Assets/protocol-forge.ico"
         Title="{DynamicResource L10n.App.Title}"
-        Background="{DynamicResource PfSurfaceBrush}"
+        IsMenuVisible="False"
         MinWidth="900" MinHeight="600">
 
     <Grid Name="RootGrid" RowDefinitions="Auto,Auto,Auto,*,Auto">
         <!-- ════════════════ Menu Bar ════════════════ -->
-        <Menu Grid.Row="0" Background="{DynamicResource PfSurfaceBrush}">
+        <Menu Grid.Row="0">
             <MenuItem Header="{DynamicResource L10n.Mnu.File}">
                 <MenuItem Header="{DynamicResource L10n.Mnu.Open}" Click="OnOpenPcapClicked" InputGesture="Ctrl+O" />
                 <MenuItem Header="{DynamicResource L10n.Mnu.Save}" Click="OnSavePcapClicked" InputGesture="Ctrl+S" />
@@ -55,19 +56,14 @@
             </MenuItem>
             <MenuItem Header="{DynamicResource L10n.Mnu.Help}">
                 <MenuItem x:Name="MenuTheme" Header="{DynamicResource L10n.Theme.Menu}">
-                    <MenuItem Header="{DynamicResource L10n.Theme.System}" Tag="Default" Click="OnMenuThemeClicked" ToggleType="CheckBox"/>
-                    <MenuItem Header="{DynamicResource L10n.Theme.Light}" Tag="Light" Click="OnMenuThemeClicked" ToggleType="CheckBox"/>
-                    <MenuItem Header="{DynamicResource L10n.Theme.Dark}" Tag="Dark" Click="OnMenuThemeClicked" ToggleType="CheckBox"/>
+                    <MenuItem Header="{DynamicResource L10n.Theme.System}" Tag="Default" Click="OnMenuThemeBaseClicked" ToggleType="CheckBox"/>
+                    <MenuItem Header="{DynamicResource L10n.Theme.Light}" Tag="Light" Click="OnMenuThemeBaseClicked" ToggleType="CheckBox"/>
+                    <MenuItem Header="{DynamicResource L10n.Theme.Dark}" Tag="Dark" Click="OnMenuThemeBaseClicked" ToggleType="CheckBox"/>
                     <Separator/>
-                    <MenuItem Header="{DynamicResource L10n.Theme.Midnight}" Tag="Midnight" Click="OnMenuThemeClicked" ToggleType="CheckBox"/>
-                    <MenuItem Header="{DynamicResource L10n.Theme.Aurora}" Tag="Aurora" Click="OnMenuThemeClicked" ToggleType="CheckBox"/>
-                    <MenuItem Header="{DynamicResource L10n.Theme.Nocturne}" Tag="Nocturne" Click="OnMenuThemeClicked" ToggleType="CheckBox"/>
-                    <MenuItem Header="{DynamicResource L10n.Theme.Ember}" Tag="Ember" Click="OnMenuThemeClicked" ToggleType="CheckBox"/>
-                    <MenuItem Header="{DynamicResource L10n.Theme.Graphite}" Tag="Graphite" Click="OnMenuThemeClicked" ToggleType="CheckBox"/>
-                    <Separator/>
-                    <MenuItem Header="{DynamicResource L10n.Theme.Solaris}" Tag="Solaris" Click="OnMenuThemeClicked" ToggleType="CheckBox"/>
-                    <MenuItem Header="{DynamicResource L10n.Theme.Celadon}" Tag="Celadon" Click="OnMenuThemeClicked" ToggleType="CheckBox"/>
-                    <MenuItem Header="{DynamicResource L10n.Theme.Sakura}" Tag="Sakura" Click="OnMenuThemeClicked" ToggleType="CheckBox"/>
+                    <MenuItem Header="{DynamicResource L10n.Theme.Color.Blue}" Tag="Blue" Click="OnMenuThemeColorClicked" ToggleType="CheckBox"/>
+                    <MenuItem Header="{DynamicResource L10n.Theme.Color.Green}" Tag="Green" Click="OnMenuThemeColorClicked" ToggleType="CheckBox"/>
+                    <MenuItem Header="{DynamicResource L10n.Theme.Color.Red}" Tag="Red" Click="OnMenuThemeColorClicked" ToggleType="CheckBox"/>
+                    <MenuItem Header="{DynamicResource L10n.Theme.Color.Orange}" Tag="Orange" Click="OnMenuThemeColorClicked" ToggleType="CheckBox"/>
                 </MenuItem>
                 <Separator />
                 <MenuItem Header="{DynamicResource L10n.Mnu.OpenSupportData}" Click="OnOpenLogDirClicked" />
@@ -78,7 +74,7 @@
 
         <!-- ════════════════ Toolbar ════════════════ -->
         <Border Grid.Row="1" Name="ToolBarPanel"
-                Background="{DynamicResource PfChromeBrush}" Padding="8,4" BorderBrush="{DynamicResource PfBorderBrush}" BorderThickness="0,0,0,1">
+                Background="{DynamicResource SukiStrongBackground}" Padding="8,4" BorderBrush="{DynamicResource SukiBorderBrush}" BorderThickness="0,0,0,1">
             <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto">
                 <!-- Start Button -->
                 <Button Grid.Column="0" Name="StartSendBtn"
@@ -192,18 +188,18 @@
         </Border>
 
         <!-- ════════════════ Tshark Warning Banner ════════════════ -->
-        <Border Grid.Row="2" Background="{DynamicResource PfWarningBackgroundBrush}" BorderBrush="{DynamicResource PfWarningBorderBrush}"
+        <Border Grid.Row="2" Background="{DynamicResource SukiWarningColor}" BorderBrush="{DynamicResource SukiWarningDarkColor}"
                 BorderThickness="0,0,0,1" Padding="10,6"
                 IsVisible="{Binding IsReadOnly}">
             <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                 <TextBlock Text="⚠" FontSize="14" VerticalAlignment="Center" />
                 <TextBlock Text="{Binding TsharkWarning}"
                            FontSize="12" FontWeight="SemiBold"
-                           Foreground="{DynamicResource PfWarningTextBrush}"
+                           Foreground="{DynamicResource SukiWarningForeground}"
                            TextWrapping="Wrap"
                            VerticalAlignment="Center" />
                 <TextBlock Text="{DynamicResource L10n.Banner.Text}"
-                           FontSize="12" Foreground="{DynamicResource PfWarningTextBrush}"
+                           FontSize="12" Foreground="{DynamicResource SukiWarningForeground}"
                            TextWrapping="Wrap"
                            VerticalAlignment="Center"
                            Margin="6,0,0,0" />
@@ -216,8 +212,8 @@
                      Factory="{Binding Factory}" />
 
         <!-- ════════════════ Status Bar ════════════════ -->
-        <Border Grid.Row="4" Background="{DynamicResource PfChromeBrush}" Padding="10,5,12,5"
-                BorderBrush="{DynamicResource PfBorderBrush}" BorderThickness="0,1,0,0">
+        <Border Grid.Row="4" Background="{DynamicResource SukiStrongBackground}" Padding="10,5,12,5"
+                BorderBrush="{DynamicResource SukiBorderBrush}" BorderThickness="0,1,0,0">
             <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6"
                             VerticalAlignment="Center">
@@ -228,13 +224,13 @@
                                  IsVisible="{Binding IsLoading}" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="18">
-                    <TextBlock FontSize="12" Foreground="{DynamicResource PfTextSubtleBrush}"
+                    <TextBlock FontSize="12" Foreground="{DynamicResource SukiDisabledText}"
                                Text="{Binding FileDisplay}" />
-                    <TextBlock FontSize="12" Foreground="{DynamicResource PfTextSubtleBrush}"
+                    <TextBlock FontSize="12" Foreground="{DynamicResource SukiDisabledText}"
                                IsVisible="{Binding HasUnsavedChanges}"
                                Text="{Binding ModifiedDisplay}" />
                 </StackPanel>
             </Grid>
         </Border>
     </Grid>
-</Window>
+</suki:SukiWindow>

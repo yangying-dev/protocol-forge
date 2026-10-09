@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- **Unified theming on SukiUI.** The window chrome, controls and dock panes now share one
+  runtime theme system built on [`SukiUI`](https://github.com/kikipoulet/SukiUI) 7.0.1 +
+  `SukiUI.Dock` 7.0.1 (both MIT). The theme menu offers a base (**System / Light / Dark**)
+  and a color skin (**Blue / Green / Red / Orange**); the choice persists and applies
+  instantly with no restart. This replaces the previous hand-rolled multi-theme palette
+  (`Services/AppThemes.cs` is removed): the standard Dock chrome is now restyled by
+  `SukiUI.Dock`, so the panes and the host no longer drift apart when the theme changes.
+  Existing `ThemeVariant` settings migrate (e.g. `Midnight` → Dark+Blue, `Sakura` → Light+Blue).
+
 ## [0.2.0] - unreleased
 
 ### Added

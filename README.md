@@ -34,6 +34,7 @@ so no real operator capture is involved and reproducing them does not require co
 - **Tshark Integration** — Two-mode tshark use: one streamed `-T fields` pass fills the packet list (Source/Destination/Protocol/Info columns, progressively as tshark dissects), and the protocol detail tree is parsed per-packet on demand with `-T jsonraw`/`json`/`pdml` for byte-offset accuracy. Supports any protocol Wireshark knows (PFCP, NGAP, GTP-U, NAS, S1AP, HTTP/2, Diameter, SCTP, etc.).
 - **Tshark Environment Gate** — On startup and on path change, the installed tshark's version is checked against a minimum of 2.6.0. If tshark is missing or too old, the app still opens the capture in **read-only mode**: the warning banner is shown, raw packet data loads normally (`N/A` columns), but tree/hex editing, export, and packet injection are disabled. A tshark path can be re-selected at runtime via **File → Tshark Path…**, which re-detects and lifts the gate when a valid tshark is found. The chosen path is persisted (and can be overridden by the `TSHARK_PATH` environment variable).
 - **Bilingual UI (简体中文 / English)** — Full UI localization with instant runtime language switching via the **语言 / Language** menu (between View and Help); the preference is persisted and the system locale is auto-detected on first run.
+- **Theming (SukiUI)** — One runtime theme system built on [SukiUI](https://github.com/kikipoulet/SukiUI): pick a base (**System / Light / Dark**) and a colour skin (**Blue / Green / Red / Orange**) from the **Theme** menu; the choice is persisted. The window chrome, menu and every dock pane follow it, and the stock Dock chrome is restyled by `SukiUI.Dock` so the panes and the host share one look. Switching is instant, no restart.
 - **Three-Pass jsonraw Parser** — Walks tshark's JSON structure for the *selected* packet only (not the whole file):
   1. Collect all `_raw` arrays (hex value, offset, length)
   2. Process `_tree` containers and sub-objects with recursive field nesting
@@ -104,7 +105,7 @@ so no real operator capture is involved and reproducing them does not require co
 ProtocolForge/
 ├── App.axaml.cs              # Application entry — manual DI composition
 ├── Program.cs                 # Avalonia bootstrap
-├── ProtocolForge.csproj       # .NET 10, Avalonia 12.1.3, Dock 12.1.0.7, CommunityToolkit.Mvvm 8.4.2, DataGrid 12.1.2
+├── ProtocolForge.csproj       # .NET 10, Avalonia 12.1.3, Dock 12.1.0.7, SukiUI 7.0.1, CommunityToolkit.Mvvm 8.4.2, DataGrid 12.1.2
 │
 ├── Assets/Lang/               # Localization dictionaries — en-US.json + zh-CN.json (embedded as resources)
 │   ├── en-US.json            # English UI strings (210 keys)
@@ -406,6 +407,12 @@ Runtime diagnostics are written to `trace.log` under the local application data 
 | Avalonia.Controls.DataGrid | 12.1.2 | Packet list grid: sorting + double-click column auto-fit |
 | AvaloniaUI.DiagnosticsSupport | 2.2.3 | Dev-only diagnostics integration (Debug builds) |
 | CommunityToolkit.Mvvm | 8.4.2 | MVVM source generators (ObservableProperty, RelayCommand) |
+| Dock.Avalonia | 12.1.0.7 | Visual-Studio-style dockable layout host |
+| Dock.Avalonia.Themes.Fluent | 12.1.0.7 | Base Dock chrome theme (loaded before SukiUI.Dock) |
+| Dock.Model.Mvvm | 12.1.0.7 | Dock model types (MVVM) |
+| Dock.Serializer.SystemTextJson | 12.1.0.7 | Dock layout persistence (docklayout.json) |
+| SukiUI | 7.0.1 | Cross-control theming (window, menu, DataGrid, TreeView, Dock) |
+| SukiUI.Dock | 7.0.1 | SukiUI-styled chrome for the Dock panes |
 
 External runtime dependency: **tshark ≥ 2.6.0** (part of Wireshark) for protocol parsing.
 

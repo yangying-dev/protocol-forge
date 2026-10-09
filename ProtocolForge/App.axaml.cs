@@ -60,11 +60,11 @@ public partial class App : Application
                 tsharkSettings.SaveLanguage(LocalizationService.CurrentLanguage.ToString());
 
             // ── UI 主题 ──
-            // 恢复上次的 浅色/深色/跟随系统 偏好;未保存过则跟随系统(Default)。
+            // 恢复上次的 基色(浅/深/跟随系统) + SukiUI 配色 偏好;未保存过则默认 Default+Blue。
             // Initialize 只应用不触发事件;订阅放在其后,避免启动时把默认值误存为用户选择。
             ThemeService.Initialize(tsharkSettings.LoadThemeVariant());
             ThemeService.ThemeVariantChanged += (_, _) =>
-                tsharkSettings.SaveThemeVariant(ThemeService.CurrentVariant);
+                tsharkSettings.SaveThemeVariant(ThemeService.CurrentSerialized);
 
             var pcapIngest = new PcapIngestService();
             var pcapExport = new PcapExportService();

@@ -12,10 +12,11 @@ using System.Diagnostics;
 using System.Reflection;
 using ProtocolForge.Services;
 using ProtocolForge.ViewModels;
+using SukiUI.Controls;
 
 namespace ProtocolForge.Views;
 
-public partial class MainWindow : Window
+public partial class MainWindow : SukiWindow
 {
     private MainWindowViewModel? ViewModel => DataContext as MainWindowViewModel;
     private readonly LayoutService _layoutService = new();
@@ -451,20 +452,34 @@ public partial class MainWindow : Window
         MenuLangEnUs.IsChecked = cur == AppLanguage.EnUs;
     }
 
-    private void OnMenuThemeClicked(object? sender, RoutedEventArgs e)
+    private void OnMenuThemeBaseClicked(object? sender, RoutedEventArgs e)
     {
         if (sender is MenuItem { Tag: string key })
-            ThemeService.SetVariant(key);
-        // SetVariant is a no-op when already active (no ThemeVariantChanged), but the
+            ThemeService.SetBase(key);
+        // SetBase/SetColor are no-ops when already active (no ThemeVariantChanged), but the
         // ToggleType auto-toggle still flipped the check off — restore explicitly.
+        UpdateThemeMenuChecks();
+    }
+
+    private void OnMenuThemeColorClicked(object? sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem { Tag: string key })
+            ThemeService.SetColor(key);
         UpdateThemeMenuChecks();
     }
 
     private void UpdateThemeMenuChecks()
     {
-        var cur = ThemeService.CurrentVariant;
         foreach (var item in MenuTheme.Items.OfType<MenuItem>())
-            item.IsChecked = item.Tag is string tag && string.Equals(tag, cur, StringComparison.OrdinalIgnoreCase);
+        {
+            if (item.Tag is not string tag)
+                continue;
+
+            item.IsChecked = ThemeService.BaseKeys.Contains(tag, StringComparer.OrdinalIgnoreCase)
+                ? string.Equals(tag, ThemeService.CurrentBase, StringComparison.OrdinalIgnoreCase)
+                : ThemeService.ColorKeys.Contains(tag, StringComparer.OrdinalIgnoreCase)
+                  && string.Equals(tag, ThemeService.CurrentColor, StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     // ─── File Dialogs ───

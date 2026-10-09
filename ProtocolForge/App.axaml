@@ -1,191 +1,20 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="ProtocolForge.App"
-             xmlns:local="using:ProtocolForge"
              xmlns:vm="using:ProtocolForge.ViewModels"
              xmlns:controls="using:ProtocolForge.Views.Controls"
-             xmlns:svc="using:ProtocolForge.Services"
+             xmlns:suki="clr-namespace:SukiUI;assembly=SukiUI"
              RequestedThemeVariant="Default">
-             <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
-
-    <!-- ════════════════ Theme tokens (语义化设计令牌) ════════════════
-         所有视图只引用这些令牌,不写死颜色。切换主题(含自研变体)时整套映射
-         自动替换(DynamicResource 会随 ActualThemeVariant 重新求值)。
-         框架内置控件(FluentTheme / DockFluentTheme)已自带明暗主题;自研主题
-         继承 Light/Dark,未覆盖的框架资源自动回退,这里只补自定义表面的令牌。 -->
-    <Application.Resources>
-        <ResourceDictionary>
-            <ResourceDictionary.ThemeDictionaries>
-                <ResourceDictionary x:Key="Light">
-                    <!-- 表面 -->
-                    <SolidColorBrush x:Key="PfSurfaceBrush" Color="#FFFFFFFF" />
-                    <SolidColorBrush x:Key="PfSurfaceAltBrush" Color="#FFFAFAFA" />
-                    <SolidColorBrush x:Key="PfChromeBrush" Color="#FFF0F0F0" />
-                    <SolidColorBrush x:Key="PfBorderBrush" Color="#FFCCCCCC" />
-                    <SolidColorBrush x:Key="PfGridLineBrush" Color="#FFE0E0E0" />
-                    <!-- 文本 -->
-                    <SolidColorBrush x:Key="PfTextMutedBrush" Color="#FF888888" />
-                    <SolidColorBrush x:Key="PfTextSecondaryBrush" Color="#FF424242" />
-                    <SolidColorBrush x:Key="PfTextSubtleBrush" Color="#FF9E9E9E" />
-                    <SolidColorBrush x:Key="PfFieldNameBrush" Color="#FF1565C0" />
-                    <!-- 协议树交互态 -->
-                    <SolidColorBrush x:Key="PfTreeHoverBrush" Color="#FFE8F0FE" />
-                    <SolidColorBrush x:Key="PfTreeSelectedBrush" Color="#CCE0E0FF" />
-                    <!-- 只读警告横幅 -->
-                    <SolidColorBrush x:Key="PfWarningBackgroundBrush" Color="#FFFFF3CD" />
-                    <SolidColorBrush x:Key="PfWarningBorderBrush" Color="#FFF0B429" />
-                    <SolidColorBrush x:Key="PfWarningTextBrush" Color="#FF7A5C00" />
-                    <!-- Hex 视图 -->
-                    <SolidColorBrush x:Key="PfHexOffsetTextBrush" Color="#FF646464" />
-                    <SolidColorBrush x:Key="PfHexAsciiTextBrush" Color="#FF000000" />
-                    <SolidColorBrush x:Key="PfHexAltRowBrush" Color="#0A000000" />
-                </ResourceDictionary>
-                <ResourceDictionary x:Key="Dark">
-                    <!-- 表面 -->
-                    <SolidColorBrush x:Key="PfSurfaceBrush" Color="#FF1E1E1E" />
-                    <SolidColorBrush x:Key="PfSurfaceAltBrush" Color="#FF252526" />
-                    <SolidColorBrush x:Key="PfChromeBrush" Color="#FF2D2D30" />
-                    <SolidColorBrush x:Key="PfBorderBrush" Color="#FF3F3F46" />
-                    <SolidColorBrush x:Key="PfGridLineBrush" Color="#FF3F3F46" />
-                    <!-- 文本 -->
-                    <SolidColorBrush x:Key="PfTextMutedBrush" Color="#FF9A9A9A" />
-                    <SolidColorBrush x:Key="PfTextSecondaryBrush" Color="#FFD4D4D4" />
-                    <SolidColorBrush x:Key="PfTextSubtleBrush" Color="#FF808080" />
-                    <SolidColorBrush x:Key="PfFieldNameBrush" Color="#FF569CD6" />
-                    <!-- 协议树交互态 -->
-                    <SolidColorBrush x:Key="PfTreeHoverBrush" Color="#FF094771" />
-                    <SolidColorBrush x:Key="PfTreeSelectedBrush" Color="#FF0E639C" />
-                    <!-- 只读警告横幅 -->
-                    <SolidColorBrush x:Key="PfWarningBackgroundBrush" Color="#FF3D3320" />
-                    <SolidColorBrush x:Key="PfWarningBorderBrush" Color="#FFB8860B" />
-                    <SolidColorBrush x:Key="PfWarningTextBrush" Color="#FFE8CE8F" />
-                    <!-- Hex 视图 -->
-                    <SolidColorBrush x:Key="PfHexOffsetTextBrush" Color="#FF858585" />
-                    <SolidColorBrush x:Key="PfHexAsciiTextBrush" Color="#FFD4D4D4" />
-                    <SolidColorBrush x:Key="PfHexAltRowBrush" Color="#0AFFFFFF" />
-                </ResourceDictionary>
-                <ResourceDictionary x:Key="{x:Static svc:AppThemes.MidnightVariant}">
-                    <SolidColorBrush x:Key="PfSurfaceBrush" Color="#FF181A1F" />
-                    <SolidColorBrush x:Key="PfSurfaceAltBrush" Color="#FF1E2127" />
-                    <SolidColorBrush x:Key="PfChromeBrush" Color="#FF21252B" />
-                    <SolidColorBrush x:Key="PfBorderBrush" Color="#FF2C313A" />
-                    <SolidColorBrush x:Key="PfGridLineBrush" Color="#FF2C313A" />
-                    <SolidColorBrush x:Key="PfTextMutedBrush" Color="#FF7F848E" />
-                    <SolidColorBrush x:Key="PfTextSecondaryBrush" Color="#FFABB2BF" />
-                    <SolidColorBrush x:Key="PfTextSubtleBrush" Color="#FF5C6370" />
-                    <SolidColorBrush x:Key="PfFieldNameBrush" Color="#FF61AFEF" />
-                    <SolidColorBrush x:Key="PfTreeHoverBrush" Color="#FF2C313A" />
-                    <SolidColorBrush x:Key="PfTreeSelectedBrush" Color="#FF2C4B6E" />
-                </ResourceDictionary>
-                <ResourceDictionary x:Key="{x:Static svc:AppThemes.AuroraVariant}">
-                    <SolidColorBrush x:Key="PfSurfaceBrush" Color="#FF2E3440" />
-                    <SolidColorBrush x:Key="PfSurfaceAltBrush" Color="#FF333B47" />
-                    <SolidColorBrush x:Key="PfChromeBrush" Color="#FF3B4252" />
-                    <SolidColorBrush x:Key="PfBorderBrush" Color="#FF4C566A" />
-                    <SolidColorBrush x:Key="PfGridLineBrush" Color="#FF434C5E" />
-                    <SolidColorBrush x:Key="PfTextMutedBrush" Color="#FF9AA5B5" />
-                    <SolidColorBrush x:Key="PfTextSecondaryBrush" Color="#FFD8DEE9" />
-                    <SolidColorBrush x:Key="PfTextSubtleBrush" Color="#FF7B8698" />
-                    <SolidColorBrush x:Key="PfFieldNameBrush" Color="#FF88C0D0" />
-                    <SolidColorBrush x:Key="PfTreeHoverBrush" Color="#FF434C5E" />
-                    <SolidColorBrush x:Key="PfTreeSelectedBrush" Color="#FF5E81AC" />
-                </ResourceDictionary>
-                <ResourceDictionary x:Key="{x:Static svc:AppThemes.NocturneVariant}">
-                    <SolidColorBrush x:Key="PfSurfaceBrush" Color="#FF282A36" />
-                    <SolidColorBrush x:Key="PfSurfaceAltBrush" Color="#FF2E303F" />
-                    <SolidColorBrush x:Key="PfChromeBrush" Color="#FF343746" />
-                    <SolidColorBrush x:Key="PfBorderBrush" Color="#FF44475A" />
-                    <SolidColorBrush x:Key="PfGridLineBrush" Color="#FF44475A" />
-                    <SolidColorBrush x:Key="PfTextMutedBrush" Color="#FFA6AAC5" />
-                    <SolidColorBrush x:Key="PfTextSecondaryBrush" Color="#FFF8F8F2" />
-                    <SolidColorBrush x:Key="PfTextSubtleBrush" Color="#FF7C81A0" />
-                    <SolidColorBrush x:Key="PfFieldNameBrush" Color="#FFBD93F9" />
-                    <SolidColorBrush x:Key="PfTreeHoverBrush" Color="#FF44475A" />
-                    <SolidColorBrush x:Key="PfTreeSelectedBrush" Color="#FF5B4A82" />
-                </ResourceDictionary>
-                <ResourceDictionary x:Key="{x:Static svc:AppThemes.EmberVariant}">
-                    <SolidColorBrush x:Key="PfSurfaceBrush" Color="#FF282828" />
-                    <SolidColorBrush x:Key="PfSurfaceAltBrush" Color="#FF32302F" />
-                    <SolidColorBrush x:Key="PfChromeBrush" Color="#FF3C3836" />
-                    <SolidColorBrush x:Key="PfBorderBrush" Color="#FF504945" />
-                    <SolidColorBrush x:Key="PfGridLineBrush" Color="#FF504945" />
-                    <SolidColorBrush x:Key="PfTextMutedBrush" Color="#FFA89984" />
-                    <SolidColorBrush x:Key="PfTextSecondaryBrush" Color="#FFEBDBB2" />
-                    <SolidColorBrush x:Key="PfTextSubtleBrush" Color="#FF928374" />
-                    <SolidColorBrush x:Key="PfFieldNameBrush" Color="#FFFABD2F" />
-                    <SolidColorBrush x:Key="PfTreeHoverBrush" Color="#FF3C3836" />
-                    <SolidColorBrush x:Key="PfTreeSelectedBrush" Color="#FF5A4D3F" />
-                </ResourceDictionary>
-                <ResourceDictionary x:Key="{x:Static svc:AppThemes.GraphiteVariant}">
-                    <SolidColorBrush x:Key="PfSurfaceBrush" Color="#FF1C1F24" />
-                    <SolidColorBrush x:Key="PfSurfaceAltBrush" Color="#FF22262C" />
-                    <SolidColorBrush x:Key="PfChromeBrush" Color="#FF2A2F36" />
-                    <SolidColorBrush x:Key="PfBorderBrush" Color="#FF3A4048" />
-                    <SolidColorBrush x:Key="PfGridLineBrush" Color="#FF3A4048" />
-                    <SolidColorBrush x:Key="PfTextMutedBrush" Color="#FF8A929C" />
-                    <SolidColorBrush x:Key="PfTextSecondaryBrush" Color="#FFD6DBE0" />
-                    <SolidColorBrush x:Key="PfTextSubtleBrush" Color="#FF6A727C" />
-                    <SolidColorBrush x:Key="PfFieldNameBrush" Color="#FF7FB4D9" />
-                    <SolidColorBrush x:Key="PfTreeHoverBrush" Color="#FF343B44" />
-                    <SolidColorBrush x:Key="PfTreeSelectedBrush" Color="#FF44566B" />
-                </ResourceDictionary>
-                <ResourceDictionary x:Key="{x:Static svc:AppThemes.SolarisVariant}">
-                    <SolidColorBrush x:Key="PfSurfaceBrush" Color="#FFFDF6E3" />
-                    <SolidColorBrush x:Key="PfSurfaceAltBrush" Color="#FFEEE8D5" />
-                    <SolidColorBrush x:Key="PfChromeBrush" Color="#FFEEE8D5" />
-                    <SolidColorBrush x:Key="PfBorderBrush" Color="#FFD9D2BE" />
-                    <SolidColorBrush x:Key="PfGridLineBrush" Color="#FFE4DEC9" />
-                    <SolidColorBrush x:Key="PfTextMutedBrush" Color="#FF93A1A1" />
-                    <SolidColorBrush x:Key="PfTextSecondaryBrush" Color="#FF586E75" />
-                    <SolidColorBrush x:Key="PfTextSubtleBrush" Color="#FF93A1A1" />
-                    <SolidColorBrush x:Key="PfFieldNameBrush" Color="#FF268BD2" />
-                    <SolidColorBrush x:Key="PfTreeHoverBrush" Color="#FFE4DCC6" />
-                    <SolidColorBrush x:Key="PfTreeSelectedBrush" Color="#FFC9D6DD" />
-                </ResourceDictionary>
-                <ResourceDictionary x:Key="{x:Static svc:AppThemes.CeladonVariant}">
-                    <SolidColorBrush x:Key="PfSurfaceBrush" Color="#FFFBFDFC" />
-                    <SolidColorBrush x:Key="PfSurfaceAltBrush" Color="#FFF1F6F4" />
-                    <SolidColorBrush x:Key="PfChromeBrush" Color="#FFE8F0ED" />
-                    <SolidColorBrush x:Key="PfBorderBrush" Color="#FFCBD9D3" />
-                    <SolidColorBrush x:Key="PfGridLineBrush" Color="#FFDCE7E2" />
-                    <SolidColorBrush x:Key="PfTextMutedBrush" Color="#FF7A8A84" />
-                    <SolidColorBrush x:Key="PfTextSecondaryBrush" Color="#FF37453F" />
-                    <SolidColorBrush x:Key="PfTextSubtleBrush" Color="#FF9AA9A3" />
-                    <SolidColorBrush x:Key="PfFieldNameBrush" Color="#FF0F8A7E" />
-                    <SolidColorBrush x:Key="PfTreeHoverBrush" Color="#FFE2EFEA" />
-                    <SolidColorBrush x:Key="PfTreeSelectedBrush" Color="#FFC3E3DA" />
-                </ResourceDictionary>
-                <ResourceDictionary x:Key="{x:Static svc:AppThemes.SakuraVariant}">
-                    <SolidColorBrush x:Key="PfSurfaceBrush" Color="#FFFFFBFC" />
-                    <SolidColorBrush x:Key="PfSurfaceAltBrush" Color="#FFFDF2F5" />
-                    <SolidColorBrush x:Key="PfChromeBrush" Color="#FFF8E9EE" />
-                    <SolidColorBrush x:Key="PfBorderBrush" Color="#FFE7CDD6" />
-                    <SolidColorBrush x:Key="PfGridLineBrush" Color="#FFF0DCE3" />
-                    <SolidColorBrush x:Key="PfTextMutedBrush" Color="#FF9A7A86" />
-                    <SolidColorBrush x:Key="PfTextSecondaryBrush" Color="#FF4A3038" />
-                    <SolidColorBrush x:Key="PfTextSubtleBrush" Color="#FFB69AA4" />
-                    <SolidColorBrush x:Key="PfFieldNameBrush" Color="#FFC2185B" />
-                    <SolidColorBrush x:Key="PfTreeHoverBrush" Color="#FFFBE4EC" />
-                    <SolidColorBrush x:Key="PfTreeSelectedBrush" Color="#FFF4C6D8" />
-                </ResourceDictionary>
-            </ResourceDictionary.ThemeDictionaries>
-        </ResourceDictionary>
-    </Application.Resources>
+             <!-- "Default" follows the system theme variant; ThemeService overrides it at runtime. -->
 
     <Application.Styles>
         <FluentTheme />
-        <DockFluentTheme DensityStyle="Compact" />
         <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml" />
-
-        <Style Selector="MenuItem:checked:toggle /template/ ContentControl#PART_ToggleIconPresenter">
-            <Setter Property="Content">
-                <Template>
-                    <Path Fill="{Binding $parent[MenuItem].Foreground}"
-                          Width="12"
-                          Data="{StaticResource CheckMarkPathData}" />
-                </Template>
-            </Setter>
-        </Style>
+        <!-- 统一第三方主题:SukiTheme 一次性换肤全部控件(DataGrid/TreeView/Menu…),
+             SukiUI.Dock 让 Dock 面板 chrome 跟随同一主题。加载顺序即优先级——
+             SukiTheme 必须最后加载才能覆盖前面 Fluent/DataGrid/Dock 的基础样式。 -->
+        <StyleInclude Source="avares://SukiUI.Dock/Index.axaml" />
+        <suki:SukiTheme ThemeColor="Blue" />
     </Application.Styles>
 
     <Application.DataTemplates>

@@ -21,6 +21,17 @@ These are MIT-licensed NuGet packages linked into the shipped executable. The MI
 | `Avalonia.Controls.DataGrid` | 12.1.2 | MIT | Packet list grid: column sorting, double-click column auto-fit |
 | `AvaloniaUI.DiagnosticsSupport` | 2.2.3 | MIT | **Debug builds only.** Referenced in `ProtocolForge.csproj` but excluded from the asset list in any configuration other than `Debug`, so it is not part of a Release artifact. It is additionally guarded by `#if DEBUG` at its use site. |
 | `CommunityToolkit.Mvvm` | 8.4.2 | MIT | MVVM source generators (`[ObservableProperty]`, `[RelayCommand]`, `[AsyncRelayCommand]`) |
+| `Dock.Avalonia` | 12.1.0.7 | MIT | Dock host control (`DockControl`) |
+| `Dock.Avalonia.Themes.Fluent` | 12.1.0.7 | MIT | Base Dock chrome theme (loaded before `SukiUI.Dock`) |
+| `Dock.Model` | 12.1.0.7 | MIT | Dock model primitives (transitive via `Dock.Model.Mvvm`) |
+| `Dock.Model.Mvvm` | 12.1.0.7 | MIT | MVVM Dock model types |
+| `Dock.Model.Avalonia` | 12.0.0.2 | MIT | Dock.Avalonia model layer (transitive via `SukiUI.Dock`) |
+| `Dock.Serializer.SystemTextJson` | 12.1.0.7 | MIT | Dock layout persistence (`docklayout.json`) |
+| `SukiUI` | 7.0.1 | MIT | Cross-control theming (window, menu, DataGrid, TreeView, …) |
+| `SukiUI.Dock` | 7.0.1 | MIT | SukiUI-styled chrome for the Dock panes |
+| `Avalonia.Themes.Simple` | 12.1.3 | MIT | Base control themes bundled by `SukiUI` |
+| `Avalonia.Skia` | 12.1.3 | MIT | Skia render backend (also pulled in by Avalonia.Desktop) |
+| `System.Linq.Dynamic.Core` | 1.7.2 | **Apache-2.0** | Transitive dependency of `SukiUI` |
 
 ### A.2 Stated copyright lines
 
@@ -30,7 +41,8 @@ which is the authoritative statement shipped with the binary you are redistribut
 
 ```text
 Avalonia, Avalonia.Desktop, Avalonia.Themes.Fluent,
-Avalonia.Fonts.Inter, Avalonia.Controls.DataGrid
+Avalonia.Fonts.Inter, Avalonia.Controls.DataGrid,
+Avalonia.Themes.Simple, Avalonia.Skia
     Copyright 2013-2026 © The AvaloniaUI Project
     Authors: Avalonia Team
     License: MIT (SPDX-License-Identifier: MIT)
@@ -38,9 +50,24 @@ Avalonia.Fonts.Inter, Avalonia.Controls.DataGrid
 CommunityToolkit.Mvvm
     Copyright © .NET Foundation and Contributors
     License: MIT (SPDX-License-Identifier: MIT)
+
+Dock.Avalonia, Dock.Avalonia.Themes.Fluent, Dock.Model,
+Dock.Model.Mvvm, Dock.Model.Avalonia, Dock.Serializer.SystemTextJson
+    Copyright © Wiesław Šoltés 2026
+    Authors: Wiesław Šoltés
+    License: MIT (SPDX-License-Identifier: MIT)
+
+SukiUI, SukiUI.Dock
+    Copyright (c) 2022 kikipoulet
+    Authors: SukiUI / SukiUI.Dock
+    License: MIT (SPDX-License-Identifier: MIT)
+
+System.Linq.Dynamic.Core
+    Copyright © ZZZ Projects
+    License: Apache-2.0 (SPDX-License-Identifier: Apache-2.0)
 ```
 
-Two notes on the above, both verifiable:
+Three notes on the above, all verifiable:
 
 - The Avalonia packages **do not embed a `license.txt`** in the `.nupkg`. Their MIT grant is asserted
   by the `license type="expression">MIT` expression in the `.nuspec`, which NuGet surfaces at
@@ -53,6 +80,11 @@ Two notes on the above, both verifiable:
   package cache, which is a local build artifact and not redistribution. It is listed here because
   a Debug build does link it. Its nuspec states MIT, authors "AvaloniaUI DiagnosticsSupport
   contributors".
+- The `SukiUI` and `SukiUI.Dock` nuspecs carry **no `<license>` element at all**. Their MIT grant is
+  verified from the repository `LICENSE` at the pinned commit
+  (`kikipoulet/SukiUI@495a238268b8778ecd71b20f6727e82a17df38da`), which reads "MIT License —
+  Copyright (c) 2022 kikipoulet". The full MIT text is reproduced below so the binary distribution
+  carries it regardless.
 
 ### How these ship, and why it matters for your notice obligation
 
