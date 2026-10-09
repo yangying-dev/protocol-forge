@@ -985,6 +985,164 @@ try
     Report("G15u IPv4 SCTP CRC32c rewritten little-endian and self-consistent",
         g15stored == g15crcRe && g15stored != 0xDEADBEEFu,
         $"stored=0x{g15stored:X8}, recomputed=0x{g15crcRe:X8}");
+
+    // Vector 12 (P0-1): an exactly-14-byte Ethernet-II frame whose ethertype is IPv4 but
+    // that carries no payload — FindIpOffset returns 14 == frame.Length and the old
+    // result[14] read threw IndexOutOfRange.
+    byte[] g15f14 = Concat(new byte[] { 0x02, 0, 0, 0, 0, 1, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0x08, 0x00 });
+    bool g15Threw14 = false;
+    byte[] g15p14 = Array.Empty<byte>();
+    try { g15p14 = PacketPrepareService.PrepareFrame(g15f14, g15iface); }
+    catch (Exception) { g15Threw14 = true; }
+    Report("G15v PrepareFrame on a 14-byte Ethernet-II frame does not throw and preserves length",
+        !g15Threw14 && g15p14.Length == 14,
+        $"threw={g15Threw14}, len={g15p14.Length}");
+
+    // Vector 13 (P0-2a): IPv6 + Hop-by-Hop extension header + TCP. The source rewrite must
+    // still occur AND the TCP checksum must be recomputed, since it covers the IPv6
+    // pseudo-header (which contains the source address). Payload Length = 8 (HbH) + 20 (TCP).
+    byte[] g15hbh = new byte[] { 0x06, 0x00, 0x01, 0x04, 0, 0, 0, 0 };
+    byte[] g15tcp20 = BuildTcpSegment(1234, 80, 0, 0, 0x18, Array.Empty<byte>());
+    byte[] g15ip6hb = Concat(new byte[] { 0x60, 0x00, 0x00, 0x00 }, U16(8 + g15tcp20.Length, false),
+        new byte[] { 0, 64 }, IPAddress.Parse("fe80::2").GetAddressBytes(), IPAddress.Parse("fe80::3").GetAddressBytes());
+    byte[] g15f6hb = Concat(new byte[] { 0x02, 0, 0, 0, 0, 1, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0x86, 0xDD },
+        g15ip6hb, g15hbh, g15tcp20);
+    byte[] g15p6hb = PacketPrepareService.PrepareFrame(g15f6hb, g15iface);
+    Report("G15w IPv6 + Hop-by-Hop + TCP rewrites source and fixes the TCP checksum",
+        BytesEq(g15p6hb.AsSpan(22, 16).ToArray(), IPAddress.Parse("fe80::1").GetAddressBytes())
+        && FoldSum(Concat(Pseudo6(g15p6hb, 22, 38, 6, g15tcp20.Length), g15p6hb.AsSpan(62, g15tcp20.Length).ToArray()), 0, 40 + g15tcp20.Length) == 0xFFFF,
+        $"src={BytesHex(g15p6hb.AsSpan(22, 16).ToArray())}, " +
+        $"fold=0x{FoldSum(Concat(Pseudo6(g15p6hb, 22, 38, 6, g15tcp20.Length), g15p6hb.AsSpan(62, g15tcp20.Length).ToArray()), 0, 40 + g15tcp20.Length):X4}");
+
+    // Vector 14 (P0-2b): IPv6 + ICMPv6 (Next Header 58). ICMPv6's checksum is not recomputed
+    // here, so the source address must be left exactly as captured — rewriting it would strand
+    // a checksum that covers the old source address.
+    byte[] g15icmp6 = new byte[] { 0x80, 0x00, 0x00, 0x00, 0, 0, 0, 0 };
+    byte[] g15ip6ic = Concat(new byte[] { 0x60, 0x00, 0x00, 0x00 }, U16(g15icmp6.Length, false),
+        new byte[] { 58, 64 }, IPAddress.Parse("fe80::2").GetAddressBytes(), IPAddress.Parse("fe80::3").GetAddressBytes());
+    byte[] g15f6ic = Concat(new byte[] { 0x02, 0, 0, 0, 0, 1, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0x86, 0xDD },
+        g15ip6ic, g15icmp6);
+    byte[] g15p6ic = PacketPrepareService.PrepareFrame(g15f6ic, g15iface);
+    Report("G15x IPv6 + ICMPv6 (Next Header 58) leaves the source address untouched",
+        BytesEq(g15p6ic.AsSpan(22, 16).ToArray(), IPAddress.Parse("fe80::2").GetAddressBytes()),
+        $"src={BytesHex(g15p6ic.AsSpan(22, 16).ToArray())}");
+
+    // Vector 15 (P0-3): an ARP Ethernet frame whose destination MAC starts with 0x45. The
+    // version-nibble fallback used to misread it as a bare IPv4 datagram (offset 0); the
+    // positive Ethernet/non-IP detection must return -1 and PrepareFrame must not touch it.
+    byte[] g15arp = Concat(new byte[] { 0x45, 0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0x08, 0x06 },
+        new byte[] { 0x00, 0x01, 0x08, 0x00, 0x06, 0x04, 0x00, 0x01 }, new byte[10]);
+    byte[] g15pArp = PacketPrepareService.PrepareFrame(g15arp, g15iface);
+    Report("G15y ARP Ethernet frame with 0x45 dst MAC → FindIpOffset -1 and frame unchanged",
+        PacketPrepareService.FindIpOffset(g15arp) == -1 && BytesEq(g15pArp, g15arp),
+        $"ipOffset={PacketPrepareService.FindIpOffset(g15arp)}, unchanged={BytesEq(g15pArp, g15arp)}");
+
+    // Vector 16 (P0-3): the bare-datagram fallback still validates structurally — a valid
+    // bare IPv4 returns 0 (the G15q contract), a bad-IHL one returns -1.
+    Report("G15z bare-IP fallback still returns 0 for valid IPv4 and -1 for a bad IHL",
+        PacketPrepareService.FindIpOffset(Concat(new byte[] { 0x45, 0x00, 0x00, 0x1C }, new byte[16])) == 0
+        && PacketPrepareService.FindIpOffset(Concat(new byte[] { 0x44, 0x00, 0x00, 0x1C }, new byte[16])) == -1,
+        "valid=0, IHL<5=-1");
+
+    // 源 MAC 取接口自身 MAC，使 PrepareFrame 的源 MAC 改写（偏移 6）成为空操作，
+    // G15aa 才能断言“整帧未改动”。后续向量只检查源地址区，共用该以太头无碍。
+    byte[] g15ethHdr = new byte[] { 0x02, 0, 0, 0, 0, 1, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x86, 0xDD };
+    byte[] g15src6 = IPAddress.Parse("fe80::2").GetAddressBytes();
+    byte[] g15dst6 = IPAddress.Parse("fe80::3").GetAddressBytes();
+    byte[] g15ip6Hdr(int next, int payload) => Concat(new byte[] { 0x60, 0x00, 0x00, 0x00 }, U16(payload, false),
+        new byte[] { (byte)next, 64 }, g15src6, g15dst6);
+
+    // Vector 17 (FIX-1): a non-atomic Fragment header (offset=1) means the bytes after it
+    // are fragment payload, not a transport header — nothing may be rewritten, including
+    // the two bytes the old code mistook for a TCP checksum.
+    byte[] g15fFrag1 = Concat(g15ethHdr, g15ip6Hdr(44, 8 + g15tcp20.Length),
+        new byte[] { 0x06, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x01 }, g15tcp20);
+    byte[] g15pFrag1 = PacketPrepareService.PrepareFrame(g15fFrag1, g15iface);
+    Report("G15aa non-atomic IPv6 fragment (offset=1) leaves the whole frame untouched",
+        BytesEq(g15pFrag1, g15fFrag1),
+        $"unchanged={BytesEq(g15pFrag1, g15fFrag1)}, src={BytesHex(g15pFrag1.AsSpan(22, 16).ToArray())}");
+
+    // Vector 18 (FIX-1): an atomic Fragment header (offset=0 && M=0, RFC 6946) is
+    // transparent, so the walk reaches TCP and both the source rewrite and the checksum
+    // recompute still happen.
+    byte[] g15fFrag0 = Concat(g15ethHdr, g15ip6Hdr(44, 8 + g15tcp20.Length),
+        new byte[] { 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01 }, g15tcp20);
+    byte[] g15pFrag0 = PacketPrepareService.PrepareFrame(g15fFrag0, g15iface);
+    Report("G15ab atomic IPv6 fragment (offset=0,M=0) rewrites source and fixes TCP checksum",
+        BytesEq(g15pFrag0.AsSpan(22, 16).ToArray(), IPAddress.Parse("fe80::1").GetAddressBytes())
+        && FoldSum(Concat(Pseudo6(g15pFrag0, 22, 38, 6, g15tcp20.Length), g15pFrag0.AsSpan(62, g15tcp20.Length).ToArray()), 0, 40 + g15tcp20.Length) == 0xFFFF,
+        $"src={BytesHex(g15pFrag0.AsSpan(22, 16).ToArray())}");
+
+    // Vector 19 (FIX-2): a truncated frame (Payload Length 200 > captured 20) cannot have
+    // its transport checksum recomputed, so the source stays exactly as captured.
+    byte[] g15fTrunc = Concat(g15ethHdr, g15ip6Hdr(6, 200), g15tcp20);
+    byte[] g15pTrunc = PacketPrepareService.PrepareFrame(g15fTrunc, g15iface);
+    Report("G15ac IPv6 with PayloadLength past the frame leaves the source unchanged",
+        BytesEq(g15pTrunc.AsSpan(22, 16).ToArray(), g15src6),
+        $"src={BytesHex(g15pTrunc.AsSpan(22, 16).ToArray())}");
+
+    // Vector 20 (FIX-3): AH authenticates the IPv6 header (including the source), so the
+    // walk must treat it as non-resolvable and never touch the source.
+    byte[] g15fAh = Concat(g15ethHdr, g15ip6Hdr(51, 12 + g15tcp20.Length),
+        new byte[] { 0x06, 0x01, 0x00, 0x00, 0, 0, 0, 0, 0, 0, 0, 0 }, g15tcp20);
+    byte[] g15pAh = PacketPrepareService.PrepareFrame(g15fAh, g15iface);
+    Report("G15ad IPv6 + AH (next=51) leaves the source unchanged",
+        BytesEq(g15pAh.AsSpan(22, 16).ToArray(), g15src6),
+        $"src={BytesHex(g15pAh.AsSpan(22, 16).ToArray())}");
+
+    // Vector 21 (FIX-4): a Routing header with Segments Left > 0 has a pseudo-header
+    // destination that is the last address in the header, not the IPv6 destination, so the
+    // source must not change.
+    byte[] g15fRt = Concat(g15ethHdr, g15ip6Hdr(43, 24 + g15tcp20.Length),
+        new byte[] { 0x06, 0x02, 0x00, 0x01, 0, 0, 0, 0 }, IPAddress.Parse("fe80::9").GetAddressBytes(),
+        g15tcp20);
+    byte[] g15pRt = PacketPrepareService.PrepareFrame(g15fRt, g15iface);
+    Report("G15ae IPv6 + Routing (SegmentsLeft=1) leaves the source unchanged",
+        BytesEq(g15pRt.AsSpan(22, 16).ToArray(), g15src6),
+        $"src={BytesHex(g15pRt.AsSpan(22, 16).ToArray())}");
+
+    // Vector 22 (方案 B): DLT 感知的 IP 定位。裸 IPv4 的 12–13 字节恰为 0x0800 时，
+    // 字节启发式会误判为以太网(offset 14)；RAW DLT 下必须仍按裸数据报处理(offset 0)，
+    // 源地址改写在 12，且不动 6–7 字节（不发散为 MAC 改写）。
+    byte[] g15dcls = Concat(
+        new byte[] { 0x45, 0x00 }, U16(20, false), U16(1, false), U16(0x4000, false),
+        new byte[] { 0x40, 0x11, 0x00, 0x00 }, new byte[] { 8, 0, 0, 1 }, new byte[] { 10, 0, 0, 2 });
+    byte[] g15dclsOut = PacketPrepareService.PrepareFrame(g15dcls, g15iface, 101);
+    Report("G15af RAW DLT: bare IPv4 with bytes12-13=0x0800 stays bare (offset 0, src at 12, no MAC)",
+        PacketPrepareService.FindIpOffset(g15dcls, 101) == 0
+        && BytesEq(g15dclsOut.AsSpan(12, 4).ToArray(), IPAddress.Parse("10.1.2.3").GetAddressBytes())
+        && BytesEq(g15dclsOut.AsSpan(6, 2).ToArray(), new byte[] { 0x40, 0x00 }),
+        $"ipOffset={PacketPrepareService.FindIpOffset(g15dcls, 101)}, src={BytesHex(g15dclsOut.AsSpan(12, 4).ToArray())}");
+
+    Report("G15ag RAW DLT: a real Ethernet frame is not Ethernet-parsed (offset -1)",
+        PacketPrepareService.FindIpOffset(g15f1, 101) == -1,
+        $"ipOffset={PacketPrepareService.FindIpOffset(g15f1, 101)}");
+
+    Report("G15ah Ethernet DLT: a real Ethernet frame resolves to offset 14",
+        PacketPrepareService.FindIpOffset(g15f1, 1) == 14,
+        $"ipOffset={PacketPrepareService.FindIpOffset(g15f1, 1)}");
+
+    Report("G15ai Ethernet DLT: ARP frame returns -1 (no bare fallback)",
+        PacketPrepareService.FindIpOffset(g15arp, 1) == -1,
+        $"ipOffset={PacketPrepareService.FindIpOffset(g15arp, 1)}");
+
+    byte[] g15bare6 = g15ip6Hdr(6, 0);
+    Report("G15aj IPv4/IPv6 DLTs are version-gated (228→v4 only, 229→v6 only)",
+        PacketPrepareService.FindIpOffset(g15dcls, 228) == 0
+        && PacketPrepareService.FindIpOffset(g15bare6, 228) == -1
+        && PacketPrepareService.FindIpOffset(g15bare6, 229) == 0
+        && PacketPrepareService.FindIpOffset(g15dcls, 229) == -1,
+        $"v4@228={PacketPrepareService.FindIpOffset(g15dcls, 228)}, v6@229={PacketPrepareService.FindIpOffset(g15bare6, 229)}");
+
+    Report("G15ak HasEthernetHeader is DLT-aware",
+        PacketPrepareService.HasEthernetHeader(g15f1, 1)
+        && !PacketPrepareService.HasEthernetHeader(g15dcls, 101),
+        $"eth@1={PacketPrepareService.HasEthernetHeader(g15f1, 1)}, bare@101={PacketPrepareService.HasEthernetHeader(g15dcls, 101)}");
+
+    Report("G15al unknown DLT keeps the historical heuristic (eth→14, bare→0)",
+        PacketPrepareService.FindIpOffset(g15f1, PacketPrepareService.LinkTypeUnknown) == 14
+        && PacketPrepareService.FindIpOffset(g15ip1, PacketPrepareService.LinkTypeUnknown) == 0,
+        $"eth={PacketPrepareService.FindIpOffset(g15f1, PacketPrepareService.LinkTypeUnknown)}, bare={PacketPrepareService.FindIpOffset(g15ip1, PacketPrepareService.LinkTypeUnknown)}");
 }
 catch (Exception ex)
 {
@@ -3604,6 +3762,22 @@ try
     Report("VL-08 stripping a frame that has no tag is a no-op",
         PacketPrepareService.StripVlanTag(g49Plain).AsSpan().SequenceEqual(g49Plain),
         "untouched");
+
+    // 0x9100 is a third VLAN TPID. Detection, VID read, strip and retag must all treat it
+    // the same as 0x8100/0x88A8 — the ethertype walk already did, but HasVlanTag,
+    // GetVlanId, StripVlanTag and ApplyVlanTag did not.
+    byte[] g49Tag9100 = Concat(g49Plain.AsSpan(0, 12).ToArray(), new byte[] { 0x91, 0x00 },
+        U16(100, false), g49Plain.AsSpan(12).ToArray());
+    Report("VL-11 a 0x9100-tagged frame is detected and its VID read back",
+        PacketPrepareService.HasVlanTag(g49Tag9100) && PacketPrepareService.GetVlanId(g49Tag9100) == 100,
+        $"tag={PacketPrepareService.HasVlanTag(g49Tag9100)}, vid={PacketPrepareService.GetVlanId(g49Tag9100)}");
+    Report("VL-12 stripping a 0x9100 tag restores the plain frame",
+        PacketPrepareService.StripVlanTag(g49Tag9100).AsSpan().SequenceEqual(g49Plain),
+        "stripped == plain");
+    byte[] g49Retag9100 = PacketPrepareService.ApplyVlanTag(g49Tag9100, 200);
+    Report("VL-13 re-tagging a 0x9100 frame keeps the length (no double tag) and moves the VID",
+        g49Retag9100.Length == g49Tag9100.Length && PacketPrepareService.GetVlanId(g49Retag9100) == 200,
+        $"len={g49Retag9100.Length}, was={g49Tag9100.Length}, vid={PacketPrepareService.GetVlanId(g49Retag9100)}");
 
     // tshark must agree the tagged frame is VLAN with the right VID.
     try
