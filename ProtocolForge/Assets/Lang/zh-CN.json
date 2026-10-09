@@ -5,6 +5,11 @@
   "Lang.ZhCn": "简体中文",
   "Lang.EnUs": "English",
 
+  "Theme.Menu": "主题",
+  "Theme.System": "跟随系统",
+  "Theme.Light": "浅色",
+  "Theme.Dark": "深色",
+
   "Mnu.File": "_文件",
   "Mnu.Open": "_打开 PCAP...",
   "Mnu.Save": "_保存 PCAP",

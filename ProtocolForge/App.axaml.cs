@@ -59,6 +59,13 @@ public partial class App : Application
             LocalizationService.LanguageChanged += (_, _) =>
                 tsharkSettings.SaveLanguage(LocalizationService.CurrentLanguage.ToString());
 
+            // ── UI 主题 ──
+            // 恢复上次的 浅色/深色/跟随系统 偏好;未保存过则跟随系统(Default)。
+            // Initialize 只应用不触发事件;订阅放在其后,避免启动时把默认值误存为用户选择。
+            ThemeService.Initialize(tsharkSettings.LoadThemeVariant());
+            ThemeService.ThemeVariantChanged += (_, _) =>
+                tsharkSettings.SaveThemeVariant(ThemeService.CurrentVariant);
+
             var pcapIngest = new PcapIngestService();
             var pcapExport = new PcapExportService();
             var tshark = new TsharkService(pcapIngest, pcapExport);

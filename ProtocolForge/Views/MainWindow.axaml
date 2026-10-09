@@ -53,6 +53,12 @@
                 <MenuItem x:Name="MenuLangEnUs" Header="{DynamicResource L10n.Lang.EnUs}" Click="OnMenuLangEnUsClicked" ToggleType="CheckBox"/>
             </MenuItem>
             <MenuItem Header="{DynamicResource L10n.Mnu.Help}">
+                <MenuItem Header="{DynamicResource L10n.Theme.Menu}">
+                    <MenuItem x:Name="MenuThemeSystem" Header="{DynamicResource L10n.Theme.System}" Click="OnMenuThemeSystemClicked" ToggleType="CheckBox"/>
+                    <MenuItem x:Name="MenuThemeLight" Header="{DynamicResource L10n.Theme.Light}" Click="OnMenuThemeLightClicked" ToggleType="CheckBox"/>
+                    <MenuItem x:Name="MenuThemeDark" Header="{DynamicResource L10n.Theme.Dark}" Click="OnMenuThemeDarkClicked" ToggleType="CheckBox"/>
+                </MenuItem>
+                <Separator />
                 <MenuItem Header="{DynamicResource L10n.Mnu.OpenSupportData}" Click="OnOpenLogDirClicked" />
                 <Separator />
                 <MenuItem Header="{DynamicResource L10n.Mnu.About}" Click="OnAboutClicked" />
