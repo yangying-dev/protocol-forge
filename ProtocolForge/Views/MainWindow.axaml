@@ -34,13 +34,13 @@
                 <MenuItem Header="{DynamicResource L10n.Mnu.Exit}" Click="OnExitClicked" />
             </MenuItem>
             <MenuItem Header="{DynamicResource L10n.Mnu.View}">
-                <MenuItem Header="{DynamicResource L10n.Mnu.PacketList}" IsChecked="{Binding ShowPacketList}"
+                <MenuItem Header="{DynamicResource L10n.Mnu.PacketList}" IsChecked="{Binding ShowPacketList, Mode=OneWay}"
                           Command="{Binding TogglePacketListCommand}" ToggleType="CheckBox" />
-                <MenuItem Header="{DynamicResource L10n.Mnu.ProtocolTree}" IsChecked="{Binding ShowProtocolTree}"
+                <MenuItem Header="{DynamicResource L10n.Mnu.ProtocolTree}" IsChecked="{Binding ShowProtocolTree, Mode=OneWay}"
                           Command="{Binding ToggleProtocolTreeCommand}" ToggleType="CheckBox" />
-                <MenuItem Header="{DynamicResource L10n.Mnu.HexEditor}" IsChecked="{Binding ShowHexEditor}"
+                <MenuItem Header="{DynamicResource L10n.Mnu.HexEditor}" IsChecked="{Binding ShowHexEditor, Mode=OneWay}"
                           Command="{Binding ToggleHexEditorCommand}" ToggleType="CheckBox" />
-                <MenuItem Header="{DynamicResource L10n.Panel.Statistics}" IsChecked="{Binding ShowStatistics}"
+                <MenuItem Header="{DynamicResource L10n.Panel.Statistics}" IsChecked="{Binding ShowStatistics, Mode=OneWay}"
                           Command="{Binding ToggleStatisticsCommand}" ToggleType="CheckBox" />
                 <Separator />
                 <MenuItem Header="{DynamicResource L10n.Mnu.ResetLayout}" Click="OnResetLayoutClicked" />

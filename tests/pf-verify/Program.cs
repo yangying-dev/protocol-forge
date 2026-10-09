@@ -14,6 +14,8 @@ using Avalonia.Controls;
 using Avalonia;
 using ProtocolForge.Services;
 using ProtocolForge.ViewModels;
+using Dock.Model.Core;
+using Avalonia.Input;
 
 // ── Path resolution: locate repo root by walking up to ProtocolForge.sln ──
 static string FindRepoRoot()
@@ -4056,6 +4058,80 @@ int RunHeadlessRenderOnly()
 
         g54TreeVm.LoadPacket(null);
         for (int i = 0; i < 3; i++) Pump();
+
+        // ── HG-14/15: a closed pane must uncheck the View menu and stay re-openable.
+        if (!g54Vm.ShowProtocolTree)
+        {
+            g54Vm.ToggleProtocolTreeCommand.Execute(null);
+            Pump();
+        }
+        var g54Pane = g54Vm.Factory.Find(g54Vm.Layout!, d => d.Id == DockLayoutFactory.ProtocolTreeId)
+            .OfType<PaneDock>().FirstOrDefault();
+
+        g54Vm.Factory.CloseDockable(g54Pane!);
+        Pump();
+        bool g54HiddenAfterClose = g54Vm.Layout!.HiddenDockables?.Any(d => d.Id == DockLayoutFactory.ProtocolTreeId) == true;
+        bool g54UncheckedAfterClose = !g54Vm.ShowProtocolTree;
+
+        g54Vm.ToggleProtocolTreeCommand.Execute(null);
+        Pump();
+        var g54PaneBack = g54Vm.Factory.Find(g54Vm.Layout!, d => d.Id == DockLayoutFactory.ProtocolTreeId)
+            .OfType<PaneDock>().FirstOrDefault();
+        bool g54Reopened = g54PaneBack is not null && g54Vm.ShowProtocolTree;
+        Report("HG-14 closing a pane unchecks the View menu and the menu re-opens it",
+            g54Pane is not null && g54HiddenAfterClose && g54UncheckedAfterClose && g54Reopened
+            && g54PaneBack?.Host is not null,
+            $"hiddenAfterClose={g54HiddenAfterClose}, uncheckedAfterClose={g54UncheckedAfterClose}, reopened={g54Reopened}, host={(g54PaneBack?.Host is null ? "null" : "set")}");
+
+        // A pane hidden in a restored docklayout.json used to keep Host == null, so the
+        // pane DataTemplate (DataContext="{Binding Host}") rendered it blank on re-open.
+        g54Vm.Factory.CloseDockable(g54PaneBack!);
+        Pump();
+        g54Vm.SaveLayout();
+        Pump();
+
+        var g54Window2 = App.ComposeMainWindow(null);
+        g54Window2.Width = 1400;
+        g54Window2.Height = 900;
+        g54Window2.Show();
+        for (int i = 0; i < 5; i++) Pump();
+        var g54Vm2 = (MainWindowViewModel)g54Window2.DataContext!;
+        var g54HiddenPane2 = g54Vm2.Layout!.HiddenDockables?.OfType<PaneDock>()
+            .FirstOrDefault(d => d.Id == DockLayoutFactory.ProtocolTreeId);
+        bool g54HostRestored = g54HiddenPane2 is not null && g54HiddenPane2.Host is not null;
+        bool g54FlagHidden = !g54Vm2.ShowProtocolTree;
+
+        g54Vm2.ToggleProtocolTreeCommand.Execute(null);
+        for (int i = 0; i < 5; i++) Pump();
+        bool g54Reopened2 = g54Vm2.ShowProtocolTree
+            && g54Vm2.Factory.Find(g54Vm2.Layout!, d => d.Id == DockLayoutFactory.ProtocolTreeId).Any();
+        bool g54ContentMaterialised = ByName<TreeView>(g54Window2, "ProtocolTree") is not null;
+        Report("HG-15 a pane hidden across a restart keeps its Host and re-opens with content",
+            g54HiddenPane2 is not null && g54HostRestored && g54FlagHidden && g54Reopened2 && g54ContentMaterialised,
+            $"hiddenPaneFound={g54HiddenPane2 is not null}, hostRestored={g54HostRestored}, menuUnchecked={g54FlagHidden}, reopened={g54Reopened2}, content={g54ContentMaterialised}");
+
+        g54Window2.Close();
+        Pump();
+
+        // Restore the pre-test visibility so the persisted layout is not left mutated.
+        if (!g54Vm.ShowProtocolTree)
+        {
+            g54Vm.ToggleProtocolTreeCommand.Execute(null);
+            Pump();
+        }
+        g54Vm.SaveLayout();
+        Pump();
+
+        // Avalonia's MenuItem.InputGesture is display-only, so the window must route these
+        // itself; raising the real event proves the accelerators are wired, not just shown.
+        var g54KeyZ = new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Z, KeyModifiers = KeyModifiers.Control };
+        g54Window.RaiseEvent(g54KeyZ);
+        var g54KeyF = new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.F, KeyModifiers = KeyModifiers.Control };
+        g54Window.RaiseEvent(g54KeyF);
+        Pump();
+        Report("HG-16 the window routes Ctrl+Z / Ctrl+F itself, so the menu shortcuts fire",
+            g54KeyZ.Handled && g54KeyF.Handled,
+            $"ctrlZ={g54KeyZ.Handled}, ctrlF={g54KeyF.Handled}");
 
         g54Window.Close();
         Pump();

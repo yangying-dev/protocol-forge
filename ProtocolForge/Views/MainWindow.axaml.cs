@@ -147,6 +147,47 @@ public partial class MainWindow : Window
         base.OnClosing(e);
     }
 
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        // Avalonia's MenuItem.InputGesture is display-only — it never wires an
+        // accelerator. Bind the real shortcuts here. Focused controls get first
+        // refusal (a TextBox keeps its own Ctrl+Z/Ctrl+A), so only unhandled keys
+        // reach the window.
+        if ((e.KeyModifiers & KeyModifiers.Control) != 0)
+        {
+            switch (e.Key)
+            {
+                case Key.O:
+                    e.Handled = true;
+                    OnOpenPcapClicked(null, new RoutedEventArgs());
+                    break;
+                case Key.S:
+                    e.Handled = true;
+                    if ((e.KeyModifiers & KeyModifiers.Shift) != 0)
+                        OnExportPcapClicked(null, new RoutedEventArgs());
+                    else
+                        OnSavePcapClicked(null, new RoutedEventArgs());
+                    break;
+                case Key.Z:
+                    e.Handled = true;
+                    if (ViewModel?.UndoCommand.CanExecute(null) == true)
+                        ViewModel.UndoCommand.Execute(null);
+                    break;
+                case Key.Y:
+                    e.Handled = true;
+                    if (ViewModel?.RedoCommand.CanExecute(null) == true)
+                        ViewModel.RedoCommand.Execute(null);
+                    break;
+                case Key.F:
+                    e.Handled = true;
+                    ViewModel?.RequestFindFocus();
+                    break;
+            }
+        }
+
+        base.OnKeyDown(e);
+    }
+
     // ─── Layout Persistence ───
 
     private void RestoreLayout()

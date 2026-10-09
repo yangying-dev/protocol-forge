@@ -9,7 +9,7 @@
 
     <Application.Styles>
         <FluentTheme />
-        <DockFluentTheme DensityStyle="Normal" />
+        <DockFluentTheme DensityStyle="Compact" />
         <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml" />
 
         <Style Selector="MenuItem:checked:toggle /template/ ContentControl#PART_ToggleIconPresenter">

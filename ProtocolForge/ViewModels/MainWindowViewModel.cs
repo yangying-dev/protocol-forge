@@ -679,9 +679,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Reloads the capture after an undo/redo so the protocol tree matches the restored
-    /// bytes. Restoring bytes alone would leave the tree describing the previous frame,
-    /// which for a length-changing edit means every later offset is stale.
+    /// Refreshes the view after an undo/redo. It must not reload the capture from disk:
+    /// doing so would discard every other in-memory edit and wipe the history stacks.
+    /// Only the affected packet's tree is rebuilt so it matches the restored bytes.
     /// </summary>
     private async Task AfterHistoryMoveAsync(Packet packet, string statusKey, EditHistoryService.Entry entry)
     {
@@ -689,16 +689,15 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         if (Document != null)
             Document.HasUnsavedChanges = ModifiedPackets > 0;
 
-        if (_loadedFilePath is not null)
-        {
-            string keep = _displayFilter;
-            _displayFilter = string.Empty;
-            await LoadFileAsync(_loadedFilePath);
-            _displayFilter = keep;
-        }
+        int seq = ++_treeBuildSeq;
+        ProtocolTree.LoadPacket(null);
+        await BuildTreeAsync(packet, seq);
+
+        HexEditor.RefreshBytes();
+        HexEditor.ClearEditedMarks();
+        HexEditorViewModel.ReExtractAddressInfo(packet);
 
         RaiseHistoryState();
-        HexEditor.RefreshBytes();
         HexEditor.RefreshAddressInfo();
         ShowStatus(statusKey, entry.PacketNumber);
     }
@@ -866,6 +865,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         HexEditor.RefreshBytes();
         HexEditor.ClearEditedMarks();
 
+        // Reset discards every edit at once; the per-packet undo stack now points at
+        // bytes that no longer exist, so drop it rather than let a later Ctrl+Z
+        // resurrect a discarded edit.
+        _history.Clear();
+        RaiseHistoryState();
+
         // The cached tree still holds the edited DisplayValue/RawBytes. That both
         // misreports the edit and fails the fence's byte-agreement check, which locks the
         // field out of editing for the rest of the session — so re-parse the packet the
@@ -954,7 +959,10 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private void OnDockableRestored(object? sender, DockableRestoredEventArgs e)
     {
         if (e.Dockable is PaneDock pane)
+        {
             pane.OriginalOwnerId = null;
+            pane.Host ??= this;
+        }
         SyncPaneVisibility();
         Dispatcher.UIThread.Post(SaveLayout);
     }
@@ -988,9 +996,17 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     {
         if (dockable is PaneDock pane)
             pane.Host = this;
-        if (dockable is IDock { VisibleDockables: not null } dock)
+        if (dockable is IDock dock)
         {
-            foreach (var child in dock.VisibleDockables)
+            foreach (var child in dock.VisibleDockables ?? [])
+                AttachPaneHosts(child);
+        }
+        if (dockable is IRootDock root)
+        {
+            // Panes hidden in a restored docklayout.json live only here. Without
+            // this they keep Host == null, and the pane DataTemplate
+            // (DataContext="{Binding Host}") renders them blank when re-shown.
+            foreach (var child in root.HiddenDockables ?? [])
                 AttachPaneHosts(child);
         }
     }
