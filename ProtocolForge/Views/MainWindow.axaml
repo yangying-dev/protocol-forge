@@ -108,7 +108,8 @@
                 <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
                     <ComboBox Name="VlanModeCombo" Width="92" Height="28" FontSize="12"
                               ItemsSource="{Binding ToolBar.VlanModes}"
-                              SelectedItem="{Binding ToolBar.VlanMode}"
+                              SelectedItem="{Binding ToolBar.SelectedVlanOption}"
+                              DisplayMemberBinding="{Binding Label}"
                               ToolTip.Tip="{DynamicResource L10n.Tip.Vlan}" />
                     <TextBox Name="VlanIdBox" Width="58" Height="28" FontSize="12"
                              Text="{Binding ToolBar.VlanId, Mode=TwoWay}"

@@ -3746,6 +3746,28 @@ int RunHeadlessRenderOnly()
             g54VlanShown && g54VlanHidden,
             $"shownOnInsert={g54VlanShown}, hiddenOnLeave={g54VlanHidden}");
 
+        var g54VlanCombo = ByName<ComboBox>(g54Window, "VlanModeCombo");
+        var g54VlanOptions = g54VlanCombo?.ItemsSource?.Cast<object>()
+            .OfType<ToolBarViewModel.VlanModeOption>().ToList() ?? [];
+        Report("HG-05a VLAN mode combo labels resolve from the localization dictionary",
+            g54VlanOptions.Count == 4
+            && g54VlanOptions[0].Label == LocalizationService.Resolve("Vlan.Mode.Leave")
+            && g54VlanOptions[1].Label == LocalizationService.Resolve("Vlan.Mode.Insert")
+            && g54VlanOptions[2].Label == LocalizationService.Resolve("Vlan.Mode.Replace")
+            && g54VlanOptions[3].Label == LocalizationService.Resolve("Vlan.Mode.Remove"),
+            $"count={g54VlanOptions.Count}, labels=[{string.Join(", ", g54VlanOptions.Select(o => o.Label))}]");
+
+        var g54VlanLang = LocalizationService.CurrentLanguage;
+        string g54VlanBefore = g54Bar.VlanModes[0].Label;
+        LocalizationService.SetCurrent(g54VlanLang == AppLanguage.ZhCn ? AppLanguage.EnUs : AppLanguage.ZhCn);
+        Pump();
+        string g54VlanAfter = g54Bar.VlanModes[0].Label;
+        LocalizationService.SetCurrent(g54VlanLang);
+        Pump();
+        Report("HG-05b VLAN mode combo labels follow a runtime language switch",
+            g54Bar.VlanModes.Count == 4 && g54VlanAfter != g54VlanBefore,
+            $"lang={g54VlanLang}, before=\"{g54VlanBefore}\", after=\"{g54VlanAfter}\"");
+
         var g54FixBox = ByName<CheckBox>(g54Window, "AutoFixCheckBox");
         var g54MultiBox = ByName<CheckBox>(g54Window, "MultiNicCheckBox");
         string g54FixText = g54FixBox?.Content as string ?? "";
