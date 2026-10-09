@@ -38,7 +38,7 @@
 
 ```bash
 dotnet build            # 必须 0 警告 / 0 错误
-dotnet run --project tests/pf-verify   # 回归基线：ALL GROUPS PASS（378 断言）
+dotnet run --project tests/pf-verify   # 回归基线：ALL GROUPS PASS（414 断言）
 ```
 
 > 手工测试前先跑一次 harness，确认基线绿再动手。
@@ -553,8 +553,8 @@ python3 docs/make-synthetic-capture.py /tmp/pf-manual.pcap
 | 项 | 期望 |
 |---|---|
 | `dotnet build` | 0 警告 / 0 错误 |
-| `dotnet run --project tests/pf-verify` | **ALL GROUPS PASS**（378 断言 / 0 FAIL / 1 SKIP = G17-13） |
-| `dotnet run --project tests/pf-verify -- --ui` | 9 PASS（无头 GUI 渲染） |
+| `dotnet run --project tests/pf-verify` | **ALL GROUPS PASS**（414 断言 / 0 FAIL / 1 SKIP = G17-13） |
+| `dotnet run --project tests/pf-verify -- --ui` | 17 PASS（无头 GUI 渲染） |
 
 ---
 

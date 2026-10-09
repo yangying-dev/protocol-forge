@@ -27,7 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - **Length-changing edits.** A field's value may now be a different length: the frame is spliced, every later field is shifted, and fields the splice pushed outside the frame are pruned from the tree. This is gated behind an explicit per-editor "allow length change" opt-in, is hex-only, and resets each time an editor opens.
 - **Compound edits.** Several fields are edited in one transaction. This is what makes an insert usable at all: growing a payload and correcting the enclosing length fields cannot be done one transaction at a time, because the frame is malformed in between and each transaction would correctly refuse it. Verified end-to-end by growing a UDP payload together with `udp.length` and `ip.len`.
-- **Undo / redo** over committed edits, per packet, capped at 200 entries with a visible bound. A new edit discards the redo branch. Ctrl+Z / Ctrl+Y, also on the File menu. Undo and redo reload the capture so the protocol tree matches the restored bytes.
+- **Undo / redo** over committed edits, per packet, capped at 200 entries with a visible bound. A new edit discards the redo branch. Ctrl+Z / Ctrl+Y, also on the File menu. Undo and redo rebuild the protocol tree in memory from the restored bytes without reloading the capture from disk.
 - **Recent files** persisted per user, capped at 10.
 
 **Analysis**
@@ -84,7 +84,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   out of scope: a file that merged several adapters is reported on load and again on save,
   so the merge is never silent.
 
-- The verification harness generates its own capture. With `PF_CAPTURE` unset it builds a 4413-frame synthetic capture into the temp directory and deletes it afterwards, so the capture-dependent groups — the edit fence, Verify-Before-Commit, address re-extraction — run in CI instead of skipping. A bare run reports 378 PASS / 0 FAIL / 1 SKIP (+ HG-01..10 headless UI); the one skip is `G17-13`, which needs the ≥180k-packet pcapng that cannot be synthesised. No capture is committed and the no-pcap rule is unchanged.
+- The verification harness generates its own capture. With `PF_CAPTURE` unset it builds a 4413-frame synthetic capture into the temp directory and deletes it afterwards, so the capture-dependent groups — the edit fence, Verify-Before-Commit, address re-extraction — run in CI instead of skipping. A bare run reports 414 PASS / 0 FAIL / 1 SKIP (+ HG-01..10 headless UI); the one skip is `G17-13`, which needs the ≥180k-packet pcapng that cannot be synthesised. No capture is committed and the no-pcap rule is unchanged.
 
 ### Not done in this release
 
@@ -121,7 +121,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- **The verification harness generates its own capture.** With `PF_CAPTURE` unset it builds a 4413-frame synthetic capture into the temp directory and deletes it afterwards, so the capture-dependent groups — the edit fence, Verify-Before-Commit, address re-extraction — run in CI instead of skipping. A bare run reports 325 PASS / 0 FAIL / 1 SKIP; the one skip is `G17-13`, which needs the ≥180k-packet pcapng that cannot be synthesised. No capture is committed and the no-pcap rule is unchanged.
+- **The verification harness generates its own capture.** With `PF_CAPTURE` unset it builds a 4413-frame synthetic capture into the temp directory and deletes it afterwards, so the capture-dependent groups — the edit fence, Verify-Before-Commit, address re-extraction — run in CI instead of skipping. A bare run reports 414 PASS / 0 FAIL / 1 SKIP; the one skip is `G17-13`, which needs the ≥180k-packet pcapng that cannot be synthesised. No capture is committed and the no-pcap rule is unchanged.
 - Removed `docs/PfcheckUserManual.md`, which documented a CLI that did not exist and described a GUI feature as paid. It is replaced by `docs/pfcheck-cli.md`, written against the tool that now ships.
 
 ## [0.1.0] - 2026-09-30
@@ -144,7 +144,7 @@ First public release. Apache-2.0, self-contained, cross-platform.
 - **Hex viewer** with a Wireshark-style layout: 16 bytes per row, offset column, hex grouped 8+8, ASCII pane. Click or arrow-key navigation, selected bytes highlighted, protocol field ranges highlighted per protocol, edited bytes marked.
 - **REPLACE-only inline hex editing.** Start typing hex digits over any byte, the pending value previews in place, Enter commits the whole run as a single replace, Esc cancels. Each run is built from full hex-digit pairs, so **packet length never changes** and every offset outside the edited span stays valid.
 - **Six-check edit fence** (`CheckTreeEditFence`) gating every field edit: a resolvable field type, a non-negative byte span, byte alignment rather than a bit-level sub-field, an in-frame span (fanning into a reassembled PDU fails), concrete byte evidence with `RawBytes.Length` matching the field length, and recorded bytes agreeing with the actual frame bytes. Blocked fields report the reason and refuse to open an editor.
-- **Verify-Before-Commit.** A proposed edit is not written straight into the packet. The candidate frame is saved to a temp PCAP with surrounding context frames where available, reparsed by tshark, and the field's new hex value must land at the expected `(PDML name, byte offset)`. Offset drift, a wrong value, or a length mismatch aborts the commit and leaves the packet byte-identical. Applies to both tree and hex edits.
+- **Verify-Before-Commit.** A proposed edit is not written straight into the packet. The candidate frame is saved to a temp PCAP with surrounding context frames where available, reparsed by tshark, and the field's new hex value must land at the expected `(PDML name, byte offset)`. Offset drift, a wrong value, or a length mismatch aborts the commit and leaves the packet byte-identical. Applies to tree field edits (hex-pane runs are fence-checked and applied directly, then a follow-up reparse refreshes the tree).
 - **Container auto-relink.** After a committed field edit the packet is reparsed once in the background and the tree's container and layer header texts are patched in place, so editing a PFCP SEID refreshes the surrounding `F-SEID : SEID: 0x…, IPv4 …` display without rebuilding the tree. Anonymous IE containers are matched by effective offset.
 - Hex-native field editing: fields Wireshark renders in hexadecimal, such as PFCP SEID and TEID, are detected from the PDML showname and edited as hex, round-tripping big-endian bytes exactly as tshark displays them.
 - **Bidirectional tree and hex sync.** Selecting a field highlights its byte range in the hex viewer; selecting bytes resolves the owning field and reveals the matching node in the tree.

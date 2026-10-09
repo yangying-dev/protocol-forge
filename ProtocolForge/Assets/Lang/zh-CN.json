@@ -164,7 +164,7 @@
   "Dlg.PickTshark": "选择 Tshark 可执行文件",
   "Dlg.AllFiles": "所有文件",
   "Dlg.About": "关于 ProtocolForge",
-  "Dlg.AboutText": "ProtocolForge v{0}\n3GPP 协议仿真与调试\n\n基于 Avalonia UI + .NET 8 构建\n协议解析: Tshark（Wireshark CLI）\n可选二层注入: Npcap®（Nmap Software LLC，不随产品捆绑）\nNpcap 不随本产品捆绑，也不会被本应用自动安装。\nNpcap 条款: https://npcap.com/license\n详见安装目录下的 THIRD-PARTY-NOTICES.md。",
+  "Dlg.AboutText": "ProtocolForge v{0}\n3GPP 协议仿真与调试\n\n基于 Avalonia UI + .NET 10 构建\n协议解析: Tshark（Wireshark CLI）\n可选二层注入: Npcap®（Nmap Software LLC，不随产品捆绑）\nNpcap 不随本产品捆绑，也不会被本应用自动安装。\nNpcap 条款: https://npcap.com/license\n详见安装目录下的 THIRD-PARTY-NOTICES.md。",
   "Dlg.OpenPcap": "打开 PCAP 文件",
   "Dlg.PcapFiles": "PCAP 文件",
   "Dlg.ResetModsConfirm": "重置修改",

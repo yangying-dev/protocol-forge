@@ -28,11 +28,11 @@
 ### 1.1 分层与依赖方向
 
 ```
-MainWindow.axaml (视图)                ← ViewLocator / 代码后置事件
+MainWindow.axaml (视图)                ← 代码后置事件
    ↓ DataContext
-ViewModels (6 个)                      ← 只持有"命令 + 属性 + 事件"；跨面板用事件通信，不用直接引用
+ViewModels (8 个)                      ← 只持有"命令 + 属性 + 事件"；跨面板用事件通信，不用直接引用
    ↓ 构造函数注入
-Services (16 个文件)                   ← 纯业务逻辑，不引用 VM；结果用 sealed record 返回
+Services (20 个文件)                   ← 纯业务逻辑，不引用 VM；结果用 sealed record 返回
    ↓
 Models (8 个)                          ← Packet / ProtocolField / PacketDocument 等域对象
 ```
@@ -146,9 +146,9 @@ MainWindow.axaml.cs
 
 > **TLS keylog 无 UI 入口（刻意）**：`File → TLS Keylog…` 菜单已移除。原因是它对任意存在的文件都报"已设置"，而 tshark 会静默跳过无法解析的行——用户只看到"没解密"却毫无线索。能力保留，改由 `SSLKEYLOGFILE` 环境变量或 `settings.json` 的 `TlsKeylogPath` 生效（`App` 启动时恢复，见 `TsharkService.SetTlsKeylogPath`）。
 
-### 2.6 `ViewLocator`
+### 2.6 `ViewLocator`（已移除）
 
-`Build(param)`：FullName 里 `"ViewModel"` → `"View"` → `Type.GetType` → `Activator.CreateInstance`；失败回退 `TextBlock "Not Found: {name}"`。`Match(data)`：`data is ViewModelBase`。实际上只有 MainWindowViewModel 继承 ViewModelBase；树/hex VM 在 XAML 里直接 `DataContext="{Binding …}"`，ViewLocator 很少真正生效。
+早期版本有一个基于约定的 `ViewLocator`（`FooViewModel` → `FooView`），已在公开发布前随 `Converters/` 一并删除。当前所有视图都在 `App.axaml.cs` / 各自 `DataContext` 中直接构造并绑定，仓库中不存在 `ViewLocator.cs`。
 
 ---
 
@@ -669,16 +669,16 @@ Rungs 1-3（foreach socket，label=AF_PACKET/UDP/IP raw）:
 | `OpenPcapCommand` / `ExportPcapCommand` | 空实现 + 从未绑定。真实打开/另存路径是代码后置对话框（MainWindow.axaml.cs）→ `LoadFileAsync` / `ExportToFileAsync`。 |
 | `ApplyFieldEdit` / `ApplyHexStringEdit` | 旧路径，未调用。活路径：树 = `ConvertRawValue` + `EditTransactionService`；hex = `ApplyModification` 直写。 |
 | 窗口标题脏指示 | 标题**静态**；脏显示在状态栏 `Modified: N`；关闭警告仅 `Debug.WriteLine`，**无对话框**。 |
-| hex 编辑是否走 VBC | **不走**。README "Both routes run the VBC reparse" 只对树编辑成立；hex 是"立即应用 + 事后只读重解析刷新显示"。 |
+| hex 编辑是否走 VBC | **不走**。hex 是"先过编辑栅栏 → 直接应用整段替换 → 事后单包重解析刷新显示"；VBC 仅用于树字段编辑。README 已相应更正（不再是"两条路径都走 VBC"）。 |
 | README rung 图 0–3 与代码一致 | 一致：0 L2(Npcap/BPF) → 1 AF_PACKET → 2 IP raw → 3 UDP。 |
 | `CanSend` 额外拦回环 | 工具栏禁止 loopback 发送，但 `NetworkInterfaceService` 仍列出回环卡（下拉可见，启动被拦）。 |
 | 免费版日发送配额 | **已删除（2026-09-29）**：原日发送配额服务类文件已不存在，`ToolBarViewModel` 无配额预占/记账/`CanSend` 配额子句，`PacketSendService.StartSendAsync` 无守卫参数与中止标志，工具栏无配额文本。本文件原第 8 章已随之移除（章节号 8 留空不重排）。当前代码中不存在任何形式的配额：既无日发送上限，也无功能开关位（相关许可位掩码常量随离线许可模块一并删除）。 |
 | `_ws.malformed` 处理 | 追加到最内层 DisplayText，而不是独立的层。 |
-| ViewLocator 实际作用 | 仅 MainWindowViewModel 继承 ViewModelBase；树/hex VM 在 XAML 直接绑 DataContext，ViewLocator 很少触发。 |
+| ViewLocator 是否仍存在 | **不存在**（已随 `Converters/` 于公开发布前删除）；所有视图直接构造并在 XAML 绑 DataContext。 |
 
 ## 附录 D：验证夹具 pf-verify（G1–G8）
 
-**位置与运行**：`tests/pf-verify/Program.cs`（独立控制台项目，**不在 .sln 内**）。运行 `dotnet run --project tests/pf-verify`，需真实 tshark ≥3.6.2 + `pcap/` 样例；全部通过时打印 `ALL GROUPS PASS`，另写 `report.txt` 到基目录，exit code 0/1。它是唯一的回归防线（无 xUnit/NUnit）。
+**位置与运行**：`tests/pf-verify/Program.cs`（独立控制台项目，**已纳入 ProtocolForge.sln**——`dotnet build` 会编译它但不运行）。运行 `dotnet run --project tests/pf-verify`，需真实 tshark ≥3.6.2；`PF_CAPTURE` 未设置时 harness 会自行生成一份 4413 帧合成抓包并在结束后删除（只有 `G17-13` 跳过）。全部通过时打印 `ALL GROUPS PASS`，另写 `report.txt` 到基目录，exit code 0/1。它是唯一的回归防线（无 xUnit/NUnit）。
 
 | 组 | 覆盖（一行） |
 |---|---|

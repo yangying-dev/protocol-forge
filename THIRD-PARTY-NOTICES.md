@@ -14,12 +14,12 @@ These are MIT-licensed NuGet packages linked into the shipped executable. The MI
 
 | Package | Version | License | Notes |
 |---|---|---|---|
-| `Avalonia` | 12.0.5 | MIT | Cross-platform UI framework |
-| `Avalonia.Desktop` | 12.0.5 | MIT | Desktop backend |
-| `Avalonia.Themes.Fluent` | 12.0.5 | MIT | Fluent design theme |
-| `Avalonia.Fonts.Inter` | 12.0.5 | MIT | Inter font |
-| `Avalonia.Controls.DataGrid` | 12.0.1 | MIT | Packet list grid: column sorting, double-click column auto-fit |
-| `AvaloniaUI.DiagnosticsSupport` | 2.2.1 | MIT | **Debug builds only.** Referenced in `ProtocolForge.csproj` but excluded from the asset list in any configuration other than `Debug`, so it is not part of a Release artifact. It is additionally guarded by `#if DEBUG` at its use site. |
+| `Avalonia` | 12.1.3 | MIT | Cross-platform UI framework |
+| `Avalonia.Desktop` | 12.1.3 | MIT | Desktop backend |
+| `Avalonia.Themes.Fluent` | 12.1.3 | MIT | Fluent design theme |
+| `Avalonia.Fonts.Inter` | 12.1.3 | MIT | Inter font |
+| `Avalonia.Controls.DataGrid` | 12.1.2 | MIT | Packet list grid: column sorting, double-click column auto-fit |
+| `AvaloniaUI.DiagnosticsSupport` | 2.2.3 | MIT | **Debug builds only.** Referenced in `ProtocolForge.csproj` but excluded from the asset list in any configuration other than `Debug`, so it is not part of a Release artifact. It is additionally guarded by `#if DEBUG` at its use site. |
 | `CommunityToolkit.Mvvm` | 8.4.2 | MIT | MVVM source generators (`[ObservableProperty]`, `[RelayCommand]`, `[AsyncRelayCommand]`) |
 
 ### A.2 Stated copyright lines
@@ -46,7 +46,7 @@ Two notes on the above, both verifiable:
   by the `license type="expression">MIT` expression in the `.nuspec`, which NuGet surfaces at
   <https://licenses.nuget.org/MIT>. The full MIT text is reproduced below so the binary distribution
   carries it regardless.
-- `AvaloniaUI.DiagnosticsSupport` 2.2.1 is referenced **only in Debug builds**. Its
+- `AvaloniaUI.DiagnosticsSupport` 2.2.3 is referenced **only in Debug builds**. Its
   `PackageReference` in `ProtocolForge.csproj` sets `IncludeAssets=None` and `PrivateAssets=All`
   for any configuration other than `Debug`, so a **Release build neither compiles against it nor
   copies it to the output directory**. NuGet still downloads it into the build machine's global

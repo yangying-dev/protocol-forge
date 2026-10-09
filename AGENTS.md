@@ -5,7 +5,7 @@
 **Branch:** main
 
 ## OVERVIEW
-ProtocolForge is a cross-platform .NET 8 + Avalonia desktop app for inspecting, editing, and replaying 3GPP protocol packets (PFCP, NGAP, GTP-U, NAS, S1AP, Diameter) from PCAP files. Combines tshark's dissection engine with a native hex/tree editor and raw socket injection. UI text is Chinese (zh-CN).
+ProtocolForge is a cross-platform .NET 10 + Avalonia desktop app for inspecting, editing, and replaying 3GPP protocol packets (PFCP, NGAP, GTP-U, NAS, S1AP, Diameter) from PCAP files. Combines tshark's dissection engine with a native hex/tree editor and raw socket injection. UI text is Chinese (zh-CN).
 
 ## STRUCTURE
 ```
@@ -41,9 +41,9 @@ protocol-forge/
 
 - **MVVM + Manual DI** — No IoC container. Services instantiated in `App.axaml.cs`; ViewModels get dependencies via constructor. New service = add to App.axaml.cs in dependency order.
 - **CommunityToolkit.Mvvm source generators** — `[ObservableProperty]` on private fields (generated public property), `[RelayCommand]`/`[AsyncRelayCommand]` for commands.
-- **Views use code-behind** for event handling (Avalonia XAML + `.axaml.cs`); `ViewLocator.cs` maps `FooViewModel` → `FooView` by convention.
+- **Views use code-behind** for event handling (Avalonia XAML + `.axaml.cs`); views are constructed directly — there is no `ViewLocator`.
 - **Runtime OS checks only** — `OperatingSystem.IsWindows()/IsLinux()/IsMacOS()`. `#if` conditional compilation minimized (only `DEBUG` for dev tools).
-- **net8.0, nullable enable, ImplicitUsings enable, AvaloniaUseCompiledBindingsByDefault=true**.
+- **net10.0, nullable enable, ImplicitUsings enable, AvaloniaUseCompiledBindingsByDefault=true**.
 - **Windows-style formatting** — CRLF line endings for `*.cs`/`*.axaml`/etc. and UTF-8 (Chinese comments and strings in source), per `.gitattributes` + `.editorconfig`. Not yet uniform on disk: a handful of `.cs` files are LF-only in the working tree and a few carry a stray UTF-8 BOM.
 - **Events over references** — ViewModels communicate via events (`PacketSelected`, `FieldSelected`, `FieldEdited`, `HexEdited`, `FieldFoundAtOffset`), not direct references.
 
@@ -83,10 +83,10 @@ dotnet run --project tests/pf-verify -- --only 54   # Print only GROUP 54 (--gro
 - **Free tier** — everything currently shipped is free and unlimited; the daily send cap was removed on 2026-09-29. `Packet.SendSelected` defaults to false.
 - **trace.log** is written under `LocalApplicationData/ProtocolForge/logs/` (`%LOCALAPPDATA%/ProtocolForge/logs/trace.log` on Windows, `~/.local/share/ProtocolForge/logs/trace.log` on Linux, `~/Library/Application Support/ProtocolForge/logs/trace.log` on macOS) via a `TextWriterTraceListener`; settings remain under ApplicationData.
 - Capture files can exceed 180k packets; list loading is streamed (`-T fields` line-by-line) and protocol trees build per-packet on demand (~0.4s/packet) — never design for full-file tree parsing.
-- **Real captures are local-only and never committed** — `.gitignore` ignores `*.pcap`/`*.pcapng` and CI rejects new or modified ones. When `PF_CAPTURE` is unset the harness **generates** a 4413-frame synthetic capture into the temp directory and deletes it after, so the capture-dependent groups run in CI; a bare run reports 378 PASS / 0 FAIL / 1 SKIP, the one skip being `G17-13` (needs the ≥180k-packet pcapng that cannot be synthesised). Point `PF_CAPTURE` at a capture **smaller than 4413 frames** and `G1`/`G16`/`G19` fail rather than skip.
+- **Real captures are local-only and never committed** — `.gitignore` ignores `*.pcap`/`*.pcapng` and CI rejects new or modified ones. When `PF_CAPTURE` is unset the harness **generates** a 4413-frame synthetic capture into the temp directory and deletes it after, so the capture-dependent groups run in CI; a bare run reports 414 PASS / 0 FAIL / 1 SKIP, the one skip being `G17-13` (needs the ≥180k-packet pcapng that cannot be synthesised). Point `PF_CAPTURE` at a capture **smaller than 4413 frames** and `G1`/`G16`/`G19` fail rather than skip.
 - **`tests/pf-verify` is in the solution** — `dotnet build` compiles it (harness compile errors surface in the default build) but does not run it; run it explicitly (`dotnet run --project tests/pf-verify`). Its output can be filtered with `--only <group#>` / `--group <title-text>`; filtering is **output-only** — every group still executes and FAIL lines always print, so a filtered run can never look green. New group banners and detail lines must go through the harness's `Banner(n, title)` / `Detail(text)` helpers, otherwise they leak through the filter. `LocalizationService.SetCurrent` re-publishes even when the language is unchanged (the Avalonia `Application` can appear after the first call), so group order cannot leave XAML resources empty.
 - **QA gate (docs/RealDeviceQA.md)**: `dotnet build` must be 0 warnings / 0 errors, and `tests/pf-verify` must print "ALL GROUPS PASS" (it may append a `(N group(s) skipped — no capture fixture)` note when `PF_CAPTURE` is unset).
 - **Two layout files** — `layout.json` holds window geometry + `ShowX` pane-visibility flags (LayoutService.LayoutState, still harness-tested directly); `docklayout.json` holds the serialized Dock tree (DockSerializer/System.Text.Json). Restored-hidden panes are re-wired to their owner via `OriginalOwnerId` after `InitLayout`, since `OriginalOwner` is `[IgnoreDataMember]`. Headless UI group G54 only runs via `dotnet run --project tests/pf-verify -- --ui` (separate process to avoid Avalonia init inside the assertion run), and it snapshots/restores `docklayout.json` around the run.
 - **`.gitignore` and `.editorconfig` both exist** — `.gitignore` covers `bin/ obj/ artifacts/ release/`, IDE/OS files, `.env*`, `*.log`, agent working state (`.omo/ .gstack/ .workflow/`), and `*.pcap`/`*.pcapng` (real captures are local-only and CI rejects them). `.editorconfig` mirrors `.gitattributes` exactly (LF for `*.sh`/`*.yml`/`*.yaml`, CRLF for `*.cs`/`*.axaml`/etc., with deliberately no global `[*] end_of_line` rule). There is still no analyzer or lint config, so style is otherwise matched by hand (4-space indent, file-scoped namespaces, Chinese comments).
-- **Localization dictionaries hold 204 keys each** (`Assets/Lang/en-US.json` + `zh-CN.json`, identical key sets).
+- **Localization dictionaries hold 210 keys each** (`Assets/Lang/en-US.json` + `zh-CN.json`, identical key sets).
 - **CI** — `.github/workflows/ci.yml` builds with warnings-as-errors, runs the `pf-verify` harness, and rejects added or modified `.pcap`/`.pcapng`. `pf-verify` is a hand-rolled assertion console app (not xUnit/NUnit); it is part of the solution, so `dotnet build` compiles it, but `dotnet build` alone does not run it.

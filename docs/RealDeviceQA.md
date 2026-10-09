@@ -30,7 +30,7 @@
 ### W2 已装 Npcap + 非管理员运行
 - 步骤：普通用户启动 → 同 W1 发送。
 - 预期：`pcap_open_live` 失败（权限）→ rung 0 降级；`(npcap)` 不出现；TCP 发送失败并给出 raw-socket 不支持提示；UDP payload 可发。
-- 判定：行为与未装 Npcap 的退化路径一致（对比本机回归 G1–G8）。
+- 判定：行为与未装 Npcap 的退化路径一致（对比本机回归 G1–G54）。
 
 ### W3 未装 Npcap
 - 步骤：卸载 Npcap → 发送。

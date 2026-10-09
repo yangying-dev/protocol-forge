@@ -8,11 +8,10 @@ The main Avalonia application: packet parsing (tshark), field-level editing (fen
 ## STRUCTURE
 ```
 ProtocolForge/
-├── Services/      # 16 files — all business logic (largest: TsharkService 2156 lines)
-├── ViewModels/    # 6 files — CommunityToolkit.Mvvm; events, not references
+├── Services/      # 20 files — all business logic (largest: TsharkService 2374 lines)
+├── ViewModels/    # 8 files — CommunityToolkit.Mvvm; events, not references
 ├── Models/        # 8 files — domain objects incl. Packet + ProtocolField
-├── Views/         # MainWindow + Controls/ (HexEditor, ProtocolTreeView)
-├── Converters/    # HexByteColorConverter + BoolToStringConverter
+├── Views/         # MainWindow + Controls/ (13 files: panes, HexEditor, ProtocolTreeView)
 └── App.axaml.cs   # Manual DI composition root (in dependency order)
 ```
 
@@ -33,7 +32,7 @@ ProtocolForge/
 ## CONVENTIONS
 
 - **Services are standalone** — no VM references; they expose events/records (`PacketSendResult`, `EditResult`, `PdmlData`) for consumers.
-- **Split static/instance services** — instance (`sealed class`, DI'd in `App.axaml.cs`): Tshark, Pcap Ingest/Export, EditTransaction, ProtocolEditor, PacketSend, NetworkInterface, Layout, TsharkSettings. Static (`static class`, no DI): `PacketPrepareService`, `NpcapSendService`, `BpfSendService`, `TraceLog`.
+- **Split static/instance services** — instance (`sealed class`, DI'd in `App.axaml.cs`): Tshark, Pcap Ingest/Export, PcapngWriter, EditTransaction, EditHistory, ProtocolEditor, EnumCatalog, Localization, SessionState, PacketContext (providers), PacketSend, NetworkInterface, Layout, TsharkSettings. Static (`static class`, no DI): `PacketPrepareService`, `NpcapSendService`, `BpfSendService`, `TraceLog`.
 - **No async void** — commands use `[AsyncRelayCommand]`; services return `Task<T>` with `CancellationToken` params.
 - **Records for results** — `sealed record` used for DTOs/verdicts (`TsharkDetection`, `EditResult`, `PdmlData`, `PacketSendResult`).
 - **Streaming/progressive loading** — packet list fills incrementally; trees build on demand per packet (~0.4s). Never parse full files into memory.

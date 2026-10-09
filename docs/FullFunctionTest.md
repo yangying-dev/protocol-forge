@@ -8,7 +8,7 @@
 
 | 分类 | 含义 | 谁执行 |
 |---|---|---|
-| **A — 自动化已验证** | 现有 `tests/pf-verify`（G1–G38；G9、G10 已随对应功能下线删除，组号不回收）已覆盖，已实际运行并通过 | 自动化（pf-verify） |
+| **A — 自动化已验证** | 现有 `tests/pf-verify`（G1–G54；G9、G10 已随对应功能下线删除，组号不回收）已覆盖，已实际运行并通过 | 自动化（pf-verify） |
 | **B — 可自动化新增** | 服务层逻辑；可新增 pf-verify 测试组覆盖，无需 GUI / 真机 / 网络注入 | 开发者补充实现 |
 | **C — 必须人工** | GUI 交互、视觉确认、真实网卡注入、Windows/macOS 专属路径、真机行为 | **人工执行** |
 
@@ -43,7 +43,7 @@
 | 21 | 菜单 / 对话框 / 横幅 / 状态栏 | M-01 ~ M-12 | C |
 | 22 | 已知非功能面（死代码/不存在的功能确认） | D-01 ~ D-08 | A/C |
 
-**覆盖率声明**：上述 22 个功能域对应代码中所有 Service（16 个文件）、ViewModel（6 个）、View/控件（7 个）、Converter（2 个）、Model（8 个）中每个可观察行为点。任何未列出的功能点即视为缺陷（欢迎指出）。
+**覆盖率声明**：上述 22 个功能域对应代码中所有 Service（20 个文件）、ViewModel（8 个）、View/控件（13 个）、Model（8 个）中每个可观察行为点。任何未列出的功能点即视为缺陷（欢迎指出）。
 
 > **变更记录（2026-09-29）**：免费版每日发送配额功能已整体下线并从代码库删除（服务类文件、每日计数 JSON 状态文件、工具栏配额文本、预占/记账/守卫链路全部移除）。原"发送配额"功能域及其 Q-01~Q-14 用例整节移除，本清单与后续章节号顺延一位；用例编号 `N-*` 等**保持原号不重排**，故编号存在空缺。相关自动化断言（pf-verify G9、G10i、G21-04、G32 的 Q-12 子块）同步删除，组号不回收。
 >
@@ -55,10 +55,10 @@
 
 | 用例 | 分类 | 前置条件 | 步骤 | 预期 |
 |---|---|---|---|---|
-| **T-01** | A | dotnet SDK ≥ 8.0 | 仓库根目录执行 `dotnet build` | 0 错误 0 警告（QA 门禁） |
-| **T-02** | A | tshark ≥ 3.6.2 可用 + pcap/ 样本齐全 | `dotnet run --project tests/pf-verify` | 控制台输出 `ALL GROUPS PASS`，退出码 0 |
-| **T-03** | A | T-02 通过 | 检查 bin 输出目录 | 生成 `report.txt`，含全部断言行 + `ALL GROUPS PASS` footer（2026-09-30 实测 230 PASS / 0 FAIL / 6 SKIP；**现状：`PF_CAPTURE` 未设置时 harness 会自行生成 4413 帧合成抓包，实测 378 PASS / 0 FAIL / 1 SKIP，exit 0**，唯一跳过为 `G17-13`（需 ≥18 万包的本地 pcapng）。组号 G9/G10 已删除、G21 独立块并入别组，编号不连续属预期） |
-| **T-04** | C | 任一平台 | 检查 `ProtocolForge.sln` | 仅含主项目；`tests/pf-verify` 不在 sln 中（须独立 `dotnet run`） |
+| **T-01** | A | dotnet SDK ≥ 10.0 | 仓库根目录执行 `dotnet build` | 0 错误 0 警告（QA 门禁） |
+| **T-02** | A | tshark ≥ 3.6.2 可用（`PF_CAPTURE` 未设置时 harness 自行生成合成抓包） | `dotnet run --project tests/pf-verify` | 控制台输出 `ALL GROUPS PASS`，退出码 0 |
+| **T-03** | A | T-02 通过 | 检查 bin 输出目录 | 生成 `report.txt`，含全部断言行 + `ALL GROUPS PASS` footer（2026-09-30 实测 230 PASS / 0 FAIL / 6 SKIP；**现状：`PF_CAPTURE` 未设置时 harness 会自行生成 4413 帧合成抓包，实测 414 PASS / 0 FAIL / 1 SKIP，exit 0**，唯一跳过为 `G17-13`（需 ≥18 万包的本地 pcapng）。组号 G9/G10 已删除、G21 独立块并入别组，编号不连续属预期） |
+| **T-04** | C | 任一平台 | 检查 `ProtocolForge.sln` | 含主项目与 `tests/pf-verify`；`dotnet build` 会编译 harness 但不运行它（须独立 `dotnet run`） |
 
 ---
 
@@ -370,10 +370,10 @@
 
 | 用例 | 分类 | 前置条件 | 步骤 | 预期 |
 |---|---|---|---|---|
-| **D-01** | A | — | Grep 源码 | 无拖拽支持（DragDrop/AllowDrop 零匹配）；无搜索/查找功能（无 Ctrl+F） |
+| **D-01** | A | — | Grep 源码 | 无拖拽支持（DragDrop/AllowDrop 零匹配）；查找功能已提供（View 菜单 / Ctrl+F，逐列 + 协议树，未用 `ITextSearch` 控件接口） |
 | **D-02** | A | — | Grep 源码 | OpenPcapCommand/ExportPcapCommand/RefreshInterfacesCommand 生而未绑定（死命令，实际走 code-behind） |
-| **D-03** | A | — | Grep XAML | HexByteColorConverter（5 个）/BoolToStringConverter 未在 XAML 引用（死转换器；hex 背景为 code-behind） |
-| **D-04** | A | — | 源码 | ViewLocator 注册但从未触发（所有视图直接构造）；StatusInfo/SelectedIndex/IsEnabled 部分 VM 状态未绑定 |
+| **D-03** | A | — | Grep XAML | HexByteColorConverter / BoolToStringConverter 已删除（发布前移除；此前定义但 XAML 从未引用，hex 背景为 code-behind） |
+| **D-04** | A | — | 源码 | ViewLocator 已删除（发布前移除，此前注册但从未触发，所有视图直接构造）；StatusInfo/SelectedIndex/IsEnabled 部分 VM 状态未绑定 |
 | **D-06** | A | — | Grep App.axaml | 外观仅跟随系统主题（`RequestedThemeVariant="Default"`）；无自定义主题切换/配色功能 |
 | **D-07** | A | — | 查看 app.manifest | 标准 Avalonia 清单（assemblyIdentity + Windows 10 supportedOS，窗口透明/兼容所需）；**无** requireAdministrator 提权声明——原始套接字发送的管理员权限由"以管理员身份运行"外部保障（子 AGENTS.md 的"清单为提权而设"说法不成立，按实际记录） |
 

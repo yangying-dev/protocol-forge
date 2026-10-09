@@ -164,7 +164,7 @@
   "Dlg.PickTshark": "Select Tshark Executable",
   "Dlg.AllFiles": "All Files",
   "Dlg.About": "About ProtocolForge",
-  "Dlg.AboutText": "ProtocolForge v{0}\n3GPP Protocol Simulation & Debugging\n\nBuilt with Avalonia UI + .NET 8\nProtocol parsing: Tshark (Wireshark CLI)\nOptional L2 injection: Npcap® by Nmap Software LLC (not bundled)\nNpcap is NOT bundled and NOT installed by this app.\nNpcap terms: https://npcap.com/license\nSee THIRD-PARTY-NOTICES.md in your install folder.",
+  "Dlg.AboutText": "ProtocolForge v{0}\n3GPP Protocol Simulation & Debugging\n\nBuilt with Avalonia UI + .NET 10\nProtocol parsing: Tshark (Wireshark CLI)\nOptional L2 injection: Npcap® by Nmap Software LLC (not bundled)\nNpcap is NOT bundled and NOT installed by this app.\nNpcap terms: https://npcap.com/license\nSee THIRD-PARTY-NOTICES.md in your install folder.",
   "Dlg.OpenPcap": "Open PCAP File",
   "Dlg.PcapFiles": "PCAP Files",
   "Dlg.ResetModsConfirm": "Reset Modifications",
