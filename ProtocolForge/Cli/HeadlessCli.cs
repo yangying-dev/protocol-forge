@@ -274,7 +274,7 @@ public static class HeadlessCli
         var send = new PacketSendService();
         var results = new List<PacketSendResult>();
         send.PacketSent += r => results.Add(r);
-        await send.StartSendAsync(toSend, target, count <= 0 ? 1 : count, interval, autoFixFrames: false);
+        await send.StartSendAsync(toSend, target, count <= 0 ? 1 : count, interval, autoFixFrames: false, linkLayerType: doc.LinkLayerType);
 
         int ok = results.Count(r => r.Success);
         foreach (var r in results)

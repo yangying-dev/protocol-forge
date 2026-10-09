@@ -330,7 +330,8 @@ public sealed partial class ToolBarViewModel : ObservableObject
                 intervalMs: (int)SendIntervalMs,
                 autoFixFrames: AutoFixFrames,
                 vlanMode: VlanMode,
-                vlanId: (ushort)Math.Clamp(VlanId, 0, 4095));
+                vlanId: (ushort)Math.Clamp(VlanId, 0, 4095),
+                linkLayerType: _packetList.LinkLayerType);
         }
         finally
         {
