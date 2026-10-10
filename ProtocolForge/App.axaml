@@ -7,6 +7,16 @@
              RequestedThemeVariant="Default">
              <!-- "Default" follows the system theme variant; ThemeService overrides it at runtime. -->
 
+    <Application.Resources>
+        <ResourceDictionary>
+            <!-- Dock 停靠面板密度覆盖:与 SukiUI.Dock 同 key 的 ControlTheme 放 Application.Resources,
+                 资源查找先于 Styles,故覆盖 SukiUI.Dock/Index.axaml 的主题。 -->
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceInclude Source="avares://ProtocolForge/Assets/DockDensity.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+
     <Application.Styles>
         <FluentTheme />
         <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml" />
@@ -20,9 +30,24 @@
              工具栏已用的 Height=28,故对显式定高的控件是无害的空操作。 -->
         <Style Selector="MenuItem">
             <Setter Property="Padding" Value="8,3" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <!-- 菜单栏整行高度:SukiUI Menu 模板 Border 硬编码 Height=45,这里覆盖压矮。
+             (SukiUI/Theme/Menu.axaml:114) -->
+        <Style Selector="Menu /template/ Border">
+            <Setter Property="Height" Value="34" />
         </Style>
         <Style Selector="DataGridCell">
             <Setter Property="Padding" Value="8,3" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style Selector="DataGridRow">
+            <Setter Property="MinHeight" Value="26" />
+        </Style>
+        <Style Selector="DataGridColumnHeader">
+            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Padding" Value="8,4" />
         </Style>
         <Style Selector="TreeViewItem">
             <Setter Property="Padding" Value="6,2" />

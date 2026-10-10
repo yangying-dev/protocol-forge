@@ -6,7 +6,7 @@
              x:DataType="vm:ProtocolTreeViewModel">
 
     <Grid RowDefinitions="Auto,*">
-        <Border Grid.Row="0" Background="{DynamicResource SukiStrongBackground}" Padding="8,4"
+        <Border Grid.Row="0" Background="{DynamicResource SukiStrongBackground}" Padding="8,3"
                 IsVisible="{Binding IsEnabled}">
             <TextBlock Text="{Binding SelectedFieldInfo}"
                        FontSize="11" Foreground="{DynamicResource SukiMuteText}"

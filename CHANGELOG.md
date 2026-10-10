@@ -21,7 +21,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Compact density override.** SukiUI's default control metrics were looser than the
   theme they replaced (taller menus, tree rows, grid cells and inputs); a compact style
   block in `App.axaml` now tightens paddings and minimum heights on those controls so
-  the layout keeps the previous density.
+  the layout keeps the previous density. The dock panes get the same treatment from
+  `Assets/DockDensity.axaml` (loaded before `SukiUI.Dock/Index.axaml` so its keyed
+  `ControlTheme`s win): tool-window chrome is slimmer (title 14→12, grip/title margins
+  tightened, 16×14 chrome buttons), pane shadow/glass margins shrink toward the edges
+  (border 8→4, glass 5→2, dockable 12,15→4,6), and the grid is denser — DataGrid rows
+  keep a 26 px minimum, column headers 28 px and 12 pt text, list rows 26 px, with the
+  packet-list toolbar and hex cells trimmed (30→28 px cells, 13→12 pt hex/ASCII text).
 
 ### Fixed
 

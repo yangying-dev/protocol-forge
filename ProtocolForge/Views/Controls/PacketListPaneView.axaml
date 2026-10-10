@@ -10,7 +10,7 @@
              x:DataType="vm:MainWindowViewModel">
     <Grid RowDefinitions="Auto,*">
         <!-- Top bar: packet count + file name -->
-        <Border Grid.Row="0" Background="{DynamicResource SukiStrongBackground}" Padding="10,4,10,3"
+        <Border Grid.Row="0" Background="{DynamicResource SukiStrongBackground}" Padding="8,3"
                 BorderBrush="{DynamicResource SukiBorderBrush}" BorderThickness="0,0,0,1">
             <Grid ColumnDefinitions="Auto,*,Auto,Auto">
                 <TextBlock Grid.Column="0"
@@ -18,14 +18,14 @@
                            FontWeight="SemiBold" FontSize="12" />
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4"
                             VerticalAlignment="Center">
-                    <TextBox Name="FilterBox" Width="240" FontSize="12"
+                    <TextBox Name="FilterBox" Width="200" FontSize="12"
                              FontFamily="Consolas, monospace"
                              VerticalContentAlignment="Center"
                              Text="{Binding FilterText, Mode=TwoWay}"
                              PlaceholderText="{DynamicResource L10n.Filter.Placeholder}"
                              ToolTip.Tip="{DynamicResource L10n.Filter.Label}"
                              KeyDown="OnFilterKeyDown" />
-                    <TextBox Name="FindBox" Width="180" FontSize="12"
+                    <TextBox Name="FindBox" Width="160" FontSize="12"
                              FontFamily="Consolas, monospace"
                              VerticalContentAlignment="Center"
                              Text="{Binding FindText, Mode=TwoWay}"
@@ -60,6 +60,7 @@
                   CanUserResizeColumns="True"
                   CanUserSortColumns="True"
                   controls:DoubleClickAutoFit.IsEnabled="True"
+                  ColumnHeaderHeight="28"
                   GridLinesVisibility="Horizontal"
                   HorizontalGridLinesBrush="{DynamicResource SukiBorderBrush}"
                   Background="{DynamicResource SukiCardBackground}"

@@ -69,13 +69,13 @@
 
         <!-- ════════════════ Toolbar ════════════════ -->
         <Border Grid.Row="1" Name="ToolBarPanel"
-                Background="{DynamicResource SukiStrongBackground}" Padding="8,4" BorderBrush="{DynamicResource SukiBorderBrush}" BorderThickness="0,0,0,1">
+                Background="{DynamicResource SukiStrongBackground}" Padding="6,3" BorderBrush="{DynamicResource SukiBorderBrush}" BorderThickness="0,0,0,1">
             <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto">
                 <!-- Start Button -->
                 <Button Grid.Column="0" Name="StartSendBtn"
                         Command="{Binding ToolBar.StartSendCommand}"
                         IsEnabled="{Binding ToolBar.CanSend}"
-                        Padding="10,4" Margin="2,0"
+                        Padding="10,3" Margin="2,0"
                         Background="#4CAF50" Foreground="White"
                         FontWeight="Bold" FontSize="13"
                         BorderThickness="0" CornerRadius="4">
@@ -89,7 +89,7 @@
                 <Button Grid.Column="1" Name="PauseSendBtn"
                         Command="{Binding ToolBar.TogglePauseSendCommand}"
                         IsEnabled="{Binding ToolBar.IsSending}"
-                        Padding="10,4" Margin="2,0"
+                        Padding="10,3" Margin="2,0"
                         Background="#FF9800" Foreground="White"
                         FontWeight="Bold" FontSize="13"
                         BorderThickness="0" CornerRadius="4">
@@ -102,7 +102,7 @@
                 <Button Grid.Column="2" Name="StopSendBtn"
                         Command="{Binding ToolBar.StopSendCommand}"
                         IsEnabled="{Binding ToolBar.IsSending}"
-                        Padding="10,4" Margin="2,0"
+                        Padding="10,3" Margin="2,0"
                         Background="#F44336" Foreground="White"
                         FontWeight="Bold" FontSize="13"
                         BorderThickness="0" CornerRadius="4">
@@ -114,12 +114,12 @@
 
                 <!-- Auto-fix toggle -->
                 <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-                    <ComboBox Name="VlanModeCombo" Width="92" Height="28" FontSize="12"
+                    <ComboBox Name="VlanModeCombo" Width="92" Height="26" FontSize="12"
                               ItemsSource="{Binding ToolBar.VlanModes}"
                               SelectedItem="{Binding ToolBar.SelectedVlanOption}"
                               DisplayMemberBinding="{Binding Label}"
                               ToolTip.Tip="{DynamicResource L10n.Tip.Vlan}" />
-                    <TextBox Name="VlanIdBox" Width="58" Height="28" FontSize="12"
+                    <TextBox Name="VlanIdBox" Width="58" Height="26" FontSize="12"
                              Text="{Binding ToolBar.VlanId, Mode=TwoWay}"
                              IsVisible="{Binding ToolBar.IsVlanIdVisible}"
                              ToolTip.Tip="{DynamicResource L10n.Btn.VlanId}" />
@@ -141,7 +141,7 @@
                     <TextBlock Text="{DynamicResource L10n.Btn.Interval}" FontSize="12" VerticalAlignment="Center" Margin="0,0,4,0" />
                     <NumericUpDown Value="{Binding ToolBar.SendIntervalMs}"
                                    Minimum="0" Maximum="60000" Increment="50"
-                                   FormatString="0" Width="140" Height="28" />
+                                   FormatString="0" Width="140" Height="26" />
                 </StackPanel>
 
                 <!-- Loop count -->
@@ -150,7 +150,7 @@
                     <TextBlock Text="{DynamicResource L10n.Btn.Loops}" FontSize="12" VerticalAlignment="Center" Margin="0,0,4,0" />
                     <NumericUpDown Value="{Binding ToolBar.LoopCount}"
                                    Minimum="1" Maximum="9999" Increment="1"
-                                   FormatString="0" Width="120" Height="28" />
+                                   FormatString="0" Width="120" Height="26" />
                 </StackPanel>
 
                 <!-- Sent/Failed Status -->
@@ -170,11 +170,11 @@
                           ItemsSource="{Binding ToolBar.AvailableInterfaces}"
                           SelectedItem="{Binding ToolBar.SelectedInterface}"
                           DisplayMemberBinding="{Binding DisplayName}"
-                          Height="28" MinWidth="180"
+                          Height="26" MinWidth="180"
                           HorizontalAlignment="Stretch"
                           VerticalAlignment="Center"
                           PlaceholderText="{DynamicResource L10n.Btn.PlaceholderAdapter}" />
-                <Button Grid.Column="10" Margin="4,0,0,0" Height="28" Padding="8,0"
+                <Button Grid.Column="10" Margin="4,0,0,0" Height="26" Padding="8,0"
                         FontSize="12" VerticalAlignment="Center"
                         Content="{DynamicResource L10n.Btn.RescanAdapters}"
                         ToolTip.Tip="{DynamicResource L10n.Btn.TipRescanAdapters}"
@@ -184,7 +184,7 @@
 
         <!-- ════════════════ Tshark Warning Banner ════════════════ -->
         <Border Grid.Row="2" Background="{DynamicResource SukiWarningColor}" BorderBrush="{DynamicResource SukiWarningDarkColor}"
-                BorderThickness="0,0,0,1" Padding="10,6"
+                BorderThickness="0,0,0,1" Padding="8,4"
                 IsVisible="{Binding IsReadOnly}">
             <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                 <TextBlock Text="⚠" FontSize="14" VerticalAlignment="Center" />
@@ -207,7 +207,7 @@
                      Factory="{Binding Factory}" />
 
         <!-- ════════════════ Status Bar ════════════════ -->
-        <Border Grid.Row="4" Background="{DynamicResource SukiStrongBackground}" Padding="10,5,12,5"
+        <Border Grid.Row="4" Background="{DynamicResource SukiStrongBackground}" Padding="8,4"
                 BorderBrush="{DynamicResource SukiBorderBrush}" BorderThickness="0,1,0,0">
             <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6"

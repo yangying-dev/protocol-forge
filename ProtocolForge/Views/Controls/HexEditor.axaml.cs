@@ -19,12 +19,12 @@ namespace ProtocolForge.Views.Controls;
 public partial class HexEditor : UserControl
 {
     private const int BytesPerRow = 16;
-    private const double CellWidth = 30;
-    private const double CellHeight = 24;
+    private const double CellWidth = 28;
+    private const double CellHeight = 22;
     private const double CellMargin = 1;
     private const double AsciiCellWidth = 11;
     private const double RowLabelWidth = 60;
-    private const double ByteGroupGap = 14;
+    private const double ByteGroupGap = 12;
 
     private static readonly FontFamily MonospaceFont = new("Cascadia Code, JetBrains Mono, Consolas, 'Courier New', monospace");
 
@@ -297,7 +297,7 @@ public partial class HexEditor : UserControl
                 {
                     Text = GetHexCellText(hexByte),
                     FontFamily = MonospaceFont,
-                    FontSize = 13,
+                    FontSize = 12,
                     HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
                     VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
                 };
@@ -352,7 +352,7 @@ public partial class HexEditor : UserControl
                 {
                     Text = GetAsciiCellText(hexByte),
                     FontFamily = MonospaceFont,
-                    FontSize = 13,
+                    FontSize = 12,
                     HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
                     VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
                 };
