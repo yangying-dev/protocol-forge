@@ -15,6 +15,33 @@
              SukiTheme 必须最后加载才能覆盖前面 Fluent/DataGrid/Dock 的基础样式。 -->
         <StyleInclude Source="avares://SukiUI.Dock/Index.axaml" />
         <suki:SukiTheme ThemeColor="Blue" />
+        <!-- 紧凑密度:不动配色/字体、不改 SukiUI 主题,仅收紧常用控件的内边距与最小高度,
+             让整体观感更致密。只调整 Padding/Margin/MinHeight,且 MinHeight 不超过
+             工具栏已用的 Height=28,故对显式定高的控件是无害的空操作。 -->
+        <Style Selector="MenuItem">
+            <Setter Property="Padding" Value="8,3" />
+        </Style>
+        <Style Selector="DataGridCell">
+            <Setter Property="Padding" Value="8,3" />
+        </Style>
+        <Style Selector="TreeViewItem">
+            <Setter Property="Padding" Value="6,2" />
+        </Style>
+        <Style Selector="ListBoxItem">
+            <Setter Property="Padding" Value="8,3" />
+        </Style>
+        <Style Selector="Button">
+            <Setter Property="MinHeight" Value="26" />
+        </Style>
+        <Style Selector="TextBox">
+            <Setter Property="MinHeight" Value="26" />
+        </Style>
+        <Style Selector="ComboBox">
+            <Setter Property="MinHeight" Value="26" />
+        </Style>
+        <Style Selector="NumericUpDown">
+            <Setter Property="MinHeight" Value="26" />
+        </Style>
     </Application.Styles>
 
     <Application.DataTemplates>

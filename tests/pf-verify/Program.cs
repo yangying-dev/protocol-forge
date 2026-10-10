@@ -4133,6 +4133,22 @@ int RunHeadlessRenderOnly()
             g54KeyZ.Handled && g54KeyF.Handled,
             $"ctrlZ={g54KeyZ.Handled}, ctrlF={g54KeyF.Handled}");
 
+        // ── HG-17: 基色切换必须真正作用到运行中的应用(ThemeService → SukiTheme)。──
+        string g54OrigBase = ThemeService.CurrentBase;
+        ThemeService.SetBase("Dark");
+        Pump();
+        // 断言 CurrentBase 已切换,且 SukiTheme.ChangeBaseTheme 已把请求变体写到
+        // Application.RequestedThemeVariant(无头平台无 IPlatformSettings,默认解析为 Light,
+        // 故 ChangeBaseTheme(Dark) 必然写入 RequestedThemeVariant=Dark)。
+        bool g54BaseSwitched = ThemeService.CurrentBase == "Dark"
+            && Application.Current?.RequestedThemeVariant == Avalonia.Styling.ThemeVariant.Dark;
+        Report("HG-17 SetBase(\"Dark\") 切换持久化基色并作用到运行中的应用",
+            g54BaseSwitched,
+            $"currentBase={ThemeService.CurrentBase}, requestedVariant={Application.Current?.RequestedThemeVariant}");
+        // 还原原基色:仅当确实发生切换时才触发持久化,不会泄漏 settings.json 副作用。
+        ThemeService.SetBase(g54OrigBase);
+        Pump();
+
         g54Window.Close();
         Pump();
 

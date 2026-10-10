@@ -59,11 +59,6 @@
                     <MenuItem Header="{DynamicResource L10n.Theme.System}" Tag="Default" Click="OnMenuThemeBaseClicked" ToggleType="CheckBox"/>
                     <MenuItem Header="{DynamicResource L10n.Theme.Light}" Tag="Light" Click="OnMenuThemeBaseClicked" ToggleType="CheckBox"/>
                     <MenuItem Header="{DynamicResource L10n.Theme.Dark}" Tag="Dark" Click="OnMenuThemeBaseClicked" ToggleType="CheckBox"/>
-                    <Separator/>
-                    <MenuItem Header="{DynamicResource L10n.Theme.Color.Blue}" Tag="Blue" Click="OnMenuThemeColorClicked" ToggleType="CheckBox"/>
-                    <MenuItem Header="{DynamicResource L10n.Theme.Color.Green}" Tag="Green" Click="OnMenuThemeColorClicked" ToggleType="CheckBox"/>
-                    <MenuItem Header="{DynamicResource L10n.Theme.Color.Red}" Tag="Red" Click="OnMenuThemeColorClicked" ToggleType="CheckBox"/>
-                    <MenuItem Header="{DynamicResource L10n.Theme.Color.Orange}" Tag="Orange" Click="OnMenuThemeColorClicked" ToggleType="CheckBox"/>
                 </MenuItem>
                 <Separator />
                 <MenuItem Header="{DynamicResource L10n.Mnu.OpenSupportData}" Click="OnOpenLogDirClicked" />

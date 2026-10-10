@@ -11,11 +11,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Unified theming on SukiUI.** The window chrome, controls and dock panes now share one
   runtime theme system built on [`SukiUI`](https://github.com/kikipoulet/SukiUI) 7.0.1 +
   `SukiUI.Dock` 7.0.1 (both MIT). The theme menu offers a base (**System / Light / Dark**)
-  and a color skin (**Blue / Green / Red / Orange**); the choice persists and applies
+  with the SukiUI accent fixed at **Blue**; the choice persists and applies
   instantly with no restart. This replaces the previous hand-rolled multi-theme palette
   (`Services/AppThemes.cs` is removed): the standard Dock chrome is now restyled by
   `SukiUI.Dock`, so the panes and the host no longer drift apart when the theme changes.
-  Existing `ThemeVariant` settings migrate (e.g. `Midnight` → Dark+Blue, `Sakura` → Light+Blue).
+  Existing `ThemeVariant` settings migrate (e.g. `Midnight` → Dark, `Sakura` → Light; the
+  legacy `Base|Color` form is read as its base part).
+
+- **Compact density override.** SukiUI's default control metrics were looser than the
+  theme they replaced (taller menus, tree rows, grid cells and inputs); a compact style
+  block in `App.axaml` now tightens paddings and minimum heights on those controls so
+  the layout keeps the previous density.
+
+### Fixed
+
+- **Menu labels no longer show a leading underscore.** The `_` access-key mnemonics in the
+  localization dictionaries (`_Open PCAP…`, `E_xit`, `_语言`) are removed: SukiUI's
+  `MenuItem` template does not interpret `AccessText`, so the marker was rendered as part
+  of the label. Underscores inside real content (`TSHARK_PATH`, `SO_BINDTODEVICE`) are
+  untouched.
 
 ## [0.2.0] - unreleased
 

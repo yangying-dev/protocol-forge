@@ -456,15 +456,8 @@ public partial class MainWindow : SukiWindow
     {
         if (sender is MenuItem { Tag: string key })
             ThemeService.SetBase(key);
-        // SetBase/SetColor are no-ops when already active (no ThemeVariantChanged), but the
+        // SetBase is a no-op when already active (no ThemeVariantChanged), but the
         // ToggleType auto-toggle still flipped the check off — restore explicitly.
-        UpdateThemeMenuChecks();
-    }
-
-    private void OnMenuThemeColorClicked(object? sender, RoutedEventArgs e)
-    {
-        if (sender is MenuItem { Tag: string key })
-            ThemeService.SetColor(key);
         UpdateThemeMenuChecks();
     }
 
@@ -476,9 +469,7 @@ public partial class MainWindow : SukiWindow
                 continue;
 
             item.IsChecked = ThemeService.BaseKeys.Contains(tag, StringComparer.OrdinalIgnoreCase)
-                ? string.Equals(tag, ThemeService.CurrentBase, StringComparison.OrdinalIgnoreCase)
-                : ThemeService.ColorKeys.Contains(tag, StringComparer.OrdinalIgnoreCase)
-                  && string.Equals(tag, ThemeService.CurrentColor, StringComparison.OrdinalIgnoreCase);
+                && string.Equals(tag, ThemeService.CurrentBase, StringComparison.OrdinalIgnoreCase);
         }
     }
 

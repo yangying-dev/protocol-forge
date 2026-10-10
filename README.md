@@ -34,7 +34,7 @@ so no real operator capture is involved and reproducing them does not require co
 - **Tshark Integration** — Two-mode tshark use: one streamed `-T fields` pass fills the packet list (Source/Destination/Protocol/Info columns, progressively as tshark dissects), and the protocol detail tree is parsed per-packet on demand with `-T jsonraw`/`json`/`pdml` for byte-offset accuracy. Supports any protocol Wireshark knows (PFCP, NGAP, GTP-U, NAS, S1AP, HTTP/2, Diameter, SCTP, etc.).
 - **Tshark Environment Gate** — On startup and on path change, the installed tshark's version is checked against a minimum of 2.6.0. If tshark is missing or too old, the app still opens the capture in **read-only mode**: the warning banner is shown, raw packet data loads normally (`N/A` columns), but tree/hex editing, export, and packet injection are disabled. A tshark path can be re-selected at runtime via **File → Tshark Path…**, which re-detects and lifts the gate when a valid tshark is found. The chosen path is persisted (and can be overridden by the `TSHARK_PATH` environment variable).
 - **Bilingual UI (简体中文 / English)** — Full UI localization with instant runtime language switching via the **语言 / Language** menu (between View and Help); the preference is persisted and the system locale is auto-detected on first run.
-- **Theming (SukiUI)** — One runtime theme system built on [SukiUI](https://github.com/kikipoulet/SukiUI): pick a base (**System / Light / Dark**) and a colour skin (**Blue / Green / Red / Orange**) from the **Theme** menu; the choice is persisted. The window chrome, menu and every dock pane follow it, and the stock Dock chrome is restyled by `SukiUI.Dock` so the panes and the host share one look. Switching is instant, no restart.
+- **Theming (SukiUI)** — One runtime theme system built on [SukiUI](https://github.com/kikipoulet/SukiUI): pick the base (**System / Light / Dark**) from the **Theme** menu; the choice is persisted. The window chrome, menu and every dock pane follow it, the SukiUI accent is fixed at **Blue**, and the stock Dock chrome is restyled by `SukiUI.Dock` so the panes and the host share one look. Switching is instant, no restart.
 - **Three-Pass jsonraw Parser** — Walks tshark's JSON structure for the *selected* packet only (not the whole file):
   1. Collect all `_raw` arrays (hex value, offset, length)
   2. Process `_tree` containers and sub-objects with recursive field nesting
@@ -108,8 +108,8 @@ ProtocolForge/
 ├── ProtocolForge.csproj       # .NET 10, Avalonia 12.1.3, Dock 12.1.0.7, SukiUI 7.0.1, CommunityToolkit.Mvvm 8.4.2, DataGrid 12.1.2
 │
 ├── Assets/Lang/               # Localization dictionaries — en-US.json + zh-CN.json (embedded as resources)
-│   ├── en-US.json            # English UI strings (210 keys)
-│   └── zh-CN.json            # 简体中文 UI strings (210 keys, identical key set)
+│   ├── en-US.json            # English UI strings (214 keys)
+│   └── zh-CN.json            # 简体中文 UI strings (214 keys, identical key set)
 │
 ├── Models/                    # Domain objects
 │   ├── Packet.cs              # Single packet: raw data, modifications, address/port, layers
