@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input.Platform;
 using Avalonia.Markup.Xaml;
+using Dock.Settings;
 using ProtocolForge.Models;
 using ProtocolForge.Services;
 using ProtocolForge.ViewModels;
@@ -18,6 +19,14 @@ public partial class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
+        // Dock 停靠指示层:SukiUI 7.0.1 的窗口模板删除了 VisualLayerManager(6.1.1 尚有),
+        // 而 AdornerLayer 由窗口模板中的 VisualLayerManager 惰性创建——整个窗口树都没有它时
+        // AdornerLayer.GetAdornerLayer(visual) 返回 null,AdornerHelper.AddRegularAdorner
+        // 随即静默返回,拖动窗格时不会出现任何停靠提示。启用 Dock 库自带的浮动指示窗
+        // (DockAdornerWindow,顶层透明覆盖窗承载 DockTarget/GlobalDockTarget)替代,
+        // 不依赖窗口树中的 AdornerLayer。必须在首个 DockControl 参与拖拽前生效。
+        DockSettings.UseFloatingDockAdorner = true;
+
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             desktop.MainWindow = ComposeMainWindow(desktop.Args);

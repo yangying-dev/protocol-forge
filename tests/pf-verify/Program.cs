@@ -15,6 +15,9 @@ using Avalonia;
 using ProtocolForge.Services;
 using ProtocolForge.ViewModels;
 using Dock.Model.Core;
+using Dock.Avalonia.Controls;
+using Dock.Avalonia.Contract;
+using Dock.Settings;
 using Avalonia.Input;
 
 // ── Path resolution: locate repo root by walking up to ProtocolForge.sln ──
@@ -4122,6 +4125,99 @@ int RunHeadlessRenderOnly()
         g54Vm.SaveLayout();
         Pump();
 
+        // ── HG-18/19: the pin button parks a pane in RootDock.*PinnedDockables, which the
+        // menu logic used to ignore; pinning must uncheck the menu, and the menu must re-home
+        // every pinned pane into its own ToolDock — surviving a restart that persists the pin.
+        // The pinned edge strip must also RENDER a real tab (a ToolPinItemControl with size),
+        // gating the DockDensity.axaml ToolPinnedControl/DockTarget overrides of SukiUI.Dock 7.0.1
+        // (upstream shipped an ItemsSource-less strip and a DockTarget without IndicatorDockOperation).
+        static string G54HomeOf(string id) => id switch
+        {
+            DockLayoutFactory.PacketListId => DockLayoutFactory.TopDockId,
+            DockLayoutFactory.ProtocolTreeId => DockLayoutFactory.TreeDockId,
+            DockLayoutFactory.HexEditorId => DockLayoutFactory.HexDockId,
+            _ => "",
+        };
+        static PaneDock? G54Pane(MainWindowViewModel vm, string id) =>
+            vm.Factory.Find(vm.Layout!, d => d.Id == id).OfType<PaneDock>().FirstOrDefault();
+        static bool G54Rehomed(MainWindowViewModel vm, string id) =>
+            vm.Factory.Find(vm.Layout!, d => d.Id == G54HomeOf(id)).OfType<IDock>().FirstOrDefault()
+                ?.VisibleDockables?.Any(d => d.Id == id) == true;
+        string[] g54PinIds = [DockLayoutFactory.PacketListId, DockLayoutFactory.ProtocolTreeId, DockLayoutFactory.HexEditorId];
+
+        foreach (var id in g54PinIds)
+            g54Vm.Factory.PinDockable(G54Pane(g54Vm, id)!);
+        Pump();
+        for (int i = 0; i < 6; i++) { AvaloniaHeadlessPlatform.ForceRenderTimerTick(); Pump(); }
+        bool g54AllPinned = g54PinIds.All(id => g54Vm.Layout!.LeftPinnedDockables?.Any(d => d.Id == id) == true);
+        bool g54MenuUnchecked = !g54Vm.ShowPacketList && !g54Vm.ShowProtocolTree && !g54Vm.ShowHexEditor;
+        static bool G54StripTabRendered(Visual v)
+        {
+            if (v is ToolPinItemControl tab && tab.IsVisible && tab.Bounds.Width > 0 && tab.Bounds.Height > 0)
+                return true;
+            foreach (var child in v.GetVisualChildren())
+                if (G54StripTabRendered(child)) return true;
+            return false;
+        }
+        bool g54StripTabRendered = G54StripTabRendered(g54Window);
+
+        g54Vm.TogglePacketListCommand.Execute(null);
+        g54Vm.ToggleProtocolTreeCommand.Execute(null);
+        g54Vm.ToggleHexEditorCommand.Execute(null);
+        Pump();
+        bool g54AllRehomed = g54PinIds.All(id => G54Rehomed(g54Vm, id));
+        bool g54NonePinned = g54PinIds.All(id => g54Vm.Layout!.LeftPinnedDockables?.Any(d => d.Id == id) != true);
+        bool g54MenuCheckedAgain = g54Vm.ShowPacketList && g54Vm.ShowProtocolTree && g54Vm.ShowHexEditor;
+        bool g54HostsSet = g54PinIds.All(id => G54Pane(g54Vm, id)?.Host is not null);
+        Report("HG-18 pinning panes unchecks the View menu, renders an edge tab, and the menu re-homes each into its own dock",
+            g54AllPinned && g54MenuUnchecked && g54StripTabRendered && g54AllRehomed && g54NonePinned && g54MenuCheckedAgain && g54HostsSet,
+            $"allPinned={g54AllPinned}, menuUnchecked={g54MenuUnchecked}, stripTabRendered={g54StripTabRendered}, allRehomed={g54AllRehomed}, nonePinned={g54NonePinned}, menuCheckedAgain={g54MenuCheckedAgain}, hosts={g54HostsSet}");
+
+        foreach (var id in g54PinIds)
+            g54Vm.Factory.PinDockable(G54Pane(g54Vm, id)!);
+        Pump();
+        g54Vm.SaveLayout();
+        Pump();
+
+        var g54Window3 = App.ComposeMainWindow(null);
+        g54Window3.Width = 1400;
+        g54Window3.Height = 900;
+        g54Window3.Show();
+        for (int i = 0; i < 5; i++) Pump();
+        var g54Vm3 = (MainWindowViewModel)g54Window3.DataContext!;
+        bool g54PinnedRestored = g54PinIds.All(id => g54Vm3.Layout!.LeftPinnedDockables?.Any(d => d.Id == id) == true);
+        bool g54RestartMenuUnchecked = !g54Vm3.ShowPacketList && !g54Vm3.ShowProtocolTree && !g54Vm3.ShowHexEditor;
+        bool g54RestartHosts = g54PinIds.All(id =>
+            g54Vm3.Layout!.LeftPinnedDockables?.OfType<PaneDock>().FirstOrDefault(d => d.Id == id)?.Host is not null);
+
+        g54Vm3.TogglePacketListCommand.Execute(null);
+        g54Vm3.ToggleProtocolTreeCommand.Execute(null);
+        g54Vm3.ToggleHexEditorCommand.Execute(null);
+        for (int i = 0; i < 5; i++) Pump();
+        bool g54Rehomed3 = g54PinIds.All(id => G54Rehomed(g54Vm3, id))
+            && g54Vm3.ShowPacketList && g54Vm3.ShowProtocolTree && g54Vm3.ShowHexEditor;
+        bool g54Content3 = ByName<TreeView>(g54Window3, "ProtocolTree") is not null
+            && ByName<Control>(g54Window3, "PacketListView") is not null;
+        Report("HG-19 pinned panes survive a restart, stay menu-restorable and re-open with content",
+            g54PinnedRestored && g54RestartMenuUnchecked && g54RestartHosts && g54Rehomed3 && g54Content3,
+            $"pinnedRestored={g54PinnedRestored}, menuUnchecked={g54RestartMenuUnchecked}, hosts={g54RestartHosts}, rehomed={g54Rehomed3}, content={g54Content3}");
+
+        g54Window3.Close();
+        Pump();
+
+        if (!g54Vm.ShowPacketList || !g54Vm.ShowProtocolTree || !g54Vm.ShowHexEditor)
+        {
+            if (!g54Vm.ShowPacketList) g54Vm.TogglePacketListCommand.Execute(null);
+            if (!g54Vm.ShowProtocolTree) g54Vm.ToggleProtocolTreeCommand.Execute(null);
+            if (!g54Vm.ShowHexEditor) g54Vm.ToggleHexEditorCommand.Execute(null);
+            Pump();
+        }
+        g54Vm.SaveLayout();
+        Pump();
+
+        g54Vm.SaveLayout();
+        Pump();
+
         // Avalonia's MenuItem.InputGesture is display-only, so the window must route these
         // itself; raising the real event proves the accelerators are wired, not just shown.
         var g54KeyZ = new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Z, KeyModifiers = KeyModifiers.Control };
@@ -4148,6 +4244,125 @@ int RunHeadlessRenderOnly()
         // 还原原基色:仅当确实发生切换时才触发持久化,不会泄漏 settings.json 副作用。
         ThemeService.SetBase(g54OrigBase);
         Pump();
+
+        // ── HG-20: 拖动窗格 chrome 标题栏必须出现 DockTarget 停靠指示。───────────────
+        // 根因(指示层宿主):SukiUI 7.0.1 的窗口模板删除了 VisualLayerManager(6.1.1 尚有)。
+        // AdornerLayer 由窗口模板里的 VisualLayerManager 惰性创建——整个窗口树都没有它时
+        // AdornerLayer.GetAdornerLayer(visual) 返回 null,AdornerHelper.AddRegularAdorner
+        // 随即静默返回,DockTarget/GlobalDockTarget 永不挂载 → 拖动窗格无方向提示。
+        // App.axaml.cs 以 UseFloatingDockAdorner=true 走 AddFloatingAdorner 分支,把指示器
+        // 挂进以主窗为 owner 的顶层 DockAdornerWindow,绕开窗口树中缺失的 AdornerLayer。
+        // 附带(DockDensity.axaml):chrome 头 PART_Grip 的 DataContext 由 ToolDock 改指
+        // ActiveDockable(窗格),使拖拽源与 Fluent TabStrip 语义对齐;IToolDock:IDock:
+        // IDockable 本就通过 ValidateLocal 源侧闸,故这是语义对齐而非指示器恢复的关键。
+        // 无头模拟用户手势:按下 chrome 头 → 越过最小拖距 → 移到窗格本体 → 断言
+        // DockTarget 挂载、五个方向选择器均已注册(DockOperation)、中心选择器为 Fill、
+        // 主题为我们覆盖的 DockTarget、释放后指示器随浮动窗关闭移除。
+        {
+            var g54AllGrips = g54Window.GetVisualDescendants().OfType<Control>()
+                .Where(c => c.Name == "PART_Grip" && c.IsVisible && c.Bounds.Width > 0).ToList();
+            var g54GripRow = g54AllGrips.Select(g =>
+            {
+                var ch = g.FindAncestorOfType<ToolChromeControl>();
+                var dockable = (g.DataContext as IDockable ?? (ch?.DataContext as IDock)?.ActiveDockable as IDockable);
+                return $"grip:{g.DataContext?.GetType().Name ?? "null"} ch:{ch?.DataContext?.GetType().Name ?? "null"} act:{dockable?.GetType().Name ?? "null"}";
+            });
+            Detail($"HG-20 grips({g54AllGrips.Count}): {string.Join(" | ", g54GripRow)}");
+            var g54Grip = g54AllGrips.FirstOrDefault(g => g.DataContext is IDockable);
+
+            Detail($"HG-20 grip ctx: {(g54Grip is null ? "absent" : g54Grip.DataContext is PaneDock gpd ? $"{gpd.Id}:{gpd.Title}" : g54Grip.DataContext?.GetType().Name ?? "null")}");
+
+            bool g54GripIsDockable = g54Grip?.DataContext is PaneDock;
+            string g54DragOut = "no-grip";
+            if (g54Grip is not null)
+            {
+                var chrome = g54Grip.FindAncestorOfType<ToolChromeControl>();
+                var g54Bodies = g54Window.GetVisualDescendants().OfType<ToolControl>()
+                    .Where(t => t.IsVisible && t.Bounds.Width > 0).ToList();
+                var ownBody = g54Bodies.FirstOrDefault(t => ReferenceEquals(chrome, t.FindAncestorOfType<ToolChromeControl>()))
+                    ?? g54Bodies.FirstOrDefault();
+                var targetChrome = g54Window.GetVisualDescendants().OfType<ToolChromeControl>()
+                    .FirstOrDefault(c => c.IsVisible && !ReferenceEquals(c, chrome) && c.DataContext is not null);
+                var targetBody = targetChrome is null ? null : g54Bodies.FirstOrDefault(t => ReferenceEquals(targetChrome, t.FindAncestorOfType<ToolChromeControl>()));
+
+                if (chrome is not null && ownBody is not null && targetBody is not null
+                    && g54Grip.TranslatePoint(new Point(g54Grip.Bounds.Width / 2, g54Grip.Bounds.Height / 2), g54Window) is { } gripCenter
+                    && ownBody.TranslatePoint(new Point(ownBody.Bounds.Width / 2, ownBody.Bounds.Height / 2), g54Window) is { } bodyCenter
+                    && targetBody.TranslatePoint(new Point(targetBody.Bounds.Width / 2, targetBody.Bounds.Height / 2), g54Window) is { } targetCenter)
+                {
+                    var g54DockLog = new List<string>();
+                    bool g54PrevDiag = DockSettings.EnableDiagnosticsLogging;
+                    Action<string>? g54PrevHandler = DockSettings.DiagnosticsLogHandler;
+                    DockSettings.EnableDiagnosticsLogging = true;
+                    DockSettings.DiagnosticsLogHandler = m => { lock (g54DockLog) g54DockLog.Add(m); };
+
+                    g54Window.MouseDown(gripCenter, MouseButton.Left);
+                    Pump();
+                    foreach (var m in new[]
+                    {
+                        new Point(gripCenter.X, gripCenter.Y + 20),
+                        new Point(gripCenter.X, gripCenter.Y + 44),
+                        new Point(gripCenter.X - 16, gripCenter.Y + 72)
+                    })
+                    {
+                        g54Window.MouseMove(m, Avalonia.Input.RawInputModifiers.LeftMouseButton);
+                        Pump();
+                    }
+                    g54Window.MouseMove(targetCenter, Avalonia.Input.RawInputModifiers.LeftMouseButton); // 悬停另一窗格本体 → 本地停靠解析 + 指示层
+                    Pump();
+
+                    DockSettings.DiagnosticsLogHandler = g54PrevHandler;
+                    DockSettings.EnableDiagnosticsLogging = g54PrevDiag;
+
+                    IEnumerable<Visual> Hg20AllWindows()
+                    {
+                        // 浮动停靠指示(UseFloatingDockAdorner)把 DockTarget/GlobalDockTarget
+                        // 放进以主窗口为 owner 的顶层 DockAdornerWindow,不能只扫主窗口树。
+                        foreach (var v in g54Window.GetVisualDescendants())
+                            yield return v;
+                        foreach (var w in g54Window.OwnedWindows)
+                        foreach (var v in w.GetVisualDescendants())
+                            yield return v;
+                    }
+
+                    var g54Dock = g54Window.GetVisualDescendants().OfType<DockControl>().FirstOrDefault();
+                    Detail($"HG-20 adorner: floating={DockSettings.UseFloatingDockAdorner} layer={(g54Dock is null ? "?" : Avalonia.Controls.Primitives.AdornerLayer.GetAdornerLayer(g54Dock)?.GetType().Name ?? "null")}");
+
+                    var dt = Hg20AllWindows().OfType<DockTarget>().FirstOrDefault();
+                    if (dt is null)
+                    {
+                        g54DragOut = "dt=absent";
+                    }
+                    else
+                    {
+                        var dtParts = dt.GetVisualDescendants().OfType<Control>().ToList();
+                        var selOps = string.Join(" ",
+                            dtParts.Where(c => c.Name is { } n && n.StartsWith("PART_", StringComparison.Ordinal) && n.EndsWith("Selector", StringComparison.Ordinal))
+                                .Select(c => $"{c.Name!.Replace("PART_", "").Replace("Selector", "")}={DockProperties.GetIndicatorDockOperation(c)}"));
+                        g54DragOut = $"ops=[{selOps}] theme={(dtParts.OfType<Image>().Any(i => i.Name == "PART_CenterSelector") ? "ours" : "stock")}";
+                    }
+
+                    g54Window.MouseMove(bodyCenter, Avalonia.Input.RawInputModifiers.LeftMouseButton); // 移回自身体:自停靠为全局 no-op
+                    Pump();
+                    g54Window.MouseUp(bodyCenter, MouseButton.Left); // 释放:不改变布局
+                    Pump();
+                    bool g54ReleasedGone = !Hg20AllWindows().Any(v => v is DockTarget or GlobalDockTarget);
+                    g54DragOut += $" releasedGone={g54ReleasedGone}";
+
+                    Detail($"HG-20 drag: {g54DragOut}");
+                    Detail($"HG-20 docktrace: {string.Join(" | ", g54DockLog.TakeLast(24))}");
+                }
+            }
+
+            bool g54GuidesShown = g54DragOut.StartsWith("ops=", StringComparison.Ordinal)
+                && g54DragOut.Contains("Top=Top", StringComparison.Ordinal)
+                && g54DragOut.Contains("Center=Fill", StringComparison.Ordinal)
+                && g54DragOut.Contains("theme=ours", StringComparison.Ordinal)
+                && g54DragOut.Contains("releasedGone=True", StringComparison.Ordinal);
+            Report("HG-20 拖动窗格 chrome 标题栏显示停靠指示(五方向选择器已注册 + 指示器点亮 + 释放移除)",
+                g54GripIsDockable && g54GuidesShown,
+                $"gripIsDockable={g54GripIsDockable}; {g54DragOut}");
+        }
 
         g54Window.Close();
         Pump();

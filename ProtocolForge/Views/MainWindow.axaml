@@ -202,6 +202,9 @@
         </Border>
 
         <!-- ════════════════ Main Content (Dock) ════════════════ -->
+        <!-- 停靠指示层走 Dock 库自带的浮动指示窗(App.axaml.cs 已设 UseFloatingDockAdorner):
+             SukiUI 7.0.1 的窗口模板删除了 VisualLayerManager,窗口树中缺少 AdornerLayer
+             宿主,常规吸附器路径(AdornerLayer.GetAdornerLayer → Children.Add)静默失效。 -->
         <DockControl Grid.Row="3" Name="MainDockControl"
                      Layout="{Binding Layout}"
                      Factory="{Binding Factory}" />

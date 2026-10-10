@@ -129,11 +129,11 @@
                   VerticalAlignment="Top"
                   ContextFlyout="{DynamicResource ToolChromeControlContextMenu}"
                   Grid.Row="{Binding GripMode, Converter={x:Static converters:GripModeConverters.GridRowAutoHideConverter}}">
-            <Grid x:Name="PART_Grip">
+            <Grid x:Name="PART_Grip" DataContext="{Binding ActiveDockable}">
               <DockPanel LastChildFill="True" Margin="4 0">
                 <Panel DockPanel.Dock="Left">
                   <TextBlock x:Name="PART_Title" FontWeight="DemiBold" FontSize="12"
-                             Text="{Binding ActiveDockable.Title, FallbackValue=TITLE}" />
+                             Text="{Binding Title, FallbackValue=TITLE}" />
                 </Panel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                   <Button x:Name="PART_MenuButton"
@@ -145,11 +145,11 @@
                   </Button>
                   <Button x:Name="PART_PinButton"
                           Command="{Binding Owner.Factory.PinDockable}"
-                          CommandParameter="{Binding ActiveDockable}"
+                          CommandParameter="{Binding}"
                           Theme="{StaticResource ChromeButton}">
                     <Button.IsVisible>
                       <MultiBinding Converter="{x:Static aconv:BoolConverters.And}">
-                        <Binding Path="ActiveDockable.CanPin" FallbackValue="{x:False}" />
+                        <Binding Path="CanPin" FallbackValue="{x:False}" />
                         <TemplateBinding Property="IsFloating" Converter="{x:Static aconv:BoolConverters.Not}" />
                       </MultiBinding>
                     </Button.IsVisible>
@@ -166,8 +166,8 @@
                   </Button>
                   <Button x:Name="PART_CloseButton"
                           Command="{Binding Owner.Factory.CloseDockable}"
-                          CommandParameter="{Binding ActiveDockable}"
-                          IsVisible="{Binding ActiveDockable.CanClose, FallbackValue=False}"
+                          CommandParameter="{Binding}"
+                          IsVisible="{Binding CanClose, FallbackValue=False}"
                           Theme="{StaticResource ChromeButton}">
                     <Viewbox>
                       <Path  Fill="{DynamicResource SukiLowText}" x:Name="PART_ClosePath" />
@@ -274,6 +274,154 @@
 
     <Style Selector="^:maximized /template/ Path#PART_MaximizeRestorePath">
       <Setter Property="Data" Value="M0,10L0,3 3,3 3,0 10,0 10,2 4,2 4,3 7,3 7,6 6,6 6,5 1,5 1,10z M1,10L7,10 7,7 10,7 10,2 9,2 9,6 6,6 6,9 1,9z" />
+    </Style>
+
+  </ControlTheme>
+
+  <!-- SukiUI.Dock 7.0.1 上游缺陷的覆盖修复(参照 Fluent 模板补齐,保持 SukiUI 观感):
+       1) ToolPinnedControl —— SukiUI 模板里内嵌 ItemsControl 缺 ItemsSource,图钉后的边缘
+          停靠条渲染为空(宽度 0、无 tab);改用 Fluent 等价形式 ItemsPresenter + ItemsPanel,
+          项目容器 ToolPinItemControl 由控件代码创建,Orientation 自动跟随。
+       2) DockTarget —— SukiUI 模板十处指示部件全部遗漏 DockProperties.IndicatorDockOperation,
+          DockTargetBase 的映射坍缩为单一 Fill,拖动时方向指示不显示;本覆盖全部补齐
+          Top/Bottom/Left/Right/Fill。SukiUI 注释掉的指示箭头资源路径(avares://Dock.Avalonia/…)
+          在 Dock.Avalonia 中不存在,实际内嵌于 Dock.Avalonia.Themes.Fluent(/Assets/…),此处用
+          正确 URI 恢复箭头图标。
+       HG-18(pf-verify 无头 UI 模式)把这两处修复固化为回归断言:图钉后边条必须渲染出可见 tab。 -->
+  <ControlTheme x:Key="{x:Type db:ToolPinnedControl}" TargetType="db:ToolPinnedControl">
+
+    <Setter Property="Orientation" Value="Vertical" />
+
+    <Setter Property="Template">
+      <ControlTemplate>
+        <ItemsPresenter ItemsPanel="{TemplateBinding ItemsPanel}" />
+      </ControlTemplate>
+    </Setter>
+
+    <Setter Property="ItemsPanel">
+      <ItemsPanelTemplate>
+        <StackPanel Orientation="{Binding $parent[db:ToolPinnedControl].Orientation}"
+                    ds:DockProperties.IsDropArea="True" />
+      </ItemsPanelTemplate>
+    </Setter>
+
+  </ControlTheme>
+
+  <ControlTheme x:Key="{x:Type db:DockTarget}" TargetType="db:DockTarget">
+
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Grid x:Name="PART_IndicatorGrid" ColumnDefinitions="*,*" RowDefinitions="*,*">
+          <Border ClipToBounds="True"
+                  CornerRadius="16"
+                  Grid.Column="0"
+                  Grid.ColumnSpan="2"
+                  Grid.Row="0">
+            <Panel x:Name="PART_TopIndicator" ds:DockProperties.IndicatorDockOperation="Top" />
+          </Border>
+          <Border ClipToBounds="True"
+                  CornerRadius="16"
+                  Grid.Column="0"
+                  Grid.ColumnSpan="2"
+                  Grid.Row="1">
+            <Panel x:Name="PART_BottomIndicator" ds:DockProperties.IndicatorDockOperation="Bottom" />
+          </Border>
+          <Border ClipToBounds="True"
+                  CornerRadius="16"
+                  Grid.Column="0"
+                  Grid.Row="0"
+                  Grid.RowSpan="2">
+            <Panel x:Name="PART_LeftIndicator" ds:DockProperties.IndicatorDockOperation="Left" />
+          </Border>
+          <Border ClipToBounds="True"
+                  CornerRadius="16"
+                  Grid.Column="1"
+                  Grid.Row="0"
+                  Grid.RowSpan="2">
+            <Panel x:Name="PART_RightIndicator" ds:DockProperties.IndicatorDockOperation="Right" />
+          </Border>
+          <Border ClipToBounds="True"
+                  CornerRadius="16"
+                  Grid.Column="0"
+                  Grid.ColumnSpan="2"
+                  Grid.Row="0"
+                  Grid.RowSpan="2">
+            <Panel x:Name="PART_CenterIndicator" ds:DockProperties.IndicatorDockOperation="Fill" />
+          </Border>
+          <Border ClipToBounds="True"
+                  CornerRadius="16"
+                  Grid.Column="0"
+                  Grid.ColumnSpan="2"
+                  Grid.Row="0"
+                  Grid.RowSpan="2">
+            <Panel x:Name="PART_SelectorPanel">
+              <Grid x:Name="PART_SelectorGrid" ColumnDefinitions="*,*,*" RowDefinitions="*,*,*"
+                    MaxWidth="125" MaxHeight="125">
+                <Image x:Name="PART_TopSelector"
+                       Grid.Column="1"
+                       Grid.Row="0"
+                       Width="40"
+                       Height="40"
+                       Source="avares://Dock.Avalonia.Themes.Fluent/Assets/DockAnchorableTop.png"
+                       ds:DockProperties.IndicatorDockOperation="Top" />
+                <Image x:Name="PART_BottomSelector"
+                       Grid.Column="1"
+                       Grid.Row="2"
+                       Width="40"
+                       Height="40"
+                       Source="avares://Dock.Avalonia.Themes.Fluent/Assets/DockAnchorableBottom.png"
+                       ds:DockProperties.IndicatorDockOperation="Bottom" />
+                <Image x:Name="PART_LeftSelector"
+                       Grid.Column="0"
+                       Grid.Row="1"
+                       Width="40"
+                       Height="40"
+                       Source="avares://Dock.Avalonia.Themes.Fluent/Assets/DockAnchorableLeft.png"
+                       ds:DockProperties.IndicatorDockOperation="Left" />
+                <Image x:Name="PART_RightSelector"
+                       Grid.Column="2"
+                       Grid.Row="1"
+                       Width="40"
+                       Height="40"
+                       Source="avares://Dock.Avalonia.Themes.Fluent/Assets/DockAnchorableRight.png"
+                       ds:DockProperties.IndicatorDockOperation="Right" />
+                <Image x:Name="PART_CenterSelector"
+                       Grid.Column="1"
+                       Grid.Row="1"
+                       Width="40"
+                       Height="40"
+                       Source="avares://Dock.Avalonia.Themes.Fluent/Assets/DockDocumentInside.png"
+                       ds:DockProperties.IndicatorDockOperation="Fill" />
+              </Grid>
+            </Panel>
+          </Border>
+        </Grid>
+      </ControlTemplate>
+    </Setter>
+
+    <Style Selector="^/template/ Panel#PART_TopIndicator">
+      <Setter Property="Background" Value="{DynamicResource SukiPrimaryColor25}" />
+      <Setter Property="Opacity" Value="0" />
+    </Style>
+
+    <Style Selector="^/template/ Panel#PART_BottomIndicator">
+      <Setter Property="Background" Value="{DynamicResource SukiPrimaryColor25}" />
+      <Setter Property="Opacity" Value="0" />
+    </Style>
+
+    <Style Selector="^/template/ Panel#PART_LeftIndicator">
+      <Setter Property="Background" Value="{DynamicResource SukiPrimaryColor25}" />
+      <Setter Property="Opacity" Value="0" />
+    </Style>
+
+    <Style Selector="^/template/ Panel#PART_RightIndicator">
+      <Setter Property="Background" Value="{DynamicResource SukiPrimaryColor25}" />
+      <Setter Property="Opacity" Value="0" />
+    </Style>
+
+    <Style Selector="^/template/ Panel#PART_CenterIndicator">
+      <Setter Property="Background" Value="{DynamicResource SukiPrimaryColor25}" />
+      <Setter Property="Opacity" Value="0" />
     </Style>
 
   </ControlTheme>

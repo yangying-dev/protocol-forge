@@ -208,6 +208,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         AttachPaneHosts(layout);
         Factory.DockableHidden += OnDockableHidden;
         Factory.DockableRestored += OnDockableRestored;
+        Factory.DockablePinned += OnDockablePinned;
+        Factory.DockableUnpinned += OnDockableUnpinned;
 
         var saved = _layoutService.Load();
         if (restoredLayout is not null)
@@ -920,10 +922,20 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
     private void RestorePane(string paneId)
     {
-        if (Layout is null || !IsPaneHidden(paneId))
+        if (Layout is not { } root || !IsPaneHidden(paneId))
             return;
-        if (FindPane(paneId) is { } pane)
+        if (FindPane(paneId) is not { } pane)
+            return;
+        if (IsPanePinned(root, pane))
+        {
+            UnpinPane(root, pane);
+            SyncPaneVisibility();
+            Dispatcher.UIThread.Post(SaveLayout);
+        }
+        else
+        {
             Factory.RestoreDockable(pane);
+        }
     }
 
     private PaneDock? FindPane(string paneId)
@@ -932,11 +944,57 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             return null;
         if (root.HiddenDockables?.FirstOrDefault(d => d.Id == paneId) is PaneDock hiddenPane)
             return hiddenPane;
+        if (EnumeratePinnedDockables(root).OfType<PaneDock>().FirstOrDefault(d => d.Id == paneId) is { } pinnedPane)
+            return pinnedPane;
         return Factory.Find(root, d => d.Id == paneId).OfType<PaneDock>().FirstOrDefault();
     }
 
     private bool IsPaneHidden(string paneId) =>
-        Layout?.HiddenDockables?.Any(d => d.Id == paneId) == true;
+        Layout is { } root &&
+        (root.HiddenDockables?.Any(d => d.Id == paneId) == true ||
+         EnumeratePinnedDockables(root).Any(d => d.Id == paneId));
+
+    // 图钉(自动隐藏)把面板挪进 RootDock.*PinnedDockables,关闭(X)才进 HiddenDockables;菜单原先只认后者。
+    // 故 pinned 一并按隐藏处理,恢复时重新挂回其固定宿主 ToolDock(而非孤儿悬浮)。
+    private static bool IsPanePinned(IRootDock root, PaneDock pane) =>
+        EnumeratePinnedDockables(root).Any(d => ReferenceEquals(d, pane));
+
+    private void UnpinPane(IRootDock root, PaneDock pane)
+    {
+        foreach (var pinned in EnumeratePinnedCollections(root))
+            pinned.Remove(pane);
+
+        pane.OriginalOwner = null;
+        pane.OriginalOwnerId = null;
+        pane.Host ??= this;
+
+        if (HomeDockId(pane.Id) is { } homeId &&
+            Factory.Find(root, d => d.Id == homeId).OfType<IDock>().FirstOrDefault() is { } home)
+        {
+            Factory.AddDockable(home, pane);
+            home.ActiveDockable = pane;
+        }
+    }
+
+    private static IEnumerable<IDockable> EnumeratePinnedDockables(IRootDock root) =>
+        EnumeratePinnedCollections(root).SelectMany(c => c);
+
+    private static IEnumerable<IList<IDockable>> EnumeratePinnedCollections(IRootDock root)
+    {
+        if (root.LeftPinnedDockables is { } left) yield return left;
+        if (root.RightPinnedDockables is { } right) yield return right;
+        if (root.TopPinnedDockables is { } top) yield return top;
+        if (root.BottomPinnedDockables is { } bottom) yield return bottom;
+    }
+
+    private static string? HomeDockId(string paneId) => paneId switch
+    {
+        DockLayoutFactory.PacketListId => DockLayoutFactory.TopDockId,
+        DockLayoutFactory.ProtocolTreeId => DockLayoutFactory.TreeDockId,
+        DockLayoutFactory.HexEditorId => DockLayoutFactory.HexDockId,
+        DockLayoutFactory.StatisticsId => DockLayoutFactory.StatsDockId,
+        _ => null,
+    };
 
     private void SyncPaneVisibility()
     {
@@ -960,6 +1018,24 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     {
         if (e.Dockable is PaneDock pane)
         {
+            pane.OriginalOwnerId = null;
+            pane.Host ??= this;
+        }
+        SyncPaneVisibility();
+        Dispatcher.UIThread.Post(SaveLayout);
+    }
+
+    private void OnDockablePinned(object? sender, DockablePinnedEventArgs e)
+    {
+        SyncPaneVisibility();
+        Dispatcher.UIThread.Post(SaveLayout);
+    }
+
+    private void OnDockableUnpinned(object? sender, DockableUnpinnedEventArgs e)
+    {
+        if (e.Dockable is PaneDock pane)
+        {
+            pane.OriginalOwner = null;
             pane.OriginalOwnerId = null;
             pane.Host ??= this;
         }
@@ -1008,6 +1084,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             // (DataContext="{Binding Host}") renders them blank when re-shown.
             foreach (var child in root.HiddenDockables ?? [])
                 AttachPaneHosts(child);
+            foreach (var child in EnumeratePinnedDockables(root))
+                AttachPaneHosts(child);
         }
     }
 
@@ -1016,7 +1094,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         if (Layout is not { } root)
             return;
         foreach (var pane in EnumeratePanes(root)
-                     .Concat(root.HiddenDockables?.OfType<PaneDock>() ?? []))
+                     .Concat(root.HiddenDockables?.OfType<PaneDock>() ?? [])
+                     .Concat(EnumeratePinnedDockables(root).OfType<PaneDock>()))
         {
             pane.Title = pane.Id switch
             {
