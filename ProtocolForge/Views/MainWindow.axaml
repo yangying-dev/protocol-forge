@@ -11,8 +11,10 @@
         mc:Ignorable="d" d:DesignWidth="1400" d:DesignHeight="900"
         x:Class="ProtocolForge.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
+        Classes="main-window"
         Icon="/Assets/protocol-forge.ico"
         Title="{DynamicResource L10n.App.Title}"
+        TitleFontSize="12"
         IsMenuVisible="False"
         MinWidth="900" MinHeight="600">
 
@@ -24,8 +26,8 @@
     <VisualLayerManager EnableAdornerLayer="False">
     <Grid Name="RootGrid" RowDefinitions="Auto,Auto,Auto,*,Auto">
         <!-- ════════════════ Menu Bar ════════════════ -->
-        <Menu Grid.Row="0">
-            <MenuItem Header="{DynamicResource L10n.Mnu.File}">
+        <Menu Grid.Row="0" Classes="main-menu">
+            <MenuItem Classes="main-menu-item" Header="{DynamicResource L10n.Mnu.File}">
                 <MenuItem Header="{DynamicResource L10n.Mnu.Open}" Click="OnOpenPcapClicked" InputGesture="Ctrl+O" />
                 <MenuItem Header="{DynamicResource L10n.Mnu.Save}" Click="OnSavePcapClicked" InputGesture="Ctrl+S" />
                 <MenuItem Header="{DynamicResource L10n.Mnu.Export}" Click="OnExportPcapClicked" InputGesture="Ctrl+Shift+S" />
@@ -41,7 +43,7 @@
                 <Separator />
                 <MenuItem Header="{DynamicResource L10n.Mnu.Exit}" Click="OnExitClicked" />
             </MenuItem>
-            <MenuItem Header="{DynamicResource L10n.Mnu.View}">
+            <MenuItem Classes="main-menu-item" Header="{DynamicResource L10n.Mnu.View}">
                 <MenuItem Header="{DynamicResource L10n.Mnu.PacketList}" IsChecked="{Binding ShowPacketList, Mode=OneWay}"
                           Command="{Binding TogglePacketListCommand}" ToggleType="CheckBox" />
                 <MenuItem Header="{DynamicResource L10n.Mnu.ProtocolTree}" IsChecked="{Binding ShowProtocolTree, Mode=OneWay}"
@@ -53,14 +55,14 @@
                 <Separator />
                 <MenuItem Header="{DynamicResource L10n.Mnu.ResetLayout}" Click="OnResetLayoutClicked" />
             </MenuItem>
-            <MenuItem Header="{DynamicResource L10n.Find.Label}">
+            <MenuItem Classes="main-menu-item" Header="{DynamicResource L10n.Find.Label}">
                 <MenuItem Header="{DynamicResource L10n.Find.Label}" InputGesture="Ctrl+F" Click="OnFocusFindBox" />
             </MenuItem>
-            <MenuItem Header="{DynamicResource L10n.Lang.Menu}">
+            <MenuItem Classes="main-menu-item" Header="{DynamicResource L10n.Lang.Menu}">
                 <MenuItem x:Name="MenuLangZhCn" Header="{DynamicResource L10n.Lang.ZhCn}" Click="OnMenuLangZhCnClicked" ToggleType="CheckBox"/>
                 <MenuItem x:Name="MenuLangEnUs" Header="{DynamicResource L10n.Lang.EnUs}" Click="OnMenuLangEnUsClicked" ToggleType="CheckBox"/>
             </MenuItem>
-            <MenuItem Header="{DynamicResource L10n.Mnu.Help}">
+            <MenuItem Classes="main-menu-item" Header="{DynamicResource L10n.Mnu.Help}">
                 <MenuItem x:Name="MenuTheme" Header="{DynamicResource L10n.Theme.Menu}">
                     <MenuItem Header="{DynamicResource L10n.Theme.System}" Tag="Default" Click="OnMenuThemeBaseClicked" ToggleType="CheckBox"/>
                     <MenuItem Header="{DynamicResource L10n.Theme.Light}" Tag="Light" Click="OnMenuThemeBaseClicked" ToggleType="CheckBox"/>
@@ -120,7 +122,7 @@
 
                 <!-- Auto-fix toggle -->
                 <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-                    <ComboBox Name="VlanModeCombo" Width="92" Height="26" FontSize="12"
+                    <ComboBox Name="VlanModeCombo" Width="136" Height="26" MinHeight="26" FontSize="12"
                               ItemsSource="{Binding ToolBar.VlanModes}"
                               SelectedItem="{Binding ToolBar.SelectedVlanOption}"
                               DisplayMemberBinding="{Binding Label}"
@@ -134,6 +136,7 @@
                           Content="{DynamicResource L10n.Btn.MultiNic}"
                           IsChecked="{Binding ToolBar.MultiNicSend}"
                           VerticalAlignment="Center"
+                          FontSize="12"
                           ToolTip.Tip="{DynamicResource L10n.Tip.MultiNic}" />
                 <CheckBox Grid.Column="5" Name="AutoFixCheckBox"
                           Content="{DynamicResource L10n.Btn.AutoFix}"
@@ -176,7 +179,7 @@
                           ItemsSource="{Binding ToolBar.AvailableInterfaces}"
                           SelectedItem="{Binding ToolBar.SelectedInterface}"
                           DisplayMemberBinding="{Binding DisplayName}"
-                          Height="26" MinWidth="180"
+                          Height="26" MinHeight="26" FontSize="12" MinWidth="180"
                           HorizontalAlignment="Stretch"
                           VerticalAlignment="Center"
                           PlaceholderText="{DynamicResource L10n.Btn.PlaceholderAdapter}" />

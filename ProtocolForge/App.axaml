@@ -4,6 +4,7 @@
              xmlns:vm="using:ProtocolForge.ViewModels"
              xmlns:controls="using:ProtocolForge.Views.Controls"
              xmlns:suki="clr-namespace:SukiUI;assembly=SukiUI"
+             xmlns:sukic="clr-namespace:SukiUI.Controls;assembly=SukiUI"
              RequestedThemeVariant="Default">
              <!-- "Default" follows the system theme variant; ThemeService overrides it at runtime. -->
 
@@ -25,6 +26,26 @@
              SukiTheme 必须最后加载才能覆盖前面 Fluent/DataGrid/Dock 的基础样式。 -->
         <StyleInclude Source="avares://SukiUI.Dock/Index.axaml" />
         <suki:SukiTheme ThemeColor="Blue" />
+        <!-- Compact SukiWindow chrome spacing. -->
+        <Style Selector="sukic|SukiWindow">
+            <Setter Property="Padding" Value="0" />
+        </Style>
+        <Style Selector="sukic|SukiWindow /template/ Border">
+            <Setter Property="Padding" Value="0,0,0,0" />
+            <Setter Property="BorderThickness" Value="0,0,0,0" />
+        </Style>
+        <Style Selector="sukic|SukiWindow /template/ Grid">
+            <Setter Property="Margin" Value="0" />
+        </Style>
+        <Style Selector="sukic|SukiWindow.main-window /template/ LayoutTransformControl#PART_TitleBar">
+            <Setter Property="Height" Value="28" />
+            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="MaxHeight" Value="28" />
+        </Style>
+        <Style Selector="sukic|SukiWindow.main-window /template/ TextBlock#PART_TitleTextBlock">
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
         <!-- 紧凑密度:不动配色/字体、不改 SukiUI 主题,仅收紧常用控件的内边距与最小高度,
              让整体观感更致密。
              输入类控件的 MinHeight=26 是「压低」SukiUI 自带的宽松下限(TextBox/NumericUpDown
@@ -33,13 +54,27 @@
              这里刻意「不」给 Button 设 MinHeight:全局下限会静默把 Dock chrome 的显式 Height=14
              抬到 26(图标经 Viewbox 放大),该问题已改为在各小按钮上显式定高 Height=26 解决。 -->
         <Style Selector="MenuItem">
-            <Setter Property="Padding" Value="8,3" />
+            <Setter Property="Padding" Value="8,1" />
             <Setter Property="FontSize" Value="12" />
         </Style>
-        <!-- 菜单栏整行高度:SukiUI Menu 模板 Border 硬编码 Height=45,这里覆盖压矮。
-             (SukiUI/Theme/Menu.axaml:114) -->
-        <Style Selector="Menu /template/ Border">
+        <Style Selector="Menu.main-menu">
             <Setter Property="Height" Value="34" />
+            <Setter Property="MinHeight" Value="34" />
+            <Setter Property="Padding" Value="0" />
+        </Style>
+        <Style Selector="Menu.main-menu /template/ Border">
+            <Setter Property="Height" Value="34" />
+            <Setter Property="MinHeight" Value="34" />
+        </Style>
+        <Style Selector="MenuItem.main-menu-item">
+            <Setter Property="Height" Value="34" />
+            <Setter Property="MinHeight" Value="34" />
+        </Style>
+        <Style Selector="MenuItem.main-menu-item /template/ Border#root">
+            <Setter Property="Margin" Value="1" />
+        </Style>
+        <Style Selector="MenuItem.main-menu-item /template/ ContentPresenter#PART_HeaderPresenter">
+            <Setter Property="Margin" Value="8,0" />
         </Style>
         <Style Selector="DataGridCell">
             <Setter Property="Padding" Value="8,3" />
@@ -64,6 +99,28 @@
         </Style>
         <Style Selector="ComboBox">
             <Setter Property="MinHeight" Value="26" />
+        </Style>
+        <!-- ComboBox 可见框撑满控件高度:SukiUI ComboBox 模板根 <Border Padding="5">
+             把可见 GlassCard 四边内缩 5px,Height=26 时可见框只剩 16px(比同排按钮矮),
+             清零该内边距使可见框与工具栏按钮对齐。(SukiUI/Theme/ComboBoxStyles.xaml:57) -->
+        <Style Selector="ComboBox /template/ Border">
+            <Setter Property="Padding" Value="0" />
+        </Style>
+        <Style Selector="ComboBox /template/ sukic|GlassCard#border">
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="Padding" Value="0" />
+        </Style>
+        <Style Selector="ComboBox /template/ Popup">
+            <Setter Property="Margin" Value="0" />
+        </Style>
+        <Style Selector="ComboBoxItem">
+            <Setter Property="MinHeight" Value="26" />
+            <Setter Property="Padding" Value="8,3" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style Selector="ComboBoxItem /template/ sukic|GlassCard#border">
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="Padding" Value="0" />
         </Style>
         <Style Selector="NumericUpDown">
             <Setter Property="MinHeight" Value="26" />

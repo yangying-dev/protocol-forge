@@ -30,7 +30,9 @@
     <Folder Include="Models\" />
     <Folder Include="Services\" />
     <Folder Include="Views\Controls\" />
-    <AvaloniaResource Include="Assets\**" />
+    <!-- Avalonia 12 automatically includes *.axaml. Explicitly include only
+         the non-XAML assets here so custom dictionaries are not embedded twice. -->
+    <AvaloniaResource Include="Assets\**" Exclude="Assets\**\*.axaml" />
     <!-- Lang dictionaries are ALSO .NET manifest resources so the console
          verification harness (tests/pf-verify) can load them without Avalonia. -->
     <EmbeddedResource Include="Assets\Lang\*.json" />
