@@ -32,17 +32,17 @@
                              PlaceholderText="{DynamicResource L10n.Find.Placeholder}"
                              ToolTip.Tip="{DynamicResource L10n.Find.Label}"
                              KeyDown="OnFindKeyDown" />
-                    <Button Content="↓" FontSize="12" Padding="6,2"
+                    <Button Content="↓" FontSize="12" Padding="6,2" Height="26"
                             Command="{Binding FindNextCommand}"
                             ToolTip.Tip="{DynamicResource L10n.Find.Label}" />
-                    <Button Content="↑" FontSize="12" Padding="6,2"
+                    <Button Content="↑" FontSize="12" Padding="6,2" Height="26"
                             Command="{Binding FindPreviousCommand}"
                             ToolTip.Tip="{DynamicResource L10n.Find.Label}" />
                     <Button Content="{DynamicResource L10n.Filter.Apply}"
-                            FontSize="12" Padding="8,2"
+                            FontSize="12" Padding="8,2" Height="26"
                             Command="{Binding ApplyFilterCommand}" />
                     <Button Content="{DynamicResource L10n.Filter.Clear}"
-                            FontSize="12" Padding="8,2"
+                            FontSize="12" Padding="8,2" Height="26"
                             Command="{Binding ClearFilterCommand}" />
                 </StackPanel>
                 <TextBlock Grid.Column="3" FontSize="12" Foreground="{DynamicResource SukiMuteText}"

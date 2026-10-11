@@ -4161,6 +4161,52 @@ int RunHeadlessRenderOnly()
         }
         bool g54StripTabRendered = G54StripTabRendered(g54Window);
 
+        // HG-21: the auto-hide edge tab must be a real toggle. SukiUI.Dock 7.0.1's
+        // ToolPinItemControl binds the tab to PreviewPinnedDockable (show-only), whereas the
+        // upstream Fluent theme binds TogglePreviewPinnedDockable; DockDensity.axaml overrides
+        // the tab back to the toggle. Executing the tab's command twice must return the pane
+        // to its pinned-not-previewing state (leaving HG-18's rehome flow untouched).
+        static ToolPinItemControl? G54FirstPinTab(Visual v)
+        {
+            if (v is ToolPinItemControl tab && tab.IsVisible && tab.Bounds.Width > 0 && tab.Bounds.Height > 0)
+                return tab;
+            foreach (var child in v.GetVisualChildren())
+                if (G54FirstPinTab(child) is { } found) return found;
+            return null;
+        }
+        var g54PinTab = G54FirstPinTab(g54Window);
+        var g54PinTabBtn = g54PinTab?.GetVisualDescendants().OfType<Button>().FirstOrDefault();
+        var g54PinTabDockable = g54PinTab?.DataContext;
+        bool G54PinPreviewing() => g54PinTabDockable is null
+            ? false
+            : g54Vm.Layout!.PinnedDock?.VisibleDockables?.Contains(g54PinTabDockable) == true;
+        bool g54TabCommandBound = g54PinTabBtn?.Command is not null;
+        g54PinTabBtn?.Command?.Execute(g54PinTabBtn.CommandParameter);
+        Pump();
+        bool g54TabClickShows = G54PinPreviewing();
+        g54PinTabBtn?.Command?.Execute(g54PinTabBtn.CommandParameter);
+        Pump();
+        bool g54TabClickHides = !G54PinPreviewing();
+        Report("HG-21 the auto-hide edge tab toggles the preview (click shows, re-click hides)",
+            g54TabCommandBound && g54TabClickShows && g54TabClickHides,
+            $"tabFound={g54PinTab is not null}, tabBtn={g54PinTabBtn is not null}, commandBound={g54TabCommandBound}, clickShows={g54TabClickShows}, reClickHides={g54TabClickHides}");
+
+        // HG-22: the edge tab must carry the localized context menu on the whole tab
+        // (the Button), not just on the label (the TextBlock): SukiUI.Dock attaches the
+        // menu to the TextBlock only, so a right-click on the tab strip outside the label
+        // lands on the Command Button and bubbles to menu-less ancestors -- real-device
+        // report. Assert the tab Button now owns the 3-item menu with all items visible.
+        var g54TabMenu = g54PinTabBtn?.ContextMenu;
+        var g54TabMenuItems = g54TabMenu?.Items.OfType<MenuItem>().ToList();
+        bool g54TabMenuOk =
+            g54PinTabBtn is not null &&
+            g54TabMenu is not null &&
+            g54TabMenuItems is not null && g54TabMenuItems.Count == 3 &&
+            g54TabMenuItems.All(m => m.IsVisible);
+        Report("HG-22 the edge tab's context menu covers the whole tab with 3 visible items",
+            g54TabMenuOk,
+            $"btn={g54PinTabBtn is not null}, menu={g54TabMenu is not null}, items=[{string.Join("|", (g54TabMenuItems ?? new List<MenuItem>()).Select(m => m.IsVisible))}]");
+
         g54Vm.TogglePacketListCommand.Execute(null);
         g54Vm.ToggleProtocolTreeCommand.Execute(null);
         g54Vm.ToggleHexEditorCommand.Execute(null);
@@ -4172,6 +4218,18 @@ int RunHeadlessRenderOnly()
         Report("HG-18 pinning panes unchecks the View menu, renders an edge tab, and the menu re-homes each into its own dock",
             g54AllPinned && g54MenuUnchecked && g54StripTabRendered && g54AllRehomed && g54NonePinned && g54MenuCheckedAgain && g54HostsSet,
             $"allPinned={g54AllPinned}, menuUnchecked={g54MenuUnchecked}, stripTabRendered={g54StripTabRendered}, allRehomed={g54AllRehomed}, nonePinned={g54NonePinned}, menuCheckedAgain={g54MenuCheckedAgain}, hosts={g54HostsSet}");
+
+        // HG-24: SukiUI 7.0.1 的 SukiWindow 模板未包含 VisualLayerManager(标准 Window 模板内嵌),
+        // 窗口树因此缺少 LightDismissOverlayLayer 宿主,所有浮层(ContextMenu/Flyout/ComboBox 下拉/
+        // ToolTip)都无法「点击外部关闭」——实机报告 packet 列表右键菜单点哪儿都不消失。MainWindow
+        // 内容外层已补 VisualLayerManager;断言浮层放置目标(DataGrid)确能解析到该层管理器。
+        var g54GridMenuHost = ByName<DataGrid>(g54Window!, "PacketListView");
+        if (g54GridMenuHost is not null)
+            for (int i = 0; i < 3; i++) { AvaloniaHeadlessPlatform.ForceRenderTimerTick(); Pump(); }
+        var g54LayerManager = g54GridMenuHost?.FindAncestorOfType<Avalonia.Controls.Primitives.VisualLayerManager>();
+        Report("HG-24 the packet-list DataGrid resolves a VisualLayerManager (menus close on outside click)",
+            g54LayerManager is not null,
+            $"grid={g54GridMenuHost is not null}, layerManager={g54LayerManager is not null}");
 
         foreach (var id in g54PinIds)
             g54Vm.Factory.PinDockable(G54Pane(g54Vm, id)!);
@@ -4362,6 +4420,42 @@ int RunHeadlessRenderOnly()
             Report("HG-20 拖动窗格 chrome 标题栏显示停靠指示(五方向选择器已注册 + 指示器点亮 + 释放移除)",
                 g54GripIsDockable && g54GuidesShown,
                 $"gripIsDockable={g54GripIsDockable}; {g54DragOut}");
+        }
+
+        // HG-23: 关闭浮动窗口时,其中的面板必须移回主布局(PaneDock 不能随浮动根被丢弃成孤儿)。
+        // 根因:Dock 关闭窗口会把面板 HideDockable 进「浮动根」的 HiddenDockables,随后 RemoveWindow
+        // 丢弃整棵浮动根。修复:MainWindowViewModel 订阅 Factory.WindowClosing,在丢弃前把面板移回
+        // 其 HomeDock。这里浮出 packet-list,再触发 WindowClosing,断言面板回到主布局可见树。
+        if (G54Pane(g54Vm, DockLayoutFactory.PacketListId) is { } g54FloatPane)
+        {
+            bool g54HomeBefore = g54Vm.Factory.Find(g54Vm.Layout!, d => d.Id == DockLayoutFactory.TopDockId).OfType<IDock>().Any();
+            g54Vm.Factory.FloatDockable(g54FloatPane);
+            for (int i = 0; i < 5; i++) Pump();
+            var g54FloatRoot = g54Vm.Factory.FindRoot(g54FloatPane);
+            var g54FloatWin = g54FloatRoot?.Window;
+            bool g54Floated = g54FloatWin is not null
+                && !ReferenceEquals(g54FloatRoot, g54Vm.Layout)
+                && g54Vm.Factory.Find(g54FloatRoot!, d => d.Id == DockLayoutFactory.PacketListId).Any()
+                && !G54Rehomed(g54Vm, DockLayoutFactory.PacketListId);
+            bool g54HomeAfterFloat = g54Vm.Factory.Find(g54Vm.Layout!, d => d.Id == DockLayoutFactory.TopDockId).OfType<IDock>().Any();
+            bool g54CanClose = g54FloatWin is not null && g54Vm.Factory.OnWindowClosing(g54FloatWin);
+            Pump();
+            bool g54RehomedAfterClose = G54Rehomed(g54Vm, DockLayoutFactory.PacketListId);
+            bool g54PaneInFloat = g54FloatRoot is not null && g54Vm.Factory.Find(g54FloatRoot, d => d.Id == DockLayoutFactory.PacketListId).Any();
+            bool g54PaneAnywhereInMain = g54Vm.Factory.Find(g54Vm.Layout!, d => d.Id == DockLayoutFactory.PacketListId).Any();
+            var g54MainOrder = g54Vm.Factory.Find(g54Vm.Layout!, d => d.Id == DockLayoutFactory.MainLayoutId)
+                .OfType<IDock>().FirstOrDefault()?.VisibleDockables;
+            bool g54TopRestored = g54MainOrder is { Count: >= 2 }
+                && g54MainOrder[0].Id == DockLayoutFactory.TopDockId
+                && g54MainOrder[1] is Dock.Model.Controls.IProportionalDockSplitter;
+            Report("HG-23 closing a floating pane's window re-homes the pane instead of orphaning it",
+                g54Floated && g54CanClose && g54RehomedAfterClose && g54TopRestored,
+                $"floated={g54Floated}, canClose={g54CanClose}, rehomedAfterClose={g54RehomedAfterClose}, topRestored={g54TopRestored}, homeBefore={g54HomeBefore}, homeAfterFloat={g54HomeAfterFloat}, paneInFloat={g54PaneInFloat}, paneAnywhereInMain={g54PaneAnywhereInMain}");
+        }
+        else
+        {
+            Report("HG-23 closing a floating pane's window re-homes the pane instead of orphaning it",
+                false, "packet-list pane not found in main layout");
         }
 
         g54Window.Close();

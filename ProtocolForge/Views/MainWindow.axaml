@@ -16,6 +16,12 @@
         IsMenuVisible="False"
         MinWidth="900" MinHeight="600">
 
+    <!-- SukiUI 7.0.1 的 SukiWindow 模板未包含 VisualLayerManager(标准 Window 模板内嵌),窗口树
+         因此没有 LightDismissOverlayLayer,所有浮层(ContextMenu/Flyout/ComboBox 下拉/ToolTip)
+         都无法「点击外部关闭」(实机报告:packet 列表右键菜单点哪儿都不消失、空列表也弹)。这里在
+         内容外层补一个 VisualLayerManager 恢复轻量关闭层;EnableAdornerLayer=False 以免额外引入
+         AdornerLayer 改变既有行为(停靠指示已由 App.axaml.cs 的 UseFloatingDockAdorner 走浮动层)。 -->
+    <VisualLayerManager EnableAdornerLayer="False">
     <Grid Name="RootGrid" RowDefinitions="Auto,Auto,Auto,*,Auto">
         <!-- ════════════════ Menu Bar ════════════════ -->
         <Menu Grid.Row="0">
@@ -75,7 +81,7 @@
                 <Button Grid.Column="0" Name="StartSendBtn"
                         Command="{Binding ToolBar.StartSendCommand}"
                         IsEnabled="{Binding ToolBar.CanSend}"
-                        Padding="10,3" Margin="2,0"
+                        Padding="10,3" Margin="2,0" Height="26"
                         Background="#4CAF50" Foreground="White"
                         FontWeight="Bold" FontSize="13"
                         BorderThickness="0" CornerRadius="4">
@@ -89,7 +95,7 @@
                 <Button Grid.Column="1" Name="PauseSendBtn"
                         Command="{Binding ToolBar.TogglePauseSendCommand}"
                         IsEnabled="{Binding ToolBar.IsSending}"
-                        Padding="10,3" Margin="2,0"
+                        Padding="10,3" Margin="2,0" Height="26"
                         Background="#FF9800" Foreground="White"
                         FontWeight="Bold" FontSize="13"
                         BorderThickness="0" CornerRadius="4">
@@ -102,7 +108,7 @@
                 <Button Grid.Column="2" Name="StopSendBtn"
                         Command="{Binding ToolBar.StopSendCommand}"
                         IsEnabled="{Binding ToolBar.IsSending}"
-                        Padding="10,3" Margin="2,0"
+                        Padding="10,3" Margin="2,0" Height="26"
                         Background="#F44336" Foreground="White"
                         FontWeight="Bold" FontSize="13"
                         BorderThickness="0" CornerRadius="4">
@@ -231,4 +237,5 @@
             </Grid>
         </Border>
     </Grid>
+    </VisualLayerManager>
 </suki:SukiWindow>

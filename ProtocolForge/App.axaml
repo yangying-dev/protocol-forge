@@ -26,8 +26,12 @@
         <StyleInclude Source="avares://SukiUI.Dock/Index.axaml" />
         <suki:SukiTheme ThemeColor="Blue" />
         <!-- 紧凑密度:不动配色/字体、不改 SukiUI 主题,仅收紧常用控件的内边距与最小高度,
-             让整体观感更致密。只调整 Padding/Margin/MinHeight,且 MinHeight 不超过
-             工具栏已用的 Height=28,故对显式定高的控件是无害的空操作。 -->
+             让整体观感更致密。
+             输入类控件的 MinHeight=26 是「压低」SukiUI 自带的宽松下限(TextBox/NumericUpDown
+             主题为 36、ComboBox 为 45),并非单纯垫高——删掉它们会让工具栏/统计栏输入回涨到
+             36/45,故保留。
+             这里刻意「不」给 Button 设 MinHeight:全局下限会静默把 Dock chrome 的显式 Height=14
+             抬到 26(图标经 Viewbox 放大),该问题已改为在各小按钮上显式定高 Height=26 解决。 -->
         <Style Selector="MenuItem">
             <Setter Property="Padding" Value="8,3" />
             <Setter Property="FontSize" Value="12" />
@@ -54,9 +58,6 @@
         </Style>
         <Style Selector="ListBoxItem">
             <Setter Property="Padding" Value="8,3" />
-        </Style>
-        <Style Selector="Button">
-            <Setter Property="MinHeight" Value="26" />
         </Style>
         <Style Selector="TextBox">
             <Setter Property="MinHeight" Value="26" />

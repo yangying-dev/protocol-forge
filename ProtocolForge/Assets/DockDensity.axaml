@@ -27,16 +27,16 @@
                     x:CompileBindings="True">
 
   <MenuFlyout x:Key="ToolChromeControlContextMenu">
-    <MenuItem Header="_Float"
+    <MenuItem Header="{DynamicResource L10n.Dock.Float}"
               Command="{Binding Owner.Factory.FloatDockable}"
               CommandParameter="{Binding ActiveDockable}"
               IsVisible="{Binding ActiveDockable.CanFloat, FallbackValue=False}"/>
-    <MenuItem Header="_Dock"
+    <MenuItem Header="{DynamicResource L10n.Dock.Dock}"
               Command="{Binding Owner.Factory.PinDockable}"
               CommandParameter="{Binding ActiveDockable}"
               IsEnabled="{Binding ActiveDockable.OriginalOwner, Converter={x:Static aconv:ObjectConverters.IsNotNull}, FallbackValue=False}"
               IsVisible="{Binding ActiveDockable.CanPin, FallbackValue=False}"/>
-    <MenuItem Header="_Auto Hide"
+    <MenuItem Header="{DynamicResource L10n.Dock.AutoHide}"
               Command="{Binding Owner.Factory.PinDockable}"
               CommandParameter="{Binding ActiveDockable}"
               IsEnabled="{Binding ActiveDockable.OriginalOwner, Converter={x:Static aconv:ObjectConverters.IsNull}, FallbackValue=False}">
@@ -47,7 +47,7 @@
         </MultiBinding>
       </MenuItem.IsVisible>
     </MenuItem>
-    <MenuItem Header="_Close"
+    <MenuItem Header="{DynamicResource L10n.Dock.Close}"
               Command="{Binding Owner.Factory.CloseDockable}"
               CommandParameter="{Binding ActiveDockable}"
               IsVisible="{Binding ActiveDockable.CanClose, FallbackValue=False}"/>
@@ -137,6 +137,7 @@
                 </Panel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                   <Button x:Name="PART_MenuButton"
+                          DataContext="{Binding $parent[db:ToolChromeControl].DataContext}"
                           Theme="{StaticResource ChromeButton}"
                           Flyout="{StaticResource ToolChromeControlContextMenu}">
                     <Viewbox Margin="2">
@@ -226,9 +227,14 @@
       <Setter Property="(TextElement.FontSize)" Value="12" />
     </Style>
 
+    <!-- 上游把「激活标题」前景设为 DockApplicationAccentForegroundBrush(=#F0F0F0 近白,
+         定义在 Dock.Avalonia.Themes.Fluent/Accents/Fluent.axaml),是配「激活时 Grip 铺满
+         强调色背景」成对使用的;本覆盖把激活 Grip 背景改成 Transparent(露出浅色卡片),
+         近白字压在浅底上即隐形(浅色主题实机报告「点击视图后标题名看不见」)。
+         改用随主题自适应的正文色 SukiText:深底白字、浅底深字,激活态始终可读。 -->
     <Style Selector="^:active /template/ TextBlock#PART_Title">
       <Setter Property="Background" Value="Transparent" />
-      <Setter Property="Foreground" Value="{DynamicResource DockApplicationAccentForegroundBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource SukiText}" />
     </Style>
 
     <Style Selector="^/template/ Grid#PART_Grip">
@@ -287,7 +293,14 @@
           Top/Bottom/Left/Right/Fill。SukiUI 注释掉的指示箭头资源路径(avares://Dock.Avalonia/…)
           在 Dock.Avalonia 中不存在,实际内嵌于 Dock.Avalonia.Themes.Fluent(/Assets/…),此处用
           正确 URI 恢复箭头图标。
-       HG-18(pf-verify 无头 UI 模式)把这两处修复固化为回归断言:图钉后边条必须渲染出可见 tab。 -->
+3) ToolPinItemControl —— SukiUI 模板把边缘标签按钮绑到 PreviewPinnedDockable(仅"显示",
+          再点不收起),与上游 Fluent 的 TogglePreviewPinnedDockable 语义相反;本覆盖改绑 Toggle
+          (点一次展开、再点收起),并本地化其右键菜单(_Float/_Show/_Close → L10n.Dock.*)。
+          右键菜单挂到整条标签的 Button 上(而非 SukiUI 原版的文字 TextBlock 上):标签条可
+          命中区是整条按钮,原版在非文字区域右击会冒泡到无菜单的祖先而无任何弹出(实机报告)。
+        HG-18/HG-21/HG-22(pf-verify 无头 UI 模式)把这三处修复固化为回归断言:图钉后边条必须
+        渲染出可见 tab,边缘标签点击必须"先显示、再点收起"(toggle 语义),且标签整条携带
+        3 项本地化右键菜单。 -->
   <ControlTheme x:Key="{x:Type db:ToolPinnedControl}" TargetType="db:ToolPinnedControl">
 
     <Setter Property="Orientation" Value="Vertical" />
@@ -304,6 +317,58 @@
                     ds:DockProperties.IsDropArea="True" />
       </ItemsPanelTemplate>
     </Setter>
+
+  </ControlTheme>
+
+  <ContextMenu x:Key="ToolPinItemControlContextMenu" x:DataType="core:IDockable">
+    <MenuItem Header="{DynamicResource L10n.Dock.Float}"
+              Command="{Binding Owner.Factory.FloatDockable}"
+              CommandParameter="{Binding}"
+              IsVisible="{Binding CanFloat}" />
+    <MenuItem Header="{DynamicResource L10n.Dock.ShowHide}"
+              Command="{Binding Owner.Factory.TogglePreviewPinnedDockable}"
+              CommandParameter="{Binding}"
+              IsVisible="{Binding CanPin}" />
+    <MenuItem Header="{DynamicResource L10n.Dock.Close}"
+              Command="{Binding Owner.Factory.CloseDockable}"
+              CommandParameter="{Binding}"
+              IsVisible="{Binding CanClose}" />
+  </ContextMenu>
+
+  <ControlTheme x:Key="{x:Type db:ToolPinItemControl}" TargetType="db:ToolPinItemControl" x:DataType="core:IDockable">
+
+    <Setter Property="Template">
+      <ControlTemplate>
+        <db:DockableControl TrackingMode="Pinned">
+          <LayoutTransformControl x:Name="PART_LayoutTransformControl">
+            <Button Background="Transparent"
+                    BorderBrush="Transparent"
+                    BorderThickness="0"
+                    CornerRadius="0"
+                    Command="{Binding Owner.Factory.TogglePreviewPinnedDockable}"
+                    CommandParameter="{Binding}"
+                    ContextMenu="{DynamicResource ToolPinItemControlContextMenu}"
+                    IsVisible="{Binding CanPin}">
+              <TextBlock Text="{Binding Title}"
+                         VerticalAlignment="Center"
+                         HorizontalAlignment="Left" />
+            </Button>
+          </LayoutTransformControl>
+        </db:DockableControl>
+      </ControlTemplate>
+    </Setter>
+
+    <Style Selector="^[Orientation=Vertical]/template/ LayoutTransformControl#PART_LayoutTransformControl">
+      <Setter Property="LayoutTransform">
+        <RotateTransform Angle="270" />
+      </Setter>
+    </Style>
+
+    <Style Selector="^[Orientation=Horizontal]/template/ LayoutTransformControl#PART_LayoutTransformControl">
+      <Setter Property="LayoutTransform">
+        <RotateTransform Angle="0" />
+      </Setter>
+    </Style>
 
   </ControlTheme>
 

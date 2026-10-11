@@ -37,11 +37,11 @@
                          Text="{Binding CustomStatisticsTap}"
                          PlaceholderText="{DynamicResource L10n.Stats.CustomTap}"
                          KeyDown="OnCustomTapKeyDown" />
-                <Button Grid.Column="3" Margin="4,0" Padding="8,2" FontSize="12"
+                <Button Grid.Column="3" Margin="4,0" Padding="8,2" FontSize="12" Height="26"
                         Content="{DynamicResource L10n.Rv.Show}"
                         ToolTip.Tip="{DynamicResource L10n.Rv.Title}"
                         Command="{Binding ShowReassembledBytesCommand}" />
-                <Button Grid.Column="4" Margin="4,0" Padding="8,2" FontSize="12"
+                <Button Grid.Column="4" Margin="4,0" Padding="8,2" FontSize="12" Height="26"
                         Content="{DynamicResource L10n.Stats.Refresh}"
                         Click="OnRefreshStatisticsClick" />
                 <TextBlock Grid.Column="5" Margin="8,0" FontSize="11" Foreground="{DynamicResource SukiMuteText}"

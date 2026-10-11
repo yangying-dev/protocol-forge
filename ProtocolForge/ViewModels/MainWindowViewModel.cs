@@ -210,6 +210,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         Factory.DockableRestored += OnDockableRestored;
         Factory.DockablePinned += OnDockablePinned;
         Factory.DockableUnpinned += OnDockableUnpinned;
+        Factory.WindowClosing += OnFloatingWindowClosing;
 
         var saved = _layoutService.Load();
         if (restoredLayout is not null)
@@ -1041,6 +1042,85 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         }
         SyncPaneVisibility();
         Dispatcher.UIThread.Post(SaveLayout);
+    }
+
+    // Dock 关闭浮动窗口时(CloseWindow)会把面板 HideDockable 进「浮动根」的 HiddenDockables,
+    // 随后 RemoveWindow 丢弃整棵浮动根,面板即成找不到的孤儿(除非重置布局)。WindowClosing 在
+    // 丢弃前触发且面板仍在浮动根可见树中,此时移回 HomeDock 即可保住面板。但浮出面板会清空其
+    // HomeDock,Dock 的 RemoveDockable(collapse:true) 随即把该空 ToolDock 从布局移除,故需先按
+    // 默认布局重建这个空 HomeDock(空 dock 在 ProportionalStackPanel 中按 IsEmpty 折叠为零尺寸,不会留白)。
+    private void OnFloatingWindowClosing(object? sender, WindowClosingEventArgs e)
+    {
+        if (Layout is not { } root || e.Window?.Layout is not IDock windowRoot)
+            return;
+        if (ReferenceEquals(windowRoot, root))
+            return;
+        var panes = EnumeratePanes(windowRoot).ToList();
+        if (panes.Count == 0)
+            return;
+        foreach (var pane in panes)
+        {
+            if (pane.Owner is not IDock source)
+                continue;
+            if (EnsureHomeDock(root, pane.Id) is { } home)
+            {
+                Factory.MoveDockable(source, home, pane, null);
+                home.ActiveDockable = pane;
+            }
+        }
+        SyncPaneVisibility();
+        Dispatcher.UIThread.Post(SaveLayout);
+    }
+
+    private IDock? EnsureHomeDock(IRootDock root, string paneId)
+    {
+        if (HomeDockId(paneId) is not { } homeId)
+            return null;
+        if (Factory.Find(root, d => d.Id == homeId).OfType<IDock>().FirstOrDefault() is { } existing)
+            return existing;
+
+        var template = Factory.CreateLayout();
+        if (Factory.Find(template, d => d.Id == homeId).OfType<IDock>().FirstOrDefault() is not { } freshHome)
+            return null;
+
+        // The template is never InitLayout'd, so freshHome.Owner is null; locate its parent by scan.
+        IDock? freshParent = null;
+        var freshIndex = -1;
+        foreach (var candidate in Factory.Find(template, _ => true).OfType<IDock>())
+        {
+            if (candidate.VisibleDockables is { } list && (freshIndex = list.IndexOf(freshHome)) >= 0)
+            {
+                freshParent = candidate;
+                break;
+            }
+        }
+
+        var liveParent = (freshParent is not null
+                ? Factory.Find(root, d => d.Id == freshParent.Id).OfType<IDock>().FirstOrDefault()
+                : null)
+            ?? Factory.Find(root, d => d.Id == DockLayoutFactory.MainLayoutId).OfType<IDock>().FirstOrDefault();
+        if (liveParent?.VisibleDockables is null)
+            return null;
+
+        var insertion = new List<IDockable> { freshHome };
+        var index = liveParent.VisibleDockables.Count;
+        if (freshParent?.VisibleDockables is { } siblings && freshIndex >= 0)
+        {
+            index = Math.Min(freshIndex, liveParent.VisibleDockables.Count);
+            if (freshIndex + 1 < siblings.Count && siblings[freshIndex + 1] is IProportionalDockSplitter splitterAfter)
+                insertion.Add(splitterAfter);
+            else if (freshIndex - 1 >= 0 && siblings[freshIndex - 1] is IProportionalDockSplitter splitterBefore)
+                insertion.Insert(0, splitterBefore);
+        }
+
+        freshHome.VisibleDockables?.Clear();
+        foreach (var item in insertion)
+        {
+            liveParent.VisibleDockables.Insert(index++, item);
+            Factory.InitDockable(item, liveParent);
+        }
+        liveParent.ActiveDockable ??= freshHome;
+        return freshHome;
     }
 
     private void ApplyLegacyVisibility(LayoutState saved)
