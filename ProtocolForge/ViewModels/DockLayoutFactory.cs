@@ -122,5 +122,17 @@ public sealed class DockLayoutFactory : Factory
         };
         HideToolsOnClose = true;
         base.InitLayout(layout);
+        ApplyCompactToolChrome(layout);
+    }
+
+    // 四个面板标题栏统一改为悬停显示:平时收成 1px,悬停才展开,拖动/按钮全保留。
+    // 放在 InitLayout 而非 CreateLayout:存档的 docklayout.json 不含 GripMode(反序列化
+    // 回落 Visible=0),只有在这里对所有 ToolDock 归一,旧布局用户升级后才不会退回常显。
+    private void ApplyCompactToolChrome(IDockable layout)
+    {
+        if (layout is not IDock dock)
+            return;
+        foreach (var toolDock in Find(dock, _ => true).OfType<IToolDock>())
+            toolDock.GripMode = GripMode.AutoHide;
     }
 }

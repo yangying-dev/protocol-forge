@@ -4317,6 +4317,21 @@ int RunHeadlessRenderOnly()
         // DockTarget 挂载、五个方向选择器均已注册(DockOperation)、中心选择器为 Fill、
         // 主题为我们覆盖的 DockTarget、释放后指示器随浮动窗关闭移除。
         {
+            // GripMode=AutoHide 下未悬停时 chrome 头整体折叠,没有可见的 PART_Grip——真实交互是
+            // 「鼠标移到窗格顶部 1px 标题条 → 标题栏浮出 → 拖动重排」。先复现悬停那一步
+            // (移到仍可见的 1px PART_Panel)让标题栏展开,再采集 grip 并拖动。
+            var g54Strip = g54Window.GetVisualDescendants().OfType<Control>()
+                .FirstOrDefault(c => c.Name == "PART_Panel" && c.IsVisible && c.Bounds.Width > 0
+                    && c.FindAncestorOfType<ToolChromeControl>() is { } ch
+                    && (ch.DataContext as IDock)?.ActiveDockable is PaneDock);
+            if (g54Strip is not null
+                && g54Strip.TranslatePoint(new Point(g54Strip.Bounds.Width / 2, g54Strip.Bounds.Height / 2), g54Window) is { } g54Hover)
+            {
+                g54Window.MouseMove(g54Hover, Avalonia.Input.RawInputModifiers.None);
+                Pump();
+            }
+            Detail($"HG-20 hover-strip: {(g54Strip is null ? "absent" : "found")}");
+
             var g54AllGrips = g54Window.GetVisualDescendants().OfType<Control>()
                 .Where(c => c.Name == "PART_Grip" && c.IsVisible && c.Bounds.Width > 0).ToList();
             var g54GripRow = g54AllGrips.Select(g =>

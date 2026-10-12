@@ -180,13 +180,18 @@
             </Grid>
           </Border>
           <Panel x:Name="PART_Panel"
-                 Background="{TemplateBinding BorderBrush}"
-                 Height="1"
-                 VerticalAlignment="Top"
-                 Grid.Row="{Binding GripMode, Converter={x:Static converters:GripModeConverters.GridRowAutoHideConverter}}" />
+                  Background="{TemplateBinding BorderBrush}"
+                  Height="1"
+                  VerticalAlignment="Top"
+                  Grid.Row="{Binding GripMode, Converter={x:Static converters:GripModeConverters.GridRowAutoHideConverter}}" />
         </Grid>
       </ControlTemplate>
     </Setter>
+
+    <!-- AutoHide 悬停时给内容预留标题栏空间,避免标题栏浮出时遮挡第一行内容 -->
+    <Style Selector="^:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Margin" Value="0,18,0,0" />
+    </Style>
 
     <Style Selector="^/template/ Border#PART_Border">
       <Setter Property="BorderThickness" Value="0 0 0 0" />
