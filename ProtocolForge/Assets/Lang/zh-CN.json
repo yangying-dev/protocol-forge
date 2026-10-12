@@ -27,8 +27,8 @@
 
   "Btn.Start": "启动",
   "Btn.Stop": "停止",
-  "Btn.Pause": "⏸ 暂停",
-  "Btn.Resume": "▶ 继续",
+  "Btn.Pause": "暂停",
+  "Btn.Resume": "继续",
   "Btn.AutoFix": "自动修复",
   "Btn.Interval": "间隔(ms)",
   "Btn.Loops": "循环次数",

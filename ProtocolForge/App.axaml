@@ -136,6 +136,13 @@
                     </Style.Animations>
                 </Style>
             </ControlTheme>
+
+            <!-- 发送控制按钮图标:SukiUI 7.0.1 内置 Icons 目录(SukiUI.Content.Icons)只有窗口/导航类图标,
+                 无 play/pause/stop,故本地补三条 Material Icons 标准路径(24×24 viewbox),供工具栏按钮的 PathIcon 使用。
+                 Material Icons 采用 Apache-2.0,SukiUI 自身的 Icons 亦来源于此,风格一致。 -->
+            <StreamGeometry x:Key="Icon.Play">M8 5v14l11-7z</StreamGeometry>
+            <StreamGeometry x:Key="Icon.Pause">M6 19h4V5H6v14zm8-14v14h4V5h-4z</StreamGeometry>
+            <StreamGeometry x:Key="Icon.Stop">M6 6h12v12H6z</StreamGeometry>
         </ResourceDictionary>
     </Application.Resources>
 

@@ -87,43 +87,42 @@
         <Border Grid.Row="1" Name="ToolBarPanel"
                 Background="{DynamicResource SukiStrongBackground}" Padding="6,0" BorderBrush="{DynamicResource SukiBorderBrush}" BorderThickness="0,0,0,1">
             <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto">
-                <!-- Start Button -->
-                <Button Grid.Column="0" Name="StartSendBtn"
+                <!-- Start Button:配色/前景走 SukiUI 语义 class(Success=主题绿,亮暗自适应、含 hover/pressed)。
+                     不再硬编码 #4CAF50;保留紧凑定高 Padding/Height/FontSize(SukiUI 基础按钮 Padding=20,8 会在 26px 下定高裁字)。 -->
+                <Button Grid.Column="0" Name="StartSendBtn" Classes="Success"
                         Command="{Binding ToolBar.StartSendCommand}"
                         IsEnabled="{Binding ToolBar.CanSend}"
                         Padding="10,3" Margin="2,0" Height="26" VerticalAlignment="Center"
-                        Background="#4CAF50" Foreground="White"
-                        FontWeight="Bold" FontSize="13"
-                        BorderThickness="0" CornerRadius="4">
+                        FontSize="13">
                     <StackPanel Orientation="Horizontal" Spacing="4">
-                        <TextBlock Text="▶" FontSize="11" />
+                        <PathIcon Data="{StaticResource Icon.Play}" Width="12" Height="12" />
                         <TextBlock Text="{DynamicResource L10n.Btn.Start}" />
                     </StackPanel>
                 </Button>
 
-                <!-- Pause/Resume Button -->
-                <Button Grid.Column="1" Name="PauseSendBtn"
+                <!-- Pause/Resume Button:按钮在「暂停↔继续」间切换,图标随之切换(发送中=⏸,已暂停=▶)。 -->
+                <Button Grid.Column="1" Name="PauseSendBtn" Classes="Warning"
                         Command="{Binding ToolBar.TogglePauseSendCommand}"
                         IsEnabled="{Binding ToolBar.IsSending}"
                         Padding="10,3" Margin="2,0" Height="26" VerticalAlignment="Center"
-                        Background="#FF9800" Foreground="White"
-                        FontWeight="Bold" FontSize="13"
-                        BorderThickness="0" CornerRadius="4">
+                        FontSize="13">
                     <StackPanel Orientation="Horizontal" Spacing="4">
-                        <TextBlock Text="{Binding ToolBar.PauseButtonText}" FontSize="12" />
+                        <PathIcon Data="{StaticResource Icon.Pause}" Width="12" Height="12"
+                                  IsVisible="{Binding !ToolBar.IsPaused}" />
+                        <PathIcon Data="{StaticResource Icon.Play}" Width="12" Height="12"
+                                  IsVisible="{Binding ToolBar.IsPaused}" />
+                        <TextBlock Text="{Binding ToolBar.PauseButtonText}" />
                     </StackPanel>
                 </Button>
 
                 <!-- Stop Button -->
-                <Button Grid.Column="2" Name="StopSendBtn"
+                <Button Grid.Column="2" Name="StopSendBtn" Classes="Danger"
                         Command="{Binding ToolBar.StopSendCommand}"
                         IsEnabled="{Binding ToolBar.IsSending}"
                         Padding="10,3" Margin="2,0" Height="26" VerticalAlignment="Center"
-                        Background="#F44336" Foreground="White"
-                        FontWeight="Bold" FontSize="13"
-                        BorderThickness="0" CornerRadius="4">
+                        FontSize="13">
                     <StackPanel Orientation="Horizontal" Spacing="4">
-                        <TextBlock Text="■" FontSize="11" />
+                        <PathIcon Data="{StaticResource Icon.Stop}" Width="12" Height="12" />
                         <TextBlock Text="{DynamicResource L10n.Btn.Stop}" />
                     </StackPanel>
                 </Button>

@@ -27,8 +27,8 @@
 
   "Btn.Start": "Start",
   "Btn.Stop": "Stop",
-  "Btn.Pause": "⏸ Pause",
-  "Btn.Resume": "▶ Resume",
+  "Btn.Pause": "Pause",
+  "Btn.Resume": "Resume",
   "Btn.AutoFix": "Auto-fix",
   "Btn.Interval": "Interval(ms)",
   "Btn.Loops": "Loops",
