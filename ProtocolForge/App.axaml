@@ -239,6 +239,14 @@
         <Style Selector="TextBox">
             <Setter Property="MinHeight" Value="26" />
         </Style>
+        <Style Selector="TextBox.filter-valid">
+            <Setter Property="BorderBrush" Value="#4CAF50" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="TextBox.filter-invalid">
+            <Setter Property="BorderBrush" Value="#F44336" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
         <Style Selector="ComboBox">
             <Setter Property="MinHeight" Value="26" />
         </Style>

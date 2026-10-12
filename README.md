@@ -56,7 +56,7 @@ so no real operator capture is involved and reproducing them does not require co
   3. **UDP socket** — transport-layer fallback (no privileges required)
   Sending is driven by a configurable **interval (ms)** and **loop count**. An **Auto-fix** toggle repairs IPv4/IPv6 and TCP/UDP checksums before injection, and rewrites the source address to the selected interface's own.
 - **Toolbar UI** — Start/Pause/Stop send controls with a network adapter dropdown, send interval and loop count inputs, an Auto-fix toggle, live sent/failed counters, and a status bar.
-- **Display Filter** — A tshark display filter applied to the packet list. The filter is evaluated by tshark at load time, so the grid only ever holds matching packets and every row keeps the frame number its bytes came from. Reachable from the View menu and the panel header; Enter in the box applies it.
+- **Display Filter** — A tshark display filter applied to the packet list. The filter is evaluated by tshark at load time, so the grid only ever holds matching packets and every row keeps the frame number its bytes came from. In the packet-list panel header, Enter (or **Apply**) applies it. As you type, the expression is validated live against tshark — a green border means it parses, a red border flags a syntax error and shows the reason in the tooltip — and a dropdown autocompletes field and protocol names from tshark's full field catalog (Up/Down to move, Tab/Enter to accept, Esc to dismiss).
 - **Find** — Search the packet list columns and the selected packet's protocol tree, forward or backward. A tree hit expands and reveals the matching node rather than rebuilding the tree.
 - **Statistics Panel** — Runs `conv,*`, `endpoints,ip`, `io,phs` (protocol hierarchy), `io,stat` and `expert` taps, honouring the display filter where the tap accepts one, and accepts any other tshark `-z` invocation typed into the panel. The follow-stream box covers TCP and UDP conversations. Shown from the View menu; like every panel it is a dockable pane. tshark pads its own output for humans, so it is shown verbatim instead of being re-laid-out.
 - **PCAPNG Write-Back** — A capture opened as `.pcapng` is saved as PCAPNG, keeping the interface description, snaplen and timestamp resolution. Previously any `.pcapng` was silently rewritten as little-endian/microsecond classic PCAP on save, dropping every interface description and block comment. Export-as follows the extension you choose.
@@ -108,8 +108,8 @@ ProtocolForge/
 ├── ProtocolForge.csproj       # .NET 10, Avalonia 12.1.3, Dock 12.1.0.7, SukiUI 7.0.1, CommunityToolkit.Mvvm 8.4.2, DataGrid 12.1.2
 │
 ├── Assets/Lang/               # Localization dictionaries — en-US.json + zh-CN.json (embedded as resources)
-│   ├── en-US.json            # English UI strings (214 keys)
-│   └── zh-CN.json            # 简体中文 UI strings (214 keys, identical key set)
+│   ├── en-US.json            # English UI strings (222 keys)
+│   └── zh-CN.json            # 简体中文 UI strings (222 keys, identical key set)
 │
 ├── Models/                    # Domain objects
 │   ├── Packet.cs              # Single packet: raw data, modifications, address/port, layers

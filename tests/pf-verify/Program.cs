@@ -4561,6 +4561,196 @@ int RunHeadlessRenderOnly()
             }
         }
 
+        // ── HG-26..HG-29b: 报文列表显示过滤器的真实交互验证。────────────────────
+        // 无头平台同样走真实的 TextChanged → 去抖 → tshark 路径与真实键盘事件,
+        // 因此断言的是运行中控件的类绑定(绿/红边框)与光标行为;引擎层由 GROUP 55 覆盖。
+        {
+            var g54FilterBox = ByName<TextBox>(g54Window, "FilterBox");
+            Report("HG-26 the packet-list filter box is mounted",
+                g54FilterBox is not null,
+                g54FilterBox is null ? "FilterBox not found" : $"width={g54FilterBox.Bounds.Width}");
+
+            if (g54FilterBox is not null)
+            {
+                // 真实等待:去抖(200/400ms)+ tshark 子进程都在真实时间轴上,
+                // 必须在 Pump 之外真正睡一会儿,否则 continuation 永不回到 UI 线程。
+                bool PumpUntil(Func<bool> cond, int timeoutMs)
+                {
+                    var sw = System.Diagnostics.Stopwatch.StartNew();
+                    while (sw.ElapsedMilliseconds < timeoutMs)
+                    {
+                        Pump();
+                        if (cond()) return true;
+                        Thread.Sleep(25);
+                    }
+                    Pump();
+                    return cond();
+                }
+
+                // 采样渲染帧里 FilterBox 边框区域的像素,确认绿/红边框真的画出来了。
+                // 类名绑定 ≠ 视觉渲染:SukiUI 模板曾无视某些属性(App.axaml 中 ComboBox 的 Padding
+                // 就因模板局部值而失效),所以类断言之外必须再验一次真实像素。
+                (int NearA, int NearB, double MinA, double MinB) SampleColors(
+                    Avalonia.Media.Imaging.WriteableBitmap? frame, (int R, int G, int B) cA, (int R, int G, int B) cB)
+                {
+                    if (frame is null) return (0, 0, double.MaxValue, double.MaxValue);
+                    var origin = g54FilterBox.TranslatePoint(new Point(0, 0), g54Window) ?? new Point(-9999, -9999);
+                    double scale = g54Window.RenderScaling <= 0 ? 1 : g54Window.RenderScaling;
+                    int x0 = Math.Max(0, (int)Math.Floor((origin.X - 2) * scale));
+                    int y0 = Math.Max(0, (int)Math.Floor((origin.Y - 2) * scale));
+                    int x1 = Math.Min(frame.PixelSize.Width, (int)Math.Ceiling((origin.X + g54FilterBox.Bounds.Width + 2) * scale));
+                    int y1 = Math.Min(frame.PixelSize.Height, (int)Math.Ceiling((origin.Y + g54FilterBox.Bounds.Height + 2) * scale));
+                    int na = 0, nb = 0; double ma = double.MaxValue, mb = double.MaxValue;
+                    using var fb = frame.Lock();
+                    if (fb is null || fb.Address == IntPtr.Zero) return (0, 0, ma, mb);
+                    var buf = new byte[fb.RowBytes * frame.PixelSize.Height];
+                    System.Runtime.InteropServices.Marshal.Copy(fb.Address, buf, 0, buf.Length);
+                    for (int y = y0; y < y1; y++)
+                        for (int x = x0; x < x1; x++)
+                        {
+                            int i = y * fb.RowBytes + x * 4;
+                            if (i + 2 >= buf.Length) continue;
+                            int b = buf[i], g = buf[i + 1], r = buf[i + 2];
+                            double da = Math.Sqrt((r - cA.R) * (r - cA.R) + (g - cA.G) * (g - cA.G) + (b - cA.B) * (b - cA.B));
+                            double db = Math.Sqrt((r - cB.R) * (r - cB.R) + (g - cB.G) * (g - cB.G) + (b - cB.B) * (b - cB.B));
+                            if (da < ma) ma = da;
+                            if (db < mb) mb = db;
+                            if (da < 80) na++;
+                            if (db < 80) nb++;
+                        }
+                    return (na, nb, ma, mb);
+                }
+
+                // 诊断:把 TextBox → GlassCard → 三个 BorderPart 的 BorderBrush/可见性/透明度
+                // 依次打印,定位绿框在哪一环丢失(样式 vs 模板链路 vs 主题分支)。
+                void DumpBorderChain(string label)
+                {
+                    var sb = new System.Text.StringBuilder();
+                    sb.Append($"{label}: TextBox.BorderBrush={g54FilterBox.BorderBrush}");
+                    var glass = g54FilterBox.GetVisualDescendants()
+                        .OfType<SukiUI.Controls.GlassCard>().FirstOrDefault();
+                    if (glass is null)
+                    {
+                        sb.Append(" | GlassCard=<none>");
+                    }
+                    else
+                    {
+                        sb.Append($" | GlassCard(BorderBrush={glass.BorderBrush}, vis={glass.IsVisible})");
+                        foreach (var bn in new[] { "PART_BorderCardLight", "PART_BorderCardDark", "PART_ClipBorder" })
+                        {
+                            var b = glass.GetVisualDescendants().OfType<Avalonia.Controls.Border>()
+                                .FirstOrDefault(x => x.Name == bn);
+                            sb.Append($" | {bn}({b?.BorderBrush}, vis={b?.IsVisible}, op={b?.Opacity})");
+                        }
+                    }
+                    Detail(sb.ToString());
+                }
+
+                var g54Green = (R: 79, G: 175, B: 80);
+                var g54Red = (R: 244, G: 67, B: 54);
+                var g54Magenta = (R: 255, G: 0, B: 255);
+
+                // 合法表达式 → 绿框(类 + 渲染像素双重确认)。
+                g54Vm.FilterText = "frame.number == 1";
+                bool g54ValidSettled = PumpUntil(() => g54Vm.IsFilterValid, 15000);
+                Report("HG-27 a parseable filter turns the box green (filter-valid class)",
+                    g54ValidSettled
+                    && g54FilterBox.Classes.Contains("filter-valid")
+                    && !g54FilterBox.Classes.Contains("filter-invalid"),
+                    $"settled={g54ValidSettled}, valid={g54Vm.IsFilterValid}, "
+                    + $"classes=[{string.Join(",", g54FilterBox.Classes)}], msg=\"{g54Vm.FilterValidationMessage}\"");
+
+                for (int i = 0; i < 24; i++) { Pump(); Thread.Sleep(25); }
+                var g54FbOrigin = g54FilterBox.TranslatePoint(new Point(0, 0), g54Window) ?? new Point(-9999, -9999);
+                string g54GreenPng = Path.Combine(g54Dir, "filter-valid.png");
+                var g54GreenFrame = g54Window.CaptureRenderedFrame();
+                g54GreenFrame?.Save(g54GreenPng, new PngBitmapEncoderOptions());
+                var g54GreenPx = SampleColors(g54GreenFrame, g54Green, g54Red);
+                Detail($"HG-diag valid: borderBrush={g54FilterBox.BorderBrush}, thickness={g54FilterBox.BorderThickness}, "
+                    + $"focused={g54FilterBox.IsFocused}, cls=[{string.Join(",", g54FilterBox.Classes)}]");
+                Report("HG-27a the rendered filter border is green, not just the binding (border pixels)",
+                    File.Exists(g54GreenPng) && g54GreenPx.NearA > 0 && g54GreenPx.NearB == 0,
+                    $"{g54GreenPng}, rect={g54FbOrigin}({g54FilterBox.Bounds.Width}x{g54FilterBox.Bounds.Height})"
+                    + $"@{g54Window.RenderScaling}x, nearGreen={g54GreenPx.NearA}, nearRed={g54GreenPx.NearB}, "
+                    + $"minGreen={g54GreenPx.MinA:F1}, minRed={g54GreenPx.MinB:F1}");
+                DumpBorderChain("HG-diag valid-chain");
+
+                // 诊断探针:强制局部值(优先级高于样式 setter)确认 TextBox 模板是否真的渲染 BorderBrush。
+                g54FilterBox.BorderBrush = Avalonia.Media.Brushes.Magenta;
+                for (int i = 0; i < 12; i++) { Pump(); Thread.Sleep(25); }
+                string g54MagentaPng = Path.Combine(g54Dir, "filter-forced-magenta.png");
+                var g54MagentaFrame = g54Window.CaptureRenderedFrame();
+                g54MagentaFrame?.Save(g54MagentaPng, new PngBitmapEncoderOptions());
+                var g54MagentaPx = SampleColors(g54MagentaFrame, g54Magenta, g54Magenta);
+                Report("HG-27b probe: a forced local BorderBrush is painted by the template",
+                    g54MagentaPx.NearA > 0,
+                    $"forced magenta local value → nearMagenta={g54MagentaPx.NearA}, minDist={g54MagentaPx.MinA:F1} ({g54MagentaPng})");
+                g54FilterBox.ClearValue(Avalonia.Controls.Primitives.TemplatedControl.BorderBrushProperty);
+
+                // 语法错误的表达式 → 红框(类 + 渲染像素双重确认)+ 原因文本。
+                g54Vm.FilterText = "ip.src ==";
+                bool g54InvalidSettled = PumpUntil(() => g54Vm.IsFilterInvalid, 15000);
+                Report("HG-28 a syntax-error filter turns the box red with a reason (filter-invalid class)",
+                    g54InvalidSettled
+                    && g54FilterBox.Classes.Contains("filter-invalid")
+                    && !g54FilterBox.Classes.Contains("filter-valid")
+                    && !string.IsNullOrEmpty(g54Vm.FilterValidationMessage),
+                    $"settled={g54InvalidSettled}, invalid={g54Vm.IsFilterInvalid}, "
+                    + $"classes=[{string.Join(",", g54FilterBox.Classes)}], msg=\"{g54Vm.FilterValidationMessage}\"");
+
+                for (int i = 0; i < 24; i++) { Pump(); Thread.Sleep(25); }
+                string g54RedPng = Path.Combine(g54Dir, "filter-invalid.png");
+                var g54RedFrame = g54Window.CaptureRenderedFrame();
+                g54RedFrame?.Save(g54RedPng, new PngBitmapEncoderOptions());
+                var g54RedPx = SampleColors(g54RedFrame, g54Green, g54Red);
+                Detail($"HG-diag invalid: borderBrush={g54FilterBox.BorderBrush}, thickness={g54FilterBox.BorderThickness}, "
+                    + $"focused={g54FilterBox.IsFocused}, cls=[{string.Join(",", g54FilterBox.Classes)}]");
+                Report("HG-28a the rendered filter border turns red (border pixels, not just the class)",
+                    File.Exists(g54RedPng) && g54RedPx.NearB > 0 && g54RedPx.NearA == 0,
+                    $"{g54RedPng}, rect={g54FbOrigin}({g54FilterBox.Bounds.Width}x{g54FilterBox.Bounds.Height}), "
+                    + $"nearGreen={g54RedPx.NearA}, nearRed={g54RedPx.NearB}, "
+                    + $"minGreen={g54RedPx.MinA:F1}, minRed={g54RedPx.MinB:F1}");
+                DumpBorderChain("HG-diag invalid-chain");
+
+                g54FilterBox.BorderBrush = Avalonia.Media.Brushes.Magenta;
+                for (int i = 0; i < 12; i++) { Pump(); Thread.Sleep(25); }
+                string g54MagentaInvPng = Path.Combine(g54Dir, "filter-invalid-forced-magenta.png");
+                var g54MagentaInvFrame = g54Window.CaptureRenderedFrame();
+                g54MagentaInvFrame?.Save(g54MagentaInvPng, new PngBitmapEncoderOptions());
+                var g54MagentaInvPx = SampleColors(g54MagentaInvFrame, g54Magenta, g54Magenta);
+                Report("HG-28b probe: forced local magenta in the invalid state",
+                    g54MagentaInvPx.NearA > 0,
+                    $"nearMagenta={g54MagentaInvPx.NearA}, minDist={g54MagentaInvPx.MinA:F1} ({g54MagentaInvPng})");
+                g54FilterBox.ClearValue(Avalonia.Controls.Primitives.TemplatedControl.BorderBrushProperty);
+
+                // 自动补全数据路径:字段前缀 → 建议列表填充匹配的完整字段名。
+                // Popup 的可视打开无法在无头平台断言——无宿主时其 IsOpen 双向绑定会被立即写回
+                // false(与 HG-25 同类限制);可视打开与真实 Tab 采纳见 HG-29c 的实机 SKIP。
+                g54Vm.FilterText = "frame.num";
+                g54FilterBox.CaretIndex = (g54FilterBox.Text ?? string.Empty).Length;
+                bool g54SuggestionsShown = PumpUntil(() => g54Vm.FilterSuggestions.Count > 0, 60000);
+                Report("HG-29 typing a field prefix fills the autocomplete list with matching field names",
+                    g54SuggestionsShown && g54Vm.FilterSuggestions.Contains("frame.number"),
+                    $"count={g54Vm.FilterSuggestions.Count}, first3=[{string.Join(",", g54Vm.FilterSuggestions.Take(3))}], "
+                    + $"openOnVm={g54Vm.IsFilterSuggestionOpen}");
+
+                // 视图采纳路径 = ApplyFilterSuggestion(令牌替换),在真实 "frame.num" 令牌上驱动。
+                g54Vm.ApplyFilterSuggestion("frame.number", 0, "frame.num".Length);
+                Pump();
+                Report("HG-29b accepting a suggestion replaces the token with the full field name",
+                    g54FilterBox.Text == "frame.number" && !g54Vm.IsFilterSuggestionOpen,
+                    $"text=\"{g54FilterBox.Text}\", open={g54Vm.IsFilterSuggestionOpen}");
+
+                // 弹窗可视打开 + Tab 键采纳需要真实 popup 宿主,无头无法承载(同 HG-25)。
+                Skip("HG-29c the popup opens on screen and Tab accepts the highlighted suggestion",
+                    "headless 无法承载 Popup 宿主(IsOpen 双向绑定被立即写回 false),可视打开与 Tab 采纳需实机");
+
+                // 复位,避免过滤文本泄漏进后续断言。
+                g54Vm.FilterText = string.Empty;
+                Pump();
+            }
+        }
+
         g54Window.Close();
         Pump();
 
@@ -5480,6 +5670,67 @@ static async Task<(int Sent, int Failed, string LastMsg, int TotalSent, bool Don
     await svc.StartSendAsync(packets, iface, loopCount: 1, intervalMs: 0, autoFixFrames: true);
     return (sent, failed, lastMsg, svc.TotalSent, done);
 }
+
+// ══ GROUP 55: display filter validation + field-name catalog ══
+// No capture fixture: the validation probe writes its own empty pcap internally and
+// `-G fields` needs no `-r`, so this group never depends on PcapPath and never skips.
+Banner(55, "display filter validation + field-name catalog");
+try
+{
+    var g55 = new TsharkService(new PcapIngestService(), new PcapExportService());
+
+    // Blank filters mean "no filter": valid with no error, and tshark is never spawned.
+    var g55Empty = await g55.ValidateDisplayFilterAsync("");
+    Report("FV-01 an empty filter is valid without an error",
+        g55Empty.IsValid && g55Empty.Error is null,
+        $"IsValid={g55Empty.IsValid}, Error={g55Empty.Error ?? "<null>"}");
+
+    var g55Spaces = await g55.ValidateDisplayFilterAsync("   ");
+    Report("FV-02 a whitespace-only filter is valid without an error",
+        g55Spaces.IsValid && g55Spaces.Error is null,
+        $"IsValid={g55Spaces.IsValid}, Error={g55Spaces.Error ?? "<null>"}");
+
+    var g55Valid = await g55.ValidateDisplayFilterAsync("frame.number == 1");
+    Report("FV-03 a real display filter validates as valid", g55Valid.IsValid,
+        $"IsValid={g55Valid.IsValid}, Error={g55Valid.Error ?? "<null>"}");
+
+    var g55Invalid = await g55.ValidateDisplayFilterAsync("this.field.does.not.exist == 1");
+    Report("FV-04 an unknown field is rejected with a non-empty error",
+        !g55Invalid.IsValid && !string.IsNullOrEmpty(g55Invalid.Error),
+        $"IsValid={g55Invalid.IsValid}, Error={g55Invalid.Error ?? "<null>"}");
+
+    // The verdict is cached per filter string, so the repeat probe must be byte-identical
+    // without another tshark run.
+    var g55InvalidAgain = await g55.ValidateDisplayFilterAsync("this.field.does.not.exist == 1");
+    Report("FV-05 repeating an invalid filter returns the identical cached verdict",
+        !g55InvalidAgain.IsValid && g55InvalidAgain.Error == g55Invalid.Error,
+        $"IsValid={g55InvalidAgain.IsValid}, sameError={g55InvalidAgain.Error == g55Invalid.Error}");
+
+    var g55Fields = await g55.GetFieldNamesAsync();
+    Report("FN-01 the field catalog is large", g55Fields.Count > 100000,
+        $"count={g55Fields.Count}");
+    Report("FN-02 the catalog contains frame.number", g55Fields.Contains("frame.number"),
+        $"count={g55Fields.Count}");
+    Report("FN-03 the catalog contains ip.src", g55Fields.Contains("ip.src"),
+        $"count={g55Fields.Count}");
+    Report("FN-04 the catalog is de-duplicated",
+        g55Fields.Distinct().Count() == g55Fields.Count,
+        $"count={g55Fields.Count}, distinct={g55Fields.Distinct().Count()}");
+    Report("FN-05 the catalog is Ordinal-sorted",
+        g55Fields.SequenceEqual(g55Fields.OrderBy(n => n, StringComparer.Ordinal)),
+        "SequenceEqual(OrderBy(n, Ordinal))");
+
+    bool g55HasGtpuPlaceholder = g55Fields.Contains("gtpu");
+    bool g55HasGtp = g55Fields.Contains("gtp");
+    Report("FN-06 the catalog has no placeholder 'gtpu', only the real 'gtp'",
+        !g55HasGtpuPlaceholder && g55HasGtp,
+        $"gtpu={g55HasGtpuPlaceholder}, gtp={g55HasGtp}");
+}
+catch (Exception ex)
+{
+    Report("G55 group execution", false, ex.ToString());
+}
+
 string skipNote = "";
 if (skipped > 0)
 {

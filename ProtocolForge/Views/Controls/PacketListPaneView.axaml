@@ -22,9 +22,31 @@
                              FontFamily="Consolas, monospace"
                              VerticalContentAlignment="Center"
                              Text="{Binding FilterText, Mode=TwoWay}"
+                             Classes.filter-valid="{Binding IsFilterValid}"
+                             Classes.filter-invalid="{Binding IsFilterInvalid}"
                              PlaceholderText="{DynamicResource L10n.Filter.Placeholder}"
-                             ToolTip.Tip="{DynamicResource L10n.Filter.Label}"
-                             KeyDown="OnFilterKeyDown" />
+                             ToolTip.Tip="{Binding FilterValidationMessage}"
+                             KeyDown="OnFilterKeyDown"
+                             TextChanged="OnFilterTextChanged" />
+                    <Popup PlacementTarget="{Binding #FilterBox}"
+                           Placement="BottomEdgeAlignedLeft"
+                           IsLightDismissEnabled="False"
+                           IsOpen="{Binding IsFilterSuggestionOpen, Mode=TwoWay}">
+                        <Border Background="{DynamicResource SukiCardBackground}"
+                                BorderBrush="{DynamicResource SukiBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                MaxHeight="240"
+                                MinWidth="200">
+                            <ListBox ItemsSource="{Binding FilterSuggestions}"
+                                     SelectedIndex="{Binding SelectedFilterSuggestionIndex, Mode=TwoWay}"
+                                     FontFamily="Consolas, monospace"
+                                     FontSize="12"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     Tapped="OnFilterSuggestionTapped" />
+                        </Border>
+                    </Popup>
                     <TextBox Name="FindBox" Width="160" FontSize="12"
                              FontFamily="Consolas, monospace"
                              VerticalContentAlignment="Center"

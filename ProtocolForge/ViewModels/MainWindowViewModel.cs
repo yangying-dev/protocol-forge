@@ -473,6 +473,193 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         await ApplyFilterCommand.ExecuteAsync(null);
     }
 
+    // ─── Display-filter validation + field-name autocomplete ───
+    // The box tints green/red via class bindings (Classes.filter-valid / .filter-invalid);
+    // no IValueConverter is involved and the ViewModel holds no brush/colour type.
+    [ObservableProperty]
+    private FilterValidationState _filterValidation = FilterValidationState.None;
+
+    public bool IsFilterValid => FilterValidation == FilterValidationState.Valid;
+
+    public bool IsFilterInvalid => FilterValidation == FilterValidationState.Invalid;
+
+    [ObservableProperty]
+    private string _filterValidationMessage = string.Empty;
+
+    /// <summary>Field names matching the token currently being typed in the filter box.</summary>
+    public ObservableCollection<string> FilterSuggestions { get; } = [];
+
+    [ObservableProperty]
+    private bool _isFilterSuggestionOpen;
+
+    [ObservableProperty]
+    private int _selectedFilterSuggestionIndex = -1;
+
+    private const int MaxFilterSuggestions = 100;
+
+    // Cancelled and replaced on every keystroke so only the newest verdict wins.
+    private CancellationTokenSource? _filterValidationCts;
+
+    // Mirrors the validation debounce for the suggestion fetch.
+    private CancellationTokenSource? _filterSuggestionCts;
+
+    // [ObservableProperty] exposes the field as FilterValidation, so the two derived
+    // bools the class bindings read must be re-notified whenever the state changes.
+    partial void OnFilterValidationChanged(FilterValidationState value)
+    {
+        OnPropertyChanged(nameof(IsFilterValid));
+        OnPropertyChanged(nameof(IsFilterInvalid));
+    }
+
+    partial void OnFilterTextChanged(string value)
+    {
+        _filterValidationCts?.Cancel();
+        _filterValidationCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _filterValidationCts = cts;
+        _ = ValidateFilterDebouncedAsync(cts.Token);
+    }
+
+    private async Task ValidateFilterDebouncedAsync(CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(400, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (ct.IsCancellationRequested)
+            return;
+
+        string text = FilterText ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            // Empty box = no tint at all (not green).
+            FilterValidation = FilterValidationState.None;
+            FilterValidationMessage = string.Empty;
+            return;
+        }
+
+        try
+        {
+            var verdict = await _tshark.ValidateDisplayFilterAsync(text, ct);
+            if (ct.IsCancellationRequested)
+                return;
+
+            if (verdict.IsValid)
+            {
+                FilterValidation = FilterValidationState.Valid;
+                FilterValidationMessage = LocalizationService.Resolve("Filter.Valid");
+            }
+            else
+            {
+                FilterValidation = FilterValidationState.Invalid;
+                FilterValidationMessage = string.IsNullOrEmpty(verdict.Error)
+                    ? LocalizationService.Resolve("Filter.Invalid")
+                    : LocalizationService.Resolve("Filter.InvalidDetail", verdict.Error);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer keystroke; that call owns the final state.
+        }
+    }
+
+    /// <summary>
+    /// Refreshes <see cref="FilterSuggestions"/> for the field-name token the user is
+    /// typing (starts-with match, falling back to contains). An empty token closes the popup.
+    /// </summary>
+    public async Task UpdateFilterSuggestionsAsync(string token, CancellationToken ct)
+    {
+        _filterSuggestionCts?.Cancel();
+        _filterSuggestionCts?.Dispose();
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        _filterSuggestionCts = cts;
+        var token2 = cts.Token;
+
+        FilterSuggestions.Clear();
+        SelectedFilterSuggestionIndex = -1;
+
+        if (string.IsNullOrEmpty(token))
+        {
+            IsFilterSuggestionOpen = false;
+            return;
+        }
+
+        IReadOnlyList<string> all;
+        try
+        {
+            all = await _tshark.GetFieldNamesAsync(token2);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (token2.IsCancellationRequested)
+            return;
+
+        var matches = new List<string>(MaxFilterSuggestions);
+        foreach (var name in all)
+        {
+            if (name.StartsWith(token, StringComparison.OrdinalIgnoreCase))
+            {
+                matches.Add(name);
+                if (matches.Count >= MaxFilterSuggestions)
+                    break;
+            }
+        }
+
+        // Only fall back to "contains" when nothing starts with the token.
+        if (matches.Count == 0)
+        {
+            foreach (var name in all)
+            {
+                if (name.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    matches.Add(name);
+                    if (matches.Count >= MaxFilterSuggestions)
+                        break;
+                }
+            }
+        }
+
+        if (token2.IsCancellationRequested)
+            return;
+
+        foreach (var name in matches)
+            FilterSuggestions.Add(name);
+
+        SelectedFilterSuggestionIndex = FilterSuggestions.Count > 0 ? 0 : -1;
+        IsFilterSuggestionOpen = FilterSuggestions.Count > 0;
+    }
+
+    /// <summary>
+    /// Replaces the token spanning [<paramref name="tokenStart"/>, +<paramref name="tokenLength"/>)
+    /// in <see cref="FilterText"/> with the accepted field name and closes the popup.
+    /// </summary>
+    public void ApplyFilterSuggestion(string name, int tokenStart, int tokenLength)
+    {
+        if (string.IsNullOrEmpty(name))
+            return;
+
+        string text = FilterText ?? string.Empty;
+        if (tokenStart < 0)
+            tokenStart = 0;
+        if (tokenStart > text.Length)
+            tokenStart = text.Length;
+        if (tokenLength < 0 || tokenStart + tokenLength > text.Length)
+            tokenLength = text.Length - tokenStart;
+
+        FilterText = text[..tokenStart] + name + text[(tokenStart + tokenLength)..];
+
+        IsFilterSuggestionOpen = false;
+        SelectedFilterSuggestionIndex = -1;
+    }
+
     /// <summary>Streams (TCP + UDP) discovered in the loaded capture, for the follow-stream list.</summary>
     public ObservableCollection<StreamIndex> TcpStreams { get; } = [];
 
@@ -1627,4 +1814,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                 yield return c;
         }
     }
+}
+
+/// <summary>Semantic colour state of the display-filter box (bound via CSS classes).</summary>
+public enum FilterValidationState
+{
+    None,
+    Valid,
+    Invalid,
 }

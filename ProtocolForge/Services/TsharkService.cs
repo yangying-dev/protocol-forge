@@ -51,6 +51,12 @@ public sealed record PdmlData(
     Dictionary<string, HashSet<int>>? NamePositions = null);
 
 /// <summary>
+/// Wireshark 显示过滤器校验结论。<see cref="IsValid"/> 为 <c>false</c> 时
+/// <see cref="Error"/> 携带 tshark 的 stderr 文本（已去除首尾空白）；合法时为 <c>null</c>。
+/// </summary>
+public sealed record FilterValidation(bool IsValid, string? Error);
+
+/// <summary>
 /// Invokes Tshark asynchronously to parse PCAP files into structured <see cref="PacketDocument"/>.
 /// Uses tshark -T jsonraw to get both the protocol tree (with byte offsets) and the raw hex values
 /// needed for hex ↔ field synchronization.
@@ -694,6 +700,188 @@ public sealed class TsharkService
                 $"Tshark exited with code {process.ExitCode}: {error}");
 
         return output;
+    }
+
+    // ────────────────────────────────────────────────────────
+    // Display filter validation + field-name catalog
+    // ────────────────────────────────────────────────────────
+
+    private string? _filterProbePath;
+    private readonly Dictionary<string, FilterValidation> _filterValidationCache = new();
+    private readonly object _filterValidationLock = new();
+    private IReadOnlyList<string>? _fieldNamesCache;
+    private readonly SemaphoreSlim _fieldNamesGate = new(1, 1);
+
+    /// <summary>
+    /// 校验 Wireshark 显示过滤器表达式是否合法。空白过滤器直接判为合法
+    /// （等价于不过滤），不启动 tshark。
+    ///
+    /// 非空过滤器通过在一个 24 字节的空 pcap 上运行
+    /// <c>tshark -r &lt;empty.pcap&gt; -Y "&lt;filter&gt;"</c> 来验证：tshark 退出码
+    /// 为 0 即合法，非 0 则把 stderr 文本（去首尾空白）作为错误原因返回。
+    /// 结论按过滤器字符串缓存在本服务实例内。若 tshark 不可用则一律判为合法，
+    /// 避免在无法校验时误报红。
+    /// </summary>
+    public async Task<FilterValidation> ValidateDisplayFilterAsync(
+        string? filter,
+        CancellationToken ct = default)
+    {
+        // Blank filter = no filtering: valid without invoking tshark.
+        if (string.IsNullOrWhiteSpace(filter))
+            return new FilterValidation(true, null);
+
+        lock (_filterValidationLock)
+        {
+            if (_filterValidationCache.TryGetValue(filter, out var cached))
+                return cached;
+        }
+
+        // No tshark to validate with — do not paint red on an unverifiable filter.
+        if (_tsharkPath == null || !File.Exists(_tsharkPath))
+            return new FilterValidation(true, null);
+
+        string probePath = EnsureFilterProbeFile();
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = _tsharkPath,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
+        };
+        psi.ArgumentList.Add("-r");
+        psi.ArgumentList.Add(probePath);
+        psi.ArgumentList.Add("-Y");
+        psi.ArgumentList.Add(filter);
+
+        using var process = new Process { StartInfo = psi };
+        process.Start();
+
+        // Read both streams concurrently to avoid deadlocks
+        var outputTask = process.StandardOutput.ReadToEndAsync(ct);
+        var errorTask = process.StandardError.ReadToEndAsync(ct);
+
+        await process.WaitForExitAsync(ct);
+
+        await outputTask;
+        var error = await errorTask;
+
+        var verdict = process.ExitCode == 0
+            ? new FilterValidation(true, null)
+            : new FilterValidation(false, error.Trim());
+
+        lock (_filterValidationLock)
+        {
+            _filterValidationCache[filter] = verdict;
+        }
+
+        return verdict;
+    }
+
+    /// <summary>
+    /// 返回 tshark 已知的全部字段/协议显示过滤名（<c>tshark -G fields</c>），
+    /// 去重后按 Ordinal 排序。结果在本服务实例内惰性缓存，只启动一次 tshark。
+    /// </summary>
+    public async Task<IReadOnlyList<string>> GetFieldNamesAsync(CancellationToken ct = default)
+    {
+        var cached = _fieldNamesCache;
+        if (cached is not null)
+            return cached;
+
+        if (_tsharkPath == null || !File.Exists(_tsharkPath))
+            return [];
+
+        await _fieldNamesGate.WaitAsync(ct);
+        try
+        {
+            cached = _fieldNamesCache;
+            if (cached is not null)
+                return cached;
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = _tsharkPath,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8,
+            };
+            psi.ArgumentList.Add("-G");
+            psi.ArgumentList.Add("fields");
+
+            using var process = new Process { StartInfo = psi };
+            process.Start();
+
+            // Read both streams concurrently to avoid deadlocks
+            var outputTask = process.StandardOutput.ReadToEndAsync(ct);
+            var errorTask = process.StandardError.ReadToEndAsync(ct);
+
+            await process.WaitForExitAsync(ct);
+
+            var output = await outputTask;
+            await errorTask;
+
+            if (process.ExitCode != 0)
+                throw new InvalidOperationException(
+                    $"Tshark exited with code {process.ExitCode}");
+
+            var names = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var line in output.Split('\n'))
+            {
+                var row = line.TrimEnd('\r');
+                if (row.Length == 0)
+                    continue;
+
+                var columns = row.Split('\t');
+                // Column 0 is 'F' (field) or 'P' (protocol); column 2 holds the
+                // display-filter name (e.g. "_ws.short", "frame.number").
+                if (columns.Length < 3)
+                    continue;
+                if (columns[0] != "F" && columns[0] != "P")
+                    continue;
+
+                var name = columns[2];
+                if (!string.IsNullOrEmpty(name))
+                    names.Add(name);
+            }
+
+            var result = names.OrderBy(n => n, StringComparer.Ordinal).ToList();
+            _fieldNamesCache = result;
+            return result;
+        }
+        finally
+        {
+            _fieldNamesGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Writes (once per service instance) a 24-byte empty classic-pcap probe file
+    /// used to validate display filters without needing a real capture.
+    /// </summary>
+    private string EnsureFilterProbeFile()
+    {
+        if (_filterProbePath is not null)
+            return _filterProbePath;
+
+        string path = Path.Combine(Path.GetTempPath(), "pf_filter_probe.pcap");
+        if (!File.Exists(path))
+        {
+            File.WriteAllBytes(path, new byte[]
+            {
+                0xd4, 0xc3, 0xb2, 0xa1, 0x02, 0x00, 0x04, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0xff, 0xff, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+            });
+        }
+
+        _filterProbePath = path;
+        return path;
     }
 
     /// <summary>

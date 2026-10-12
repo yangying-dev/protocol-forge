@@ -17,6 +17,11 @@ public partial class PacketListPaneView : UserControl
     private MainWindowViewModel? _wiredVm;
     private bool _attached;
 
+    // Filter-box autocomplete: debounce the ~200k-name fetch, and suppress the
+    // TextChanged that fires when a suggestion is accepted programmatically.
+    private CancellationTokenSource? _filterSuggestCts;
+    private bool _suppressFilterTextChanged;
+
     public PacketListPaneView()
     {
         InitializeComponent();
@@ -152,10 +157,151 @@ public partial class PacketListPaneView : UserControl
 
     private async void OnFilterKeyDown(object? sender, KeyEventArgs e)
     {
+        var vm = ViewModel;
+        if (vm is null)
+            return;
+
+        if (e.Key is Key.Down or Key.Up)
+        {
+            if (!vm.IsFilterSuggestionOpen)
+                return;
+            MoveFilterHighlight(vm, e.Key == Key.Down ? 1 : -1);
+            e.Handled = true;
+            return;
+        }
+
+        bool hasHighlight = vm.IsFilterSuggestionOpen
+            && vm.SelectedFilterSuggestionIndex >= 0
+            && vm.SelectedFilterSuggestionIndex < vm.FilterSuggestions.Count;
+
+        if ((e.Key == Key.Enter || e.Key == Key.Tab) && hasHighlight)
+        {
+            e.Handled = true;
+            AcceptFilterSuggestion(vm.FilterSuggestions[vm.SelectedFilterSuggestionIndex]);
+            return;
+        }
+
+        if (e.Key == Key.Escape)
+        {
+            if (vm.IsFilterSuggestionOpen)
+            {
+                vm.IsFilterSuggestionOpen = false;
+                e.Handled = true;
+            }
+            return;
+        }
+
+        // Existing behaviour: Enter with the popup closed applies the filter.
         if (e.Key != Key.Enter)
             return;
         e.Handled = true;
-        if (ViewModel is not null)
-            await ViewModel.ApplyFilterCommand.ExecuteAsync(null);
+        await vm.ApplyFilterCommand.ExecuteAsync(null);
+    }
+
+    private void OnFilterTextChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (ViewModel is not { } vm || _suppressFilterTextChanged)
+            return;
+
+        _filterSuggestCts?.Cancel();
+        _filterSuggestCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _filterSuggestCts = cts;
+        _ = RefreshFilterSuggestionsDebouncedAsync(vm, cts.Token);
+    }
+
+    private async Task RefreshFilterSuggestionsDebouncedAsync(
+        MainWindowViewModel vm, CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(200, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (ct.IsCancellationRequested)
+            return;
+
+        var (token, _, _) = GetFilterToken();
+        if (string.IsNullOrEmpty(token))
+        {
+            vm.IsFilterSuggestionOpen = false;
+            vm.FilterSuggestions.Clear();
+            return;
+        }
+
+        try
+        {
+            await vm.UpdateFilterSuggestionsAsync(token, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer keystroke.
+        }
+        catch (Exception)
+        {
+            // Field-name lookup is best-effort: a tshark failure just leaves the popup closed.
+        }
+    }
+
+    private void OnFilterSuggestionTapped(object? sender, TappedEventArgs e)
+    {
+        if (sender is ListBox { SelectedItem: string name })
+        {
+            AcceptFilterSuggestion(name);
+            e.Handled = true;
+        }
+    }
+
+    private void AcceptFilterSuggestion(string name)
+    {
+        if (ViewModel is not { } vm)
+            return;
+
+        var (_, tokenStart, tokenLength) = GetFilterToken();
+        _suppressFilterTextChanged = true;
+        try
+        {
+            vm.ApplyFilterSuggestion(name, tokenStart, tokenLength);
+        }
+        finally
+        {
+            _suppressFilterTextChanged = false;
+        }
+
+        FilterBox.CaretIndex = tokenStart + name.Length;
+        FilterBox.Focus();
+    }
+
+    private (string Token, int Start, int Length) GetFilterToken()
+    {
+        string text = FilterBox.Text ?? string.Empty;
+        int caret = Math.Clamp(FilterBox.CaretIndex, 0, text.Length);
+        int start = caret;
+        while (start > 0 && !IsFilterTokenBoundary(text[start - 1]))
+            start--;
+        return (text[start..caret], start, caret - start);
+    }
+
+    private static bool IsFilterTokenBoundary(char c) =>
+        c is ' ' or '(' or ')' or '!' or '=' or '<' or '>' or '&' or '|' or ',';
+
+    private static void MoveFilterHighlight(MainWindowViewModel vm, int delta)
+    {
+        int count = vm.FilterSuggestions.Count;
+        if (count == 0)
+            return;
+
+        int index = vm.SelectedFilterSuggestionIndex;
+        index = index < 0 ? (delta > 0 ? 0 : count - 1) : index + delta;
+        if (index < 0)
+            index = count - 1;
+        else if (index >= count)
+            index = 0;
+
+        vm.SelectedFilterSuggestionIndex = index;
     }
 }
