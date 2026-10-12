@@ -18,6 +18,14 @@
         IsMenuVisible="False"
         MinWidth="900" MinHeight="600">
 
+    <!-- 标题栏图标:SukiWindow 模板的 PART_Logo 只渲染 LogoContent(SukiWindow.axaml:139-144),
+         迁移到 SukiUI 后 App 从未设置它,标题栏左侧的协议图标丢失(旧版原生标题栏显示 .ico)。
+         protocol-forge.png 是从 .ico 的 256×256 帧提取的 RGBA PNG;16px 与 12px 标题行高相称,
+         内容盒 20px(38−18 模板内边距)内上下各留 2px。 -->
+    <suki:SukiWindow.LogoContent>
+        <Image Source="/Assets/protocol-forge.png" Width="16" Height="16" />
+    </suki:SukiWindow.LogoContent>
+
     <!-- SukiUI 7.0.1 的 SukiWindow 模板未包含 VisualLayerManager(标准 Window 模板内嵌),窗口树
          因此没有 LightDismissOverlayLayer,所有浮层(ContextMenu/Flyout/ComboBox 下拉/ToolTip)
          都无法「点击外部关闭」(实机报告:packet 列表右键菜单点哪儿都不消失、空列表也弹)。这里在
@@ -77,13 +85,13 @@
 
         <!-- ════════════════ Toolbar ════════════════ -->
         <Border Grid.Row="1" Name="ToolBarPanel"
-                Background="{DynamicResource SukiStrongBackground}" Padding="6,3" BorderBrush="{DynamicResource SukiBorderBrush}" BorderThickness="0,0,0,1">
+                Background="{DynamicResource SukiStrongBackground}" Padding="6,0" BorderBrush="{DynamicResource SukiBorderBrush}" BorderThickness="0,0,0,1">
             <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto">
                 <!-- Start Button -->
                 <Button Grid.Column="0" Name="StartSendBtn"
                         Command="{Binding ToolBar.StartSendCommand}"
                         IsEnabled="{Binding ToolBar.CanSend}"
-                        Padding="10,3" Margin="2,0" Height="26"
+                        Padding="10,3" Margin="2,0" Height="26" VerticalAlignment="Center"
                         Background="#4CAF50" Foreground="White"
                         FontWeight="Bold" FontSize="13"
                         BorderThickness="0" CornerRadius="4">
@@ -97,7 +105,7 @@
                 <Button Grid.Column="1" Name="PauseSendBtn"
                         Command="{Binding ToolBar.TogglePauseSendCommand}"
                         IsEnabled="{Binding ToolBar.IsSending}"
-                        Padding="10,3" Margin="2,0" Height="26"
+                        Padding="10,3" Margin="2,0" Height="26" VerticalAlignment="Center"
                         Background="#FF9800" Foreground="White"
                         FontWeight="Bold" FontSize="13"
                         BorderThickness="0" CornerRadius="4">
@@ -110,7 +118,7 @@
                 <Button Grid.Column="2" Name="StopSendBtn"
                         Command="{Binding ToolBar.StopSendCommand}"
                         IsEnabled="{Binding ToolBar.IsSending}"
-                        Padding="10,3" Margin="2,0" Height="26"
+                        Padding="10,3" Margin="2,0" Height="26" VerticalAlignment="Center"
                         Background="#F44336" Foreground="White"
                         FontWeight="Bold" FontSize="13"
                         BorderThickness="0" CornerRadius="4">
@@ -122,7 +130,7 @@
 
                 <!-- Auto-fix toggle -->
                 <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-                    <ComboBox Name="VlanModeCombo" Width="136" Height="26" MinHeight="26" FontSize="12"
+                    <ComboBox Name="VlanModeCombo" Width="136" Classes="toolbar-combo" FontSize="12"
                               ItemsSource="{Binding ToolBar.VlanModes}"
                               SelectedItem="{Binding ToolBar.SelectedVlanOption}"
                               DisplayMemberBinding="{Binding Label}"
@@ -175,11 +183,11 @@
                 </StackPanel>
 
                 <!-- Network Adapter Dropdown -->
-                <ComboBox Grid.Column="9" Name="NetworkAdapterCombo"
+                <ComboBox Grid.Column="9" Name="NetworkAdapterCombo" Classes="toolbar-combo"
                           ItemsSource="{Binding ToolBar.AvailableInterfaces}"
                           SelectedItem="{Binding ToolBar.SelectedInterface}"
                           DisplayMemberBinding="{Binding DisplayName}"
-                          Height="26" MinHeight="26" FontSize="12" MinWidth="180"
+                          FontSize="12" MinWidth="180"
                           HorizontalAlignment="Stretch"
                           VerticalAlignment="Center"
                           PlaceholderText="{DynamicResource L10n.Btn.PlaceholderAdapter}" />

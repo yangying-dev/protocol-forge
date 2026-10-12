@@ -4458,6 +4458,94 @@ int RunHeadlessRenderOnly()
                 false, "packet-list pane not found in main layout");
         }
 
+        // HG-25a/HG-25:菜单栏悬停切换。SukiUI 7.0.1 的 SukiTopLevelMenuItem 用 light-dismiss
+        // 悬浮层(LightDismissOverlayLayer)实现「点击外部关闭」,靠 OverlayInputPassThroughElement
+        // 决定哪些点穿透。原绑定是 $parent[MenuItem](仅当前打开项 A),但仅改绑定不足以修复:
+        // 主窗口内容外层内联的 VisualLayerManager 位于 38px 标题栏之下,浮层坐标原点比窗口根偏
+        // 39px,Avalonia 12.1.3 的 LightDismissOverlayLayer.HitTest 用窗口根坐标去调用
+        // VisualRoot.InputHitTest 做穿透判定,拿到的却是层坐标 → 菜单栏上任何点都被判「不穿透」,
+        // 浮层吞掉悬停兄弟项 B 的指针事件,PointerEnteredItemEvent 到不了 Menu,
+        // DefaultMenuInteractionHandler 的悬停切换分支不执行 → 必须点两次。
+        // 真正生效的修复是 App.axaml 的 PfTopLevelMenuItem 把 PART_Popup 的 IsLightDismissEnabled
+        // 由 True 改为 False(顶层不再注册该浮层);OverlayInputPassThroughElement 语义上也改绑
+        // $parent[Menu](与 Avalonia 默认 FluentTopLevelMenuItem 一致)。「点外部关闭」不依赖该浮层:
+        // DefaultMenuInteractionHandler 用 TopLevel 上的 RootPointerPressed(tunnel)+
+        // RawInput(NonClientLeftButtonDown)+WindowDeactivated 关闭 Menu(实机验证通过)。
+        // HG-25a(结构断言,headless 可验、不打开浮层):顶层 popup 必须关闭 light-dismiss,
+        // 且穿透元素为整条菜单栏,防回归。
+        // HG-25(行为断言):真实点击 item0 打开下拉、悬停 item1 应一次切换。但 SukiUI 菜单
+        // popup 在 headless 平台无法承载——`CreatePopupHost` 需要 IPopupImpl(Headless 无)
+        // 或 EnablePopupOverlayLayer=true 的 VisualLayerManager(internal 属性,默认 false,
+        // SukiWindow 模板无 VLM、内联 VLM 也无法从 XAML 置位)→ 打开即抛
+        // InvalidOperationException,故行为断言在 headless 必然 SKIP,需实机验证;
+        // HG-25a 是 headless 下的回归门禁。
+        {
+            var g54Menu = g54Window.GetVisualDescendants().OfType<Menu>().FirstOrDefault(m => m.Classes.Contains("main-menu"));
+            var g54TopItems = g54Menu?.Items.OfType<MenuItem>().ToList() ?? new List<MenuItem>();
+            var g54M0 = g54TopItems.FirstOrDefault();
+            var g54M1 = g54TopItems.Skip(1).FirstOrDefault();
+            var g54Popup = g54M0?.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.Popup>().FirstOrDefault();
+            string g54PassThrough = g54Popup?.OverlayInputPassThroughElement is null
+                ? "none"
+                : ReferenceEquals(g54Popup.OverlayInputPassThroughElement, g54Menu) ? "Menu"
+                : ReferenceEquals(g54Popup.OverlayInputPassThroughElement, g54M0) ? "item0(自身,即原绑定)"
+                : g54Popup.OverlayInputPassThroughElement.GetType().Name;
+            bool g54PassThroughIsMenu = g54Popup is not null && ReferenceEquals(g54Popup.OverlayInputPassThroughElement, g54Menu);
+            bool g54LightDismissOff = g54Popup is not null && !g54Popup.IsLightDismissEnabled;
+            Report("HG-25a top-level submenu disables light-dismiss and targets the whole menu bar",
+                g54PassThroughIsMenu && g54LightDismissOff,
+                $"menu={g54Menu is not null}, items={g54TopItems.Count}, popup={g54Popup is not null}, passThrough={g54PassThrough}, lightDismiss={g54Popup?.IsLightDismissEnabled}");
+
+            bool g54HoverSwitched = false;
+            bool g54OpenBlocked = false;
+            string g54BehaviorDetail = $"menu={g54Menu is not null}, items={g54TopItems.Count}";
+            if (g54Menu is not null && g54M0 is not null && g54M1 is not null)
+            {
+                g54BehaviorDetail += " [" + string.Join(", ", g54TopItems.Select(i => $"'{i.Header}' {i.Bounds.Width}x{i.Bounds.Height}")) + "]";
+                try
+                {
+                    if (g54M0.TranslatePoint(new Point(g54M0.Bounds.Width / 2, g54M0.Bounds.Height / 2), g54Window) is { } g54P0)
+                    {
+                        g54Window.MouseDown(g54P0, MouseButton.Left);
+                        Pump();
+                        g54Window.MouseUp(g54P0, MouseButton.Left);
+                        Pump();
+                    }
+                }
+                catch (InvalidOperationException)
+                {
+                    // headless 无法承载 SukiUI 菜单 popup(无 IPopupImpl / 无启用 popup 层的 VLM)。
+                    g54OpenBlocked = true;
+                }
+                g54BehaviorDetail += $" | afterClick item0.Open={g54M0.IsSubMenuOpen} popup.Open={g54Popup?.IsOpen}";
+                if (!g54OpenBlocked && g54M0.IsSubMenuOpen
+                    && g54M1.TranslatePoint(new Point(g54M1.Bounds.Width / 2, g54M1.Bounds.Height / 2), g54Window) is { } g54P1)
+                {
+                    g54Window.MouseMove(g54P1, Avalonia.Input.RawInputModifiers.None);
+                    Pump();
+                    g54HoverSwitched = g54M1.IsSubMenuOpen && !g54M0.IsSubMenuOpen;
+                    g54BehaviorDetail += $" | afterHover item0={g54M0.IsSubMenuOpen} item1={g54M1.IsSubMenuOpen}";
+                }
+            }
+            if (g54OpenBlocked)
+            {
+                Skip("HG-25 hovering a sibling top-level item switches the open submenu",
+                    "headless 无法承载 SukiUI 菜单 popup(无 IPopupImpl 且 EnablePopupOverlayLayer=false),行为验证需实机;HG-25a 结构断言为回归门禁");
+            }
+            else
+            {
+                Report("HG-25 hovering a sibling top-level item switches the open submenu (one hover, no second click)",
+                    g54HoverSwitched,
+                    g54BehaviorDetail);
+            }
+            // 清理:收拢可能仍打开的下拉,免得影响关闭后的后续断言。
+            if (g54Menu is not null)
+            {
+                g54Menu.Close();
+                Pump();
+            }
+        }
+
         g54Window.Close();
         Pump();
 

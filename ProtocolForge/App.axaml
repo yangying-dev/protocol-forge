@@ -5,6 +5,7 @@
              xmlns:controls="using:ProtocolForge.Views.Controls"
              xmlns:suki="clr-namespace:SukiUI;assembly=SukiUI"
              xmlns:sukic="clr-namespace:SukiUI.Controls;assembly=SukiUI"
+             xmlns:system="clr-namespace:System;assembly=netstandard"
              RequestedThemeVariant="Default">
              <!-- "Default" follows the system theme variant; ThemeService overrides it at runtime. -->
 
@@ -15,6 +16,126 @@
             <ResourceDictionary.MergedDictionaries>
                 <ResourceInclude Source="avares://ProtocolForge/Assets/DockDensity.axaml" />
             </ResourceDictionary.MergedDictionaries>
+            <!-- 菜单栏悬停切换下拉(点 A 后移到 B 应立即切 B,而非必须点两次)的修复。
+                 症状根因：SukiUI 7.0.1 的 SukiTopLevelMenuItem 用 light-dismiss 悬浮层(LightDismiss
+                 OverlayLayer)实现「点击外部关闭」,并靠 OverlayInputPassThroughElement 决定哪些点穿透。
+                 SukiUI 原绑定是 $parent[MenuItem](仅当前打开项 A),兄弟项落点被浮层吞掉。但仅改绑定
+                 并不够——本应用在 MainWindow.axaml 内容外层补了手动的 VisualLayerManager(见该文件),
+                 它位于 SukiWindow 38px 标题栏之下,导致 LightDismissOverlayLayer 的坐标原点比窗口根
+                 偏移 39px;Avalonia 12.1.3 的 LightDismissOverlayLayer.HitTest 用「窗口根坐标」去调用
+                 VisualRoot.InputHitTest 做穿透祖先判定,拿到的却是层坐标 → 菜单栏上任何点都被判为
+                 「不穿透」,浮层吞掉全部菜单栏悬停事件,PointerEnteredItemEvent 到不了 Menu,
+                 DefaultMenuInteractionHandler 的悬停切换分支不执行 → 必须点两次。
+                 PfTopLevelMenuItem = SukiTopLevelMenuItem 的逐字副本,做两处修改:
+                   1) OverlayInputPassThroughElement 由 $parent[MenuItem] 改为 $parent[Menu]
+                      (语义正确,与 Avalonia 默认 FluentTopLevelMenuItem 一致);
+                   2) PART_Popup 的 IsLightDismissEnabled 由 True 改为 False —— 这才是实机生效的修复:
+                      顶层菜单不再注册 light-dismiss 悬浮层,菜单栏悬停即可穿透到 MenuItem 完成切换。
+                      「点外部关闭」不依赖该浮层:SukiUI 子级菜单项模板本就设 False,且
+                      DefaultMenuInteractionHandler 用 TopLevel 上的 RootPointerPressed(tunnel)+
+                      RawInput(NonClientLeftButtonDown)+WindowDeactivated 关闭 Menu(实机验证通过)。
+                 子级菜单项不带 main-menu-item class,仍走 SukiMenuItemStyle。
+                 MenuEasing 由 StaticResource 改 DynamicResource:SukiTheme 的资源在 Styles 里,
+                 App.Resources 解析不到静态资源,运行时查找可命中。 -->
+
+            <ControlTheme x:Key="PfTopLevelMenuItem" TargetType="MenuItem">
+                <Setter Property="FontWeight" Value="{DynamicResource DefaultDemiBold}" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="Padding" Value="10 0" />
+                <Setter Property="Template">
+                    <ControlTemplate>
+                        <Border Name="root"
+                                Margin="5,5"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{DynamicResource SukiMenuBorderBrush}"
+                                BorderThickness="0"
+                                CornerRadius="8">
+                            <Panel>
+                                <sukic:GlassCard Name="GlassMenuItemBackground"
+                                                Classes="Control"
+                                                CornerRadius="8"
+                                                Opacity="0">
+                                    <sukic:GlassCard.Transitions>
+                                        <Transitions>
+                                            <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
+                                        </Transitions>
+                                    </sukic:GlassCard.Transitions>
+                                </sukic:GlassCard>
+                                <ContentPresenter Name="PART_HeaderPresenter"
+                                                  Margin="{TemplateBinding Padding}"
+                                                  HorizontalContentAlignment="Left"
+                                                  VerticalContentAlignment="Center"
+                                                  Content="{TemplateBinding Header}">
+                                    <ContentPresenter.DataTemplates>
+                                        <DataTemplate DataType="system:String">
+                                            <TextBlock FontWeight="{DynamicResource DefaultDemiBold}" Text="{Binding}" />
+                                        </DataTemplate>
+                                    </ContentPresenter.DataTemplates>
+                                </ContentPresenter>
+                                 <Popup Name="PART_Popup"
+                                        ClipToBounds="True"
+                                        IsLightDismissEnabled="False"
+                                        IsOpen="{TemplateBinding IsSubMenuOpen,
+                                                                 Mode=TwoWay}"
+                                       Opacity="0"
+                                       OverlayInputPassThroughElement="{Binding $parent[Menu]}"
+                                       Placement="BottomEdgeAlignedLeft">
+                                    <LayoutTransformControl Name="PART_LayoutTransform" RenderTransformOrigin="50%, 0%">
+                                        <Grid Margin="-12,0,0,0">
+                                            <Border Margin="16,8,8,8"
+                                                    BoxShadow="{DynamicResource SukiPopupShadow}"
+                                                    CornerRadius="6" />
+                                            <Border Name="PART_Border"
+                                                    Margin="16,8,8,8"
+                                                    Background="{DynamicResource SukiCardBackground}"
+                                                    BorderBrush="{DynamicResource SukiMenuBorderBrush}"
+                                                    BorderThickness="1"
+                                                    BoxShadow="{DynamicResource SukiPopupShadow}"
+                                                    ClipToBounds="True"
+                                                    CornerRadius="6">
+                                                <Panel Background="{DynamicResource PopupGradientBrush}">
+                                                    <ScrollViewer>
+                                                        <ItemsPresenter Name="PART_ItemsPresenter"
+                                                                        Grid.IsSharedSizeScope="True"
+                                                                        ItemsPanel="{TemplateBinding ItemsPanel}" />
+                                                    </ScrollViewer>
+                                                </Panel>
+                                            </Border>
+                                        </Grid>
+                                    </LayoutTransformControl>
+                                </Popup>
+                            </Panel>
+                        </Border>
+                    </ControlTemplate>
+                </Setter>
+                <Style Selector="^:pointerover /template/ sukic|GlassCard#GlassMenuItemBackground">
+                    <Setter Property="Opacity" Value="1" />
+                </Style>
+                <Style Selector="^:open /template/ LayoutTransformControl#PART_LayoutTransform">
+                    <Style.Animations>
+                        <Animation Easing="{DynamicResource MenuEasing}"
+                                   FillMode="Forward"
+                                   Duration="0:0:0.3">
+                            <KeyFrame Cue="0%">
+                                <Setter Property="ScaleTransform.ScaleY" Value="0.88" />
+                                <Setter Property="ScaleTransform.ScaleX" Value="0.88" />
+                            </KeyFrame>
+                            <KeyFrame Cue="100%">
+                                <Setter Property="ScaleTransform.ScaleY" Value="1" />
+                                <Setter Property="ScaleTransform.ScaleX" Value="1" />
+                            </KeyFrame>
+                        </Animation>
+                        <Animation FillMode="Forward" Duration="0:0:0.25">
+                            <KeyFrame Cue="0%">
+                                <Setter Property="Opacity" Value="0" />
+                            </KeyFrame>
+                            <KeyFrame Cue="100%">
+                                <Setter Property="Opacity" Value="1" />
+                            </KeyFrame>
+                        </Animation>
+                    </Style.Animations>
+                </Style>
+            </ControlTheme>
         </ResourceDictionary>
     </Application.Resources>
 
@@ -37,10 +158,13 @@
         <Style Selector="sukic|SukiWindow /template/ Grid">
             <Setter Property="Margin" Value="0" />
         </Style>
+        <!-- 标题栏模板 DockPanel Margin="12,9"(SukiWindow.axaml)是模板局部值,样式改不掉;
+             内容盒 = PART_TitleBar 高 − 18,28px 时只剩 10px < 12px 文字的 ~16.8px 行盒 →
+             标题上下被截。抬到 38px → 内容盒 20px,文字完整显示。 -->
         <Style Selector="sukic|SukiWindow.main-window /template/ LayoutTransformControl#PART_TitleBar">
-            <Setter Property="Height" Value="28" />
-            <Setter Property="MinHeight" Value="28" />
-            <Setter Property="MaxHeight" Value="28" />
+            <Setter Property="Height" Value="38" />
+            <Setter Property="MinHeight" Value="38" />
+            <Setter Property="MaxHeight" Value="38" />
         </Style>
         <Style Selector="sukic|SukiWindow.main-window /template/ TextBlock#PART_TitleTextBlock">
             <Setter Property="Margin" Value="0" />
@@ -57,18 +181,36 @@
             <Setter Property="Padding" Value="8,1" />
             <Setter Property="FontSize" Value="12" />
         </Style>
+        <!-- 子级(非顶级)菜单项的 ItemsPresenter 只声明 SharedSizeGroup 列、自己不设
+             Grid.IsSharedSizeScope(SukiMenuItemStyle 模板局部如此)。于是它的 CheckToggle/
+             MenuItemSeparator 等列会向上归入「祖先」作用域——即顶级项 PfTopLevelMenuItem
+             的 PART_ItemsPresenter(见本文件 Grid.IsSharedSizeScope="True")。当「帮助」下拉里
+             的「主题」子菜单(全是 ToggleType=CheckBox 项)展开时,这些项独有的 checkbox(~25)
+             与竖分隔线(~17)两列被计入父级作用域,父级下拉整套条目被整体右推 ≈42px(实机复现:
+             条目文字 x 240→282,且展开一次后不可逆)。此处给每个子级 ItemsPresenter 就地新建
+             一个独立作用域,使其列只在本子菜单内共享,与父级作用域隔离。 -->
+        <Style Selector="MenuItem:not(.main-menu-item) /template/ ItemsPresenter#PART_ItemsPresenter">
+            <Setter Property="Grid.IsSharedSizeScope" Value="True" />
+        </Style>
+        <!-- 菜单项模板 Border#root Margin="5,5" 不可改(SukiTopLevelMenuItem 模板局部值),
+             但条目高度由控件级 Height 决定:34→28 后条目内盒 28−10=18px,12px 文字
+             行盒 ~16.8px 可容纳,文字不再有多余的上下空距。 -->
         <Style Selector="Menu.main-menu">
-            <Setter Property="Height" Value="34" />
-            <Setter Property="MinHeight" Value="34" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="MinHeight" Value="28" />
             <Setter Property="Padding" Value="0" />
         </Style>
         <Style Selector="Menu.main-menu /template/ Border">
-            <Setter Property="Height" Value="34" />
-            <Setter Property="MinHeight" Value="34" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="MinHeight" Value="28" />
         </Style>
         <Style Selector="MenuItem.main-menu-item">
-            <Setter Property="Height" Value="34" />
-            <Setter Property="MinHeight" Value="34" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="MinHeight" Value="28" />
+            <!-- 换用 PfTopLevelMenuItem(仅修复浮层穿透绑定),保持 SukiUI 外观逐字不变。
+                 显式 Theme setter 优先于 SukiMenuStyle 的 ItemContainerTheme,
+                 仅影响顶级菜单项;子级下拉项不带该类,继续用原 SukiTopLevelMenuItem。 -->
+            <Setter Property="Theme" Value="{StaticResource PfTopLevelMenuItem}" />
         </Style>
         <Style Selector="MenuItem.main-menu-item /template/ Border#root">
             <Setter Property="Margin" Value="1" />
@@ -100,15 +242,17 @@
         <Style Selector="ComboBox">
             <Setter Property="MinHeight" Value="26" />
         </Style>
-        <!-- ComboBox 可见框撑满控件高度:SukiUI ComboBox 模板根 <Border Padding="5">
-             把可见 GlassCard 四边内缩 5px,Height=26 时可见框只剩 16px(比同排按钮矮),
-             清零该内边距使可见框与工具栏按钮对齐。(SukiUI/Theme/ComboBoxStyles.xaml:57) -->
-        <Style Selector="ComboBox /template/ Border">
-            <Setter Property="Padding" Value="0" />
+        <!-- ComboBox 可见框撑满工具栏高度:SukiUI ComboBox 模板根 <Border Padding="5"> 是模板局部
+             值,样式无法覆盖(旧的 Padding 清零写法实测无效),Height=26 时可见框只得 26−2×5=16px。
+             改用类作用域负 Margin:GlassCard#border 在模板内未设 Margin,样式可生效,−5 把边框四边
+             外扩回满控件高度;配合 Height=32 → 边框 32px 与工具栏上下沿齐平,内容区 32−5−5−12
+             =20px 容纳 12px 文字不截断。(SukiUI/Theme/ComboBoxStyles.xaml:57,72) -->
+        <Style Selector="ComboBox.toolbar-combo">
+            <Setter Property="Height" Value="32" />
+            <Setter Property="MinHeight" Value="32" />
         </Style>
-        <Style Selector="ComboBox /template/ sukic|GlassCard#border">
-            <Setter Property="Margin" Value="0" />
-            <Setter Property="Padding" Value="0" />
+        <Style Selector="ComboBox.toolbar-combo /template/ sukic|GlassCard#border">
+            <Setter Property="Margin" Value="-5" />
         </Style>
         <Style Selector="ComboBox /template/ Popup">
             <Setter Property="Margin" Value="0" />
