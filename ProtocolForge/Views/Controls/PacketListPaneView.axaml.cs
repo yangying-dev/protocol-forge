@@ -226,7 +226,7 @@ public partial class PacketListPaneView : UserControl
             return;
 
         var (token, _, _) = GetFilterToken();
-        if (string.IsNullOrEmpty(token))
+        if (!LooksLikeFieldNameToken(token))
         {
             vm.IsFilterSuggestionOpen = false;
             vm.FilterSuggestions.Clear();
@@ -288,6 +288,12 @@ public partial class PacketListPaneView : UserControl
 
     private static bool IsFilterTokenBoundary(char c) =>
         c is ' ' or '(' or ')' or '!' or '=' or '<' or '>' or '&' or '|' or ',';
+
+    // Field names always start with a letter or underscore (pfcp.msg_type, _ws.col.Source).
+    // A token like the "2" in "pfcp.msg_type == 2" is a numeric operand, not a field name,
+    // so it must not keep the field-name autocomplete open.
+    private static bool LooksLikeFieldNameToken(string token) =>
+        token.Length > 0 && (char.IsLetter(token[0]) || token[0] == '_');
 
     private static void MoveFilterHighlight(MainWindowViewModel vm, int delta)
     {

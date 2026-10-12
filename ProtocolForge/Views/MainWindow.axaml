@@ -135,7 +135,9 @@
                               SelectedItem="{Binding ToolBar.SelectedVlanOption}"
                               DisplayMemberBinding="{Binding Label}"
                               ToolTip.Tip="{DynamicResource L10n.Tip.Vlan}" />
-                    <TextBox Name="VlanIdBox" Width="58" Height="26" FontSize="12"
+                    <!-- 同 PacketListPaneView:TextBox 主题自带 Padding="10,8",定高下会裁字,故去纵向内边距 -->
+                    <TextBox Name="VlanIdBox" Width="58" Height="26" MinHeight="26"
+                             Padding="4,0" FontSize="12"
                              Text="{Binding ToolBar.VlanId, Mode=TwoWay}"
                              IsVisible="{Binding ToolBar.IsVlanIdVisible}"
                              ToolTip.Tip="{DynamicResource L10n.Btn.VlanId}" />

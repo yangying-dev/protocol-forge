@@ -486,6 +486,15 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private string _filterValidationMessage = string.Empty;
 
+    // 校验消息为空时必须返回 null 而不是空串 —— Avalonia 对空串仍会弹出空气泡提示,
+    // 这正是"过滤器为空时悬停出现空提示"的来源。
+    /// <summary>Filter-box tooltip: null (not empty) when there is no message to show.</summary>
+    public string? FilterToolTip =>
+        string.IsNullOrEmpty(FilterValidationMessage) ? null : FilterValidationMessage;
+
+    partial void OnFilterValidationMessageChanged(string value) =>
+        OnPropertyChanged(nameof(FilterToolTip));
+
     /// <summary>Field names matching the token currently being typed in the filter box.</summary>
     public ObservableCollection<string> FilterSuggestions { get; } = [];
 

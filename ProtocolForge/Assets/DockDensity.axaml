@@ -218,6 +218,26 @@
               Value="{Binding GripMode, Converter={x:Static converters:GripModeConverters.IsVisibleVisibleOrHiddenConverter}}" />
     </Style>
 
+    <!-- 交互期间保持展开:按下工具栏文本框等子控件时,Avalonia 12 的指针隐式捕获会让
+         PointerOverPreProcessor 把「有效悬停元素」判为 null(命中元素 ≠ 捕获元素),
+         整条祖先链瞬时丢失 :pointerover —— 面板标题栏(靠 :pointerover 展开)于是
+         「按住消失、松开又出现」。App.axaml.cs 在按住期间给 chrome 打上
+         pf-chrome-interacting 类(仅非浮动窗格),这里让交互期与悬停态渲染一致;
+         松开/移出即移除该类,恢复原生悬停语义。 -->
+    <Style Selector="^.pf-chrome-interacting /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Margin" Value="0,18,0,0" />
+    </Style>
+
+    <Style Selector="^.pf-chrome-interacting /template/ Border#PART_Border">
+      <Setter Property="IsVisible"
+              Value="{Binding GripMode, Converter={x:Static converters:GripModeConverters.IsVisibleAutoHideOrVisibleConverter}}" />
+    </Style>
+
+    <Style Selector="^.pf-chrome-interacting /template/ Panel#PART_Panel">
+      <Setter Property="IsVisible"
+              Value="{Binding GripMode, Converter={x:Static converters:GripModeConverters.IsVisibleVisibleOrHiddenConverter}}" />
+    </Style>
+
     <Style Selector="^:floating:pointerover /template/ Panel#PART_Panel">
       <Setter Property="Height" Value="0" />
       <Setter Property="IsVisible" Value="False" />

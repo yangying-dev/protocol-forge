@@ -32,7 +32,9 @@
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>
-                <TextBox Grid.Column="2" Margin="4,0" Height="24"
+                <!-- 同 PacketListPaneView:TextBox 主题自带 Padding="10,8",定高下会裁字,故去纵向内边距 -->
+                <TextBox Grid.Column="2" Margin="4,0" Height="24" MinHeight="24"
+                         Padding="6,0"
                          FontSize="12" MinWidth="210"
                          Text="{Binding CustomStatisticsTap}"
                          PlaceholderText="{DynamicResource L10n.Stats.CustomTap}"
