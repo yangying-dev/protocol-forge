@@ -240,11 +240,19 @@
             <Setter Property="Padding" Value="8,0" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="MinHeight" Value="0" />
+            <!-- 单元格正文本无显式色/字重,沿 SukiWindow.Foreground(=SukiText)继承,默认常规字重;
+                 显式设为 SukiText + SemiBold,消除"又细又灰"的观感,向协议树字段名观感靠拢。 -->
+            <Setter Property="Foreground" Value="{DynamicResource SukiText}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
         <Style Selector="DataGridColumnHeader">
             <Setter Property="MinHeight" Value="26" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="Padding" Value="8,3" />
+            <!-- 基础 Fluent 主题把列头 Foreground 设为 DataGridColumnHeaderForegroundBrush
+                 (=SystemBaseMediumColor,中等灰);SukiUI 只改成 DemiBold 未改色。这里显式改成
+                 SukiText,与正文一致,去掉列头的"灰"。 -->
+            <Setter Property="Foreground" Value="{DynamicResource SukiText}" />
         </Style>
         <!-- 协议树行距实测:字段(叶子)行 21px = 文本行 15px + 字段模板根 Border Padding 2,1(+2)
              + TreeViewItem.Padding 6,2(+4);层行 23px 由展开箭头撑高(见下一条样式)。这里把
