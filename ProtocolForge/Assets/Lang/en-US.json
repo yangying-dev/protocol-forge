@@ -25,6 +25,8 @@
   "Mnu.Help": "Help",
   "Mnu.OpenSupportData": "Open Support Data Folder",
   "Mnu.About": "About ProtocolForge",
+  "Mnu.UserManual": "User Manual",
+  "Dlg.ManualMissing": "User manual file not found: {0}",
 
   "Btn.Start": "Start",
   "Btn.Stop": "Stop",

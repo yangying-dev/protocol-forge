@@ -431,6 +431,28 @@ public partial class MainWindow : SukiWindow
         }
     }
 
+    private void OnUserManualClicked(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            // 手册以单个自包含 HTML 随包分发(Manual/UserManual.html),
+            // 用系统默认浏览器打开,完全离线,无需网络。
+            string manualPath = Path.Combine(AppContext.BaseDirectory, "Manual", "UserManual.html");
+            if (!File.Exists(manualPath))
+                manualPath = Path.Combine(AppContext.BaseDirectory, "UserManual.html");
+            if (File.Exists(manualPath))
+                Process.Start(new ProcessStartInfo { FileName = manualPath, UseShellExecute = true });
+            else
+                _ = ShowInfoAsync(
+                    LocalizationService.Resolve("Mnu.UserManual"),
+                    LocalizationService.Resolve("Dlg.ManualMissing", manualPath));
+        }
+        catch
+        {
+            // 打开手册失败时静默忽略,不打断用户
+        }
+    }
+
     private void OnMenuLangZhCnClicked(object? sender, RoutedEventArgs e)
     {
         LocalizationService.SetCurrent(AppLanguage.ZhCn);

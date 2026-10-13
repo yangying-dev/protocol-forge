@@ -25,6 +25,8 @@
   "Mnu.Help": "帮助",
   "Mnu.OpenSupportData": "打开支持数据目录",
   "Mnu.About": "关于 ProtocolForge",
+  "Mnu.UserManual": "用户手册",
+  "Dlg.ManualMissing": "未找到用户手册文件：{0}",
 
   "Btn.Start": "启动",
   "Btn.Stop": "停止",

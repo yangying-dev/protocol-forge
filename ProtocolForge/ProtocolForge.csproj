@@ -36,6 +36,11 @@
     <!-- Lang dictionaries are ALSO .NET manifest resources so the console
          verification harness (tests/pf-verify) can load them without Avalonia. -->
     <EmbeddedResource Include="Assets\Lang\*.json" />
+    <!-- Offline HTML user manual ships as a real file (not embedded) so the
+         Help menu can open it in the OS default browser on Windows/Linux/macOS.
+         The whole publish dir is packaged, so this content file is included
+         automatically by every packaging script. -->
+    <Content Include="Manual\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

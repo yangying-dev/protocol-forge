@@ -68,6 +68,7 @@ ProtocolForge 是一款跨平台桌面应用程序，用于检查、编辑和重
 - **发送历史** — 每次运行的逐包发送结果会被保留（而非只显示最近一次），并可从报文列表右键菜单导出为 CSV。
 - **可停靠布局** — 报文列表、协议树、十六进制编辑器和统计面板均为 visual-studio 风格的停靠窗格（Dock 12.1）：拖动窗格标题可重新停靠、以分页方式组合、浮动到独立窗口，或关闭后从视图菜单重新打开。布局保存到 `%APPDATA%/ProtocolForge/docklayout.json`。
 - **布局持久化** — 窗口几何位置和面板可见性保存到 `%APPDATA%/ProtocolForge/layout.json`（停靠布局保存到 `docklayout.json`，见上），下次启动时恢复。
+- **离线用户手册** — 随包分发一份单文件、双语（简体中文 / English，页面内可切换）HTML 用户手册，通过 **帮助 → 用户手册** 打开；15 张截图全部以 base64 内嵌，完全离线可用，覆盖除统计面板（按需求不编写）外的全部功能。随包文件 `ProtocolForge/Manual/UserManual.html` 由 `docs/manual/` 源稿生成——从源稿重新生成，勿手改。
 
 ---
 
@@ -112,8 +113,8 @@ ProtocolForge/
 ├── ProtocolForge.csproj       # .NET 10, Avalonia 12.1.3, Dock 12.1.0.7, SukiUI 7.0.1, CommunityToolkit.Mvvm 8.4.2, DataGrid 12.1.2
 │
 ├── Assets/Lang/               # 本地化字典 — en-US.json + zh-CN.json（作为嵌入资源）
-│   ├── en-US.json            # 英文界面字符串（224 个键）
-│   └── zh-CN.json            # 简体中文界面字符串（224 个键，键集一致）
+│   ├── en-US.json            # 英文界面字符串（227 个键）
+│   └── zh-CN.json            # 简体中文界面字符串（227 个键，键集一致）
 │
 ├── Models/                    # 领域对象
 │   ├── Packet.cs              # 单个报文：原始数据、修改、地址/端口、协议层

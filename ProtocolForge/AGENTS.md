@@ -28,6 +28,7 @@ ProtocolForge/
 | Hex editing | `ViewModels/HexEditorViewModel.cs` + `Views/Controls/HexEditor.axaml.cs` | REPLACE-only runs, pending preview, Enter/Esc |
 | Tree ↔ hex sync | `ViewModels/MainWindowViewModel.cs`, `ProtocolTreeViewModel.cs` | `FieldSelected`, `FieldFoundAtOffset`, `_treeBuildSeq` |
 | Layout persistence | `Services/LayoutService.cs` | JSON in ApplicationData |
+| User manual | `Manual/UserManual.html` (shipped), source `../docs/manual/` | Single self-contained bilingual HTML (base64 screenshots); **帮助 → 用户手册** opens it; csproj `<Content Include="Manual\**">` ships it |
 
 ## CONVENTIONS
 

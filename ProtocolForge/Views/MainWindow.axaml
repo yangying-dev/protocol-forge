@@ -76,6 +76,8 @@
                 </MenuItem>
             </MenuItem>
             <MenuItem Classes="main-menu-item" Header="{DynamicResource L10n.Mnu.Help}">
+                <MenuItem Header="{DynamicResource L10n.Mnu.UserManual}" Click="OnUserManualClicked" />
+                <Separator />
                 <MenuItem Header="{DynamicResource L10n.Mnu.About}" Click="OnAboutClicked" />
             </MenuItem>
         </Menu>

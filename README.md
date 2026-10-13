@@ -64,6 +64,7 @@ so no real operator capture is involved and reproducing them does not require co
 - **Send History** — Per-packet send results are retained for the run instead of only the most recent one being visible, and can be exported as CSV from the packet-list context menu.
 - **Dockable Layout** — The packet list, protocol tree, hex editor and statistics are panes of a visual-studio-style dock (Dock 12.1): drag a pane header to re-dock it, group panes as tabs, float them in their own window, or close and re-open them from the View menu. The arrangement persists in `%APPDATA%/ProtocolForge/docklayout.json`.
 - **Layout Persistence** — Window geometry and panel visibility are saved to `%APPDATA%/ProtocolForge/layout.json` (the dock arrangement goes to `docklayout.json`, above) and restored on next launch.
+- **Offline User Manual** — A single self-contained bilingual (简体中文 / English, switchable in-page) HTML user manual ships with the app and opens via **Help → 用户手册**. All 15 screenshots are embedded as base64 data URIs, so it works fully offline; it covers every feature (Statistics deliberately excluded). The shipped file `ProtocolForge/Manual/UserManual.html` is generated from the source in `docs/manual/` — regenerate from there rather than hand-editing.
 
 ---
 
@@ -108,8 +109,8 @@ ProtocolForge/
 ├── ProtocolForge.csproj       # .NET 10, Avalonia 12.1.3, Dock 12.1.0.7, SukiUI 7.0.1, CommunityToolkit.Mvvm 8.4.2, DataGrid 12.1.2
 │
 ├── Assets/Lang/               # Localization dictionaries — en-US.json + zh-CN.json (embedded as resources)
-│   ├── en-US.json            # English UI strings (224 keys)
-│   └── zh-CN.json            # 简体中文 UI strings (224 keys, identical key set)
+│   ├── en-US.json            # English UI strings (227 keys)
+│   └── zh-CN.json            # 简体中文 UI strings (227 keys, identical key set)
 │
 ├── Models/                    # Domain objects
 │   ├── Packet.cs              # Single packet: raw data, modifications, address/port, layers
