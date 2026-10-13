@@ -49,6 +49,8 @@
                 <Separator />
                 <MenuItem Header="{DynamicResource L10n.Mnu.TsharkPath}" Click="OnPickTsharkClicked" />
                 <Separator />
+                <MenuItem Header="{DynamicResource L10n.Mnu.OpenSupportData}" Click="OnOpenLogDirClicked" />
+                <Separator />
                 <MenuItem Header="{DynamicResource L10n.Mnu.Exit}" Click="OnExitClicked" />
             </MenuItem>
             <MenuItem Classes="main-menu-item" Header="{DynamicResource L10n.Mnu.View}">
@@ -58,27 +60,22 @@
                           Command="{Binding ToggleProtocolTreeCommand}" ToggleType="CheckBox" />
                 <MenuItem Header="{DynamicResource L10n.Mnu.HexEditor}" IsChecked="{Binding ShowHexEditor, Mode=OneWay}"
                           Command="{Binding ToggleHexEditorCommand}" ToggleType="CheckBox" />
-                <MenuItem Header="{DynamicResource L10n.Panel.Statistics}" IsChecked="{Binding ShowStatistics, Mode=OneWay}"
-                          Command="{Binding ToggleStatisticsCommand}" ToggleType="CheckBox" />
                 <Separator />
                 <MenuItem Header="{DynamicResource L10n.Mnu.ResetLayout}" Click="OnResetLayoutClicked" />
             </MenuItem>
-            <MenuItem Classes="main-menu-item" Header="{DynamicResource L10n.Find.Label}">
-                <MenuItem Header="{DynamicResource L10n.Find.Label}" InputGesture="Ctrl+F" Click="OnFocusFindBox" />
-            </MenuItem>
-            <MenuItem Classes="main-menu-item" Header="{DynamicResource L10n.Lang.Menu}">
-                <MenuItem x:Name="MenuLangZhCn" Header="{DynamicResource L10n.Lang.ZhCn}" Click="OnMenuLangZhCnClicked" ToggleType="CheckBox"/>
-                <MenuItem x:Name="MenuLangEnUs" Header="{DynamicResource L10n.Lang.EnUs}" Click="OnMenuLangEnUsClicked" ToggleType="CheckBox"/>
-            </MenuItem>
-            <MenuItem Classes="main-menu-item" Header="{DynamicResource L10n.Mnu.Help}">
+            <MenuItem Classes="main-menu-item" Header="{DynamicResource L10n.Mnu.Tools}">
+                <MenuItem x:Name="MenuLanguage" Header="{DynamicResource L10n.Lang.Menu}">
+                    <MenuItem x:Name="MenuLangZhCn" Header="{DynamicResource L10n.Lang.ZhCn}" Click="OnMenuLangZhCnClicked" ToggleType="CheckBox"/>
+                    <MenuItem x:Name="MenuLangEnUs" Header="{DynamicResource L10n.Lang.EnUs}" Click="OnMenuLangEnUsClicked" ToggleType="CheckBox"/>
+                </MenuItem>
+                <Separator />
                 <MenuItem x:Name="MenuTheme" Header="{DynamicResource L10n.Theme.Menu}">
                     <MenuItem Header="{DynamicResource L10n.Theme.System}" Tag="Default" Click="OnMenuThemeBaseClicked" ToggleType="CheckBox"/>
                     <MenuItem Header="{DynamicResource L10n.Theme.Light}" Tag="Light" Click="OnMenuThemeBaseClicked" ToggleType="CheckBox"/>
                     <MenuItem Header="{DynamicResource L10n.Theme.Dark}" Tag="Dark" Click="OnMenuThemeBaseClicked" ToggleType="CheckBox"/>
                 </MenuItem>
-                <Separator />
-                <MenuItem Header="{DynamicResource L10n.Mnu.OpenSupportData}" Click="OnOpenLogDirClicked" />
-                <Separator />
+            </MenuItem>
+            <MenuItem Classes="main-menu-item" Header="{DynamicResource L10n.Mnu.Help}">
                 <MenuItem Header="{DynamicResource L10n.Mnu.About}" Click="OnAboutClicked" />
             </MenuItem>
         </Menu>

@@ -21,6 +21,7 @@
   "Mnu.ProtocolTree": "协议树",
   "Mnu.HexEditor": "十六进制编辑器",
   "Mnu.ResetLayout": "重置布局",
+  "Mnu.Tools": "工具",
   "Mnu.Help": "帮助",
   "Mnu.OpenSupportData": "打开支持数据目录",
   "Mnu.About": "关于 ProtocolForge",
