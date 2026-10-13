@@ -189,11 +189,6 @@
       </ControlTemplate>
     </Setter>
 
-    <!-- AutoHide 悬停时给内容预留标题栏空间,避免标题栏浮出时遮挡第一行内容 -->
-    <Style Selector="^:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Margin" Value="0,18,0,0" />
-    </Style>
-
     <Style Selector="^/template/ Border#PART_Border">
       <Setter Property="BorderThickness" Value="0 0 0 0" />
       <Setter Property="IsVisible"
@@ -225,10 +220,6 @@
          「按住消失、松开又出现」。App.axaml.cs 在按住期间给 chrome 打上
          pf-chrome-interacting 类(仅非浮动窗格),这里让交互期与悬停态渲染一致;
          松开/移出即移除该类,恢复原生悬停语义。 -->
-    <Style Selector="^.pf-chrome-interacting /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Margin" Value="0,18,0,0" />
-    </Style>
-
     <Style Selector="^.pf-chrome-interacting /template/ Border#PART_Border">
       <Setter Property="IsVisible"
               Value="{Binding GripMode, Converter={x:Static converters:GripModeConverters.IsVisibleAutoHideOrVisibleConverter}}" />
