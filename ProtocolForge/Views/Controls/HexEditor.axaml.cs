@@ -19,12 +19,12 @@ namespace ProtocolForge.Views.Controls;
 public partial class HexEditor : UserControl
 {
     private const int BytesPerRow = 16;
-    private const double CellWidth = 28;
-    private const double CellHeight = 22;
-    private const double CellMargin = 1;
-    private const double AsciiCellWidth = 11;
-    private const double RowLabelWidth = 60;
-    private const double ByteGroupGap = 12;
+    private const double CellWidth = 18;
+    private const double CellHeight = 17;
+    private const double CellMargin = 0;
+    private const double AsciiCellWidth = 8;
+    private const double RowLabelWidth = 38;
+    private const double ByteGroupGap = 8;
 
     private static readonly FontFamily MonospaceFont = new("Cascadia Code, JetBrains Mono, Consolas, 'Courier New', monospace");
 
@@ -257,7 +257,7 @@ public partial class HexEditor : UserControl
             // Offset label
             var label = new TextBlock
             {
-                Text = $"{baseOffset:X8}",
+                Text = $"{baseOffset:X4}",
                 FontFamily = MonospaceFont,
                 FontSize = 12,
                 Width = RowLabelWidth,
@@ -308,7 +308,7 @@ public partial class HexEditor : UserControl
                     Width = CellWidth,
                     Height = CellHeight,
                     Margin = new Thickness(CellMargin),
-                    CornerRadius = new CornerRadius(3),
+                    CornerRadius = new CornerRadius(0),
                     Background = GetByteBackground(hexByte),
                     Cursor = new Cursor(StandardCursorType.Hand),
                     Focusable = true,
@@ -336,7 +336,7 @@ public partial class HexEditor : UserControl
             }
 
             // Gap between hex and ASCII
-            rowPanel.Children.Add(new Border { Width = 16 });
+            rowPanel.Children.Add(new Border { Width = 8 });
 
             // ASCII cells
             var asciiCells = new Border[countInRow];
@@ -363,7 +363,7 @@ public partial class HexEditor : UserControl
                     Width = AsciiCellWidth,
                     Height = CellHeight,
                     Margin = new Thickness(CellMargin),
-                    CornerRadius = new CornerRadius(2),
+                    CornerRadius = new CornerRadius(0),
                     Background = Brushes.Transparent,
                     Cursor = new Cursor(StandardCursorType.Hand),
                     Focusable = true,

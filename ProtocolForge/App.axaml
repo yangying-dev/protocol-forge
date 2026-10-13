@@ -225,20 +225,39 @@
         <Style Selector="MenuItem.main-menu-item /template/ ContentPresenter#PART_HeaderPresenter">
             <Setter Property="Margin" Value="8,0" />
         </Style>
-        <Style Selector="DataGridCell">
-            <Setter Property="Padding" Value="8,3" />
-            <Setter Property="FontSize" Value="12" />
-        </Style>
+        <!-- 报文列表行高实测 38px。根因并非 DataGridRow.MinHeight:行模板里 SukiUI 的
+             Border#BackgroundRectangle 自带 Padding=18,18,18,18 且无子元素,单它就要 36px,
+             把整行撑到 38px。该值编译进 SukiUI 模板,`/template/` 选择器的 Style 优先级低于
+             模板自身设值,改不动;DataGrid.RowHeight 在本版 Avalonia 也不改实际行高(设 22/30
+             行仍 38),DataGridRow.MinHeight 又被 DataGrid 的本地值压成 0。故直接给 DataGridRow
+             固定 Height=22(模板未设该属性,Style 可生效):行内容垂直居中,背景 Border 随之裁到
+             行高,底部分隔线仍在行底绘制。DataGrid.RowHeight=22 仅用于让滚动条按 22px/行估算。
+             DataGridCell 同步压低主题 MinHeight(32)并把纵向内边距归零,使 20px 复选框不被裁。 -->
         <Style Selector="DataGridRow">
-            <Setter Property="MinHeight" Value="26" />
+            <Setter Property="Height" Value="22" />
+        </Style>
+        <Style Selector="DataGridCell">
+            <Setter Property="Padding" Value="8,0" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="MinHeight" Value="0" />
         </Style>
         <Style Selector="DataGridColumnHeader">
-            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="MinHeight" Value="26" />
             <Setter Property="FontSize" Value="12" />
-            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="Padding" Value="8,3" />
         </Style>
+        <!-- 协议树行距实测:字段(叶子)行 21px = 文本行 15px + 字段模板根 Border Padding 2,1(+2)
+             + TreeViewItem.Padding 6,2(+4);层行 23px 由展开箭头撑高(见下一条样式)。这里把
+             TreeViewItem 纵向内边距归零(-4px),字段行收敛到 17px,贴近 Wireshark 的紧凑行距。 -->
         <Style Selector="TreeViewItem">
-            <Setter Property="Padding" Value="6,2" />
+            <Setter Property="Padding" Value="6,0" />
+        </Style>
+        <!-- 展开箭头的高度由 SukiUI 的 .Basic 类样式(Padding=11,8)决定,它比内联 Padding=0 及普通
+             Style 选择器优先级都高;选择器带上 .Basic 类后按"样式触发器"优先级匹配,才能压过它。
+             纵向内边距压到 5,使层行高 = 箭头 7 + 10 = 17px,与字段行(17px)对齐。 -->
+        <Style Selector="TreeViewItem /template/ ToggleButton#PART_ExpandCollapseChevron.Basic">
+            <Setter Property="Padding" Value="11,5" />
+            <Setter Property="MinHeight" Value="0" />
         </Style>
         <Style Selector="ListBoxItem">
             <Setter Property="Padding" Value="8,3" />

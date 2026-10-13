@@ -132,7 +132,7 @@ public sealed partial class HexEditorViewModel : ObservableObject
     /// Highlights a range of bytes for a protocol field and scrolls to it.
     /// Uses Wireshark-style dark highlight.
     /// </summary>
-    public void HighlightField(ProtocolField field)
+    public void HighlightField(ProtocolField field, bool moveSelection = false)
     {
         TraceLog.Write($"HEX.HighlightField({field.Name}) offset={field.Offset} len={field.Length} parentLayer={field.ParentLayer?.ProtocolName ?? "null"}");
         ClearHighlights();
@@ -149,6 +149,11 @@ public sealed partial class HexEditorViewModel : ObservableObject
         if (start + length > _currentPacket.EffectiveData.Length)
             return;
 
+        // Tree-driven clicks park the cursor on the field's first byte (single focus:
+        // blue start + protocol-colour rest); the hex-click path keeps its clicked byte.
+        if (moveSelection)
+            MoveSelectionTo(start);
+
         HighlightRange(start, length, GetHighlightColor(field));
 
         // Scroll-follow: the tree → hex highlight path must bring the highlighted
@@ -156,7 +161,7 @@ public sealed partial class HexEditorViewModel : ObservableObject
         ScrollToOffsetRequested?.Invoke(start);
     }
 
-    public void HighlightLayer(ProtocolLayer layer)
+    public void HighlightLayer(ProtocolLayer layer, bool moveSelection = false)
     {
         TraceLog.Write($"HEX.HighlightLayer({layer.ProtocolName})");
         ClearHighlights();
@@ -203,6 +208,10 @@ public sealed partial class HexEditorViewModel : ObservableObject
         if (minStart == int.MaxValue)
             return;
 
+        // Layer rows follow the same single-focus rule as HighlightField.
+        if (moveSelection)
+            MoveSelectionTo(minStart);
+
         HighlightRange(minStart, maxEnd - minStart, GetProtocolColor(layer.ProtocolName));
 
         // Scroll-follow for layer clicks (same caller-responsibility as HighlightField).
@@ -222,8 +231,8 @@ public sealed partial class HexEditorViewModel : ObservableObject
             }
         }
 
-        // Only set SelectedByteOffset if no byte is currently selected.
-        // This prevents overriding the user's actual selection position.
+        // Anchor fallback: only when nothing is selected yet. Tree-driven moves happen
+        // in the caller (moveSelection) before this, so the refresh below repaints them.
         if (SelectedByteOffset < 0)
             SelectedByteOffset = start;
 
@@ -688,6 +697,17 @@ public sealed partial class HexEditorViewModel : ObservableObject
     {
         foreach (var b in Bytes)
             b.IsSelected = false;
+    }
+
+    /// <summary>Moves the single-byte cursor to <paramref name="offset"/>, clearing any previous selection.</summary>
+    private void MoveSelectionTo(int offset)
+    {
+        if (offset < 0 || offset >= Bytes.Count)
+            return;
+
+        ClearSelection();
+        Bytes[offset].IsSelected = true;
+        SelectedByteOffset = offset;
     }
 
     /// <summary>

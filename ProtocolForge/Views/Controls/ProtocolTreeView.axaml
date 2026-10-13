@@ -44,11 +44,10 @@
                         </Border.ContextMenu>
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <TextBlock Text="{Binding Name}" FontSize="12"
-                                       FontWeight="SemiBold" Foreground="{DynamicResource SukiPrimaryColor}" />
-                            <TextBlock Text=":" FontSize="12" Foreground="{DynamicResource SukiMuteText}" />
+                                       FontWeight="SemiBold" Classes="tree-field-name" />
+                            <TextBlock Text=":" FontSize="12" Classes="tree-field-colon" />
                             <TextBlock Text="{Binding DisplayValue}" FontSize="12"
-                                       IsVisible="{Binding !IsEditing}"
-                                       Foreground="{DynamicResource SukiText}" />
+                                       IsVisible="{Binding !IsEditing}" />
                             <TextBox Text="{Binding EditText}"
                                      IsVisible="{Binding IsEditingAndNotEnum}"
                                      Width="160" Padding="3,0"
@@ -81,7 +80,7 @@
                                 </StackPanel>
                                 <TextBlock Text="{Binding HexValue, StringFormat={}[{0}]}"
                                        IsVisible="{Binding ShowHex}"
-                                       FontSize="11" Foreground="{DynamicResource SukiDisabledText}"
+                                       FontSize="11" Classes="tree-field-hex"
                                        FontFamily="Consolas, monospace" />
                         </StackPanel>
                     </Border>
@@ -96,6 +95,48 @@
                     <Setter Property="Transitions">
                         <Transitions />
                     </Setter>
+                </Style>
+
+                <!-- 选中行背景被 SukiUI 刷成 SukiPrimaryColor(蓝),字段名原本同色 → "蓝字蓝底"看不见;
+                     且该前景是模板局部值,外层 Style 覆盖不掉(只能改 DataTemplate)。故去掉局部前景、
+                     改用具名 class,按"常态各自配色 / 选中转浅色"分两组样式。关键:选中转浅色的后代
+                     选择器会穿透到子节点(选中父层时子字段整片变白),而 Avalonia 没有"不跨 TreeViewItem"
+                     的选择器,`:selected /template/ ...` 又只能命中模板元素、够不到 DataTemplate 内容。
+                     于是反过来给"处于选中项内、但自身不是选中项"的嵌套行补一组还原规则(多一个 TreeViewItem
+                     层级 → 特异性更高 → 覆盖上面的白色),同时把嵌套项的 Foreground 还原,避免其值文本
+                     (无局部前景)跟着父层继承成白色。 -->
+                <Style Selector="TreeViewItem:selected">
+                    <Setter Property="Foreground" Value="White" />
+                </Style>
+                <Style Selector="TreeViewItem:selected TreeViewItem">
+                    <Setter Property="Foreground" Value="{DynamicResource SukiText}" />
+                </Style>
+                <Style Selector="TextBlock.tree-field-name">
+                    <Setter Property="Foreground" Value="{DynamicResource SukiPrimaryColor}" />
+                </Style>
+                <Style Selector="TreeViewItem:selected TextBlock.tree-field-name">
+                    <Setter Property="Foreground" Value="White" />
+                </Style>
+                <Style Selector="TreeViewItem:selected TreeViewItem TextBlock.tree-field-name">
+                    <Setter Property="Foreground" Value="{DynamicResource SukiPrimaryColor}" />
+                </Style>
+                <Style Selector="TextBlock.tree-field-colon">
+                    <Setter Property="Foreground" Value="{DynamicResource SukiMuteText}" />
+                </Style>
+                <Style Selector="TreeViewItem:selected TextBlock.tree-field-colon">
+                    <Setter Property="Foreground" Value="White" />
+                </Style>
+                <Style Selector="TreeViewItem:selected TreeViewItem TextBlock.tree-field-colon">
+                    <Setter Property="Foreground" Value="{DynamicResource SukiMuteText}" />
+                </Style>
+                <Style Selector="TextBlock.tree-field-hex">
+                    <Setter Property="Foreground" Value="{DynamicResource SukiDisabledText}" />
+                </Style>
+                <Style Selector="TreeViewItem:selected TextBlock.tree-field-hex">
+                    <Setter Property="Foreground" Value="#E0E0E0" />
+                </Style>
+                <Style Selector="TreeViewItem:selected TreeViewItem TextBlock.tree-field-hex">
+                    <Setter Property="Foreground" Value="{DynamicResource SukiDisabledText}" />
                 </Style>
             </TreeView.Styles>
         </TreeView>

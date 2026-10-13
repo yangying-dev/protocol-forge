@@ -2,7 +2,8 @@
 <!--
   DockDensity.axaml — SukiUI.Dock 停靠面板密度覆盖
   参照 Visual Studio 停靠层级 + Wireshark 数据密度/贴边：
-    - 面板内边距：Shadow Border 8→4、GlassCard 5→2、DockableControl 12,15→4,6
+    - 面板内边距：Shadow Border 8→0、GlassCard 5→0、DockableControl 12,15→0
+      （零内边距：面板内容贴面板边缘，相邻面板间距≈分隔条 4px）
     - 标题栏：字号 14→12、标题 Margin 0,4,8,4→0,2,6,2、Grip 8,0→4,0
     - ChromeButton：18x16/Pad3 → 16x14/Pad2、Margin 2→1
   加载顺序即优先级：App.axaml 中置于 Application.Resources，
@@ -67,12 +68,12 @@
     <Setter Property="Template">
       <ControlTemplate>
         <Panel>
-          <Border Margin="4"
+          <Border Margin="0"
                   BoxShadow="{DynamicResource SukiPopupShadow}"
                   CornerRadius="20"
                   IsVisible="{TemplateBinding Background,
                                               Converter={x:Static converters:TransparentToTrueConverter.Instance}}" />
-          <suki:GlassCard Margin="2" Padding="0">
+          <suki:GlassCard Margin="0" Padding="0">
             <Panel>
 
               <Panel IsVisible="{TemplateBinding Background, Converter={x:Static converters:TransparentToTrueConverter.Instance}}">
@@ -88,7 +89,7 @@
               </Panel>
 
               <db:DockableControl Name="PART_DockableControl"
-                                  Margin="4,6"
+                                  Margin="0"
                                   x:DataType="core:IDock"
                                   Background="Transparent"
                                   TrackingMode="Visible">

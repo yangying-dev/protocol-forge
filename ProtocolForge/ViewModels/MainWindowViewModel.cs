@@ -1603,14 +1603,14 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private void OnFieldSelected((Packet Packet, ProtocolField Field) args)
     {
         TraceLog.Write($"MW.OnFieldSelected({args.Field.Name})");
-        HexEditor.HighlightField(args.Field);
+        HexEditor.HighlightField(args.Field, moveSelection: true);
         ShowStatus("Status.FieldSelected", args.Field.Name, args.Field.Offset, args.Field.Length);
     }
 
     private void OnLayerSelected((Packet Packet, ProtocolLayer Layer) args)
     {
         TraceLog.Write($"MW.OnLayerSelected({args.Layer.ProtocolName})");
-        HexEditor.HighlightLayer(args.Layer);
+        HexEditor.HighlightLayer(args.Layer, moveSelection: true);
         ShowStatus("Status.LayerSelected", args.Layer.DisplayText);
     }
 
@@ -1629,7 +1629,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         HexEditor.RefreshBytes();
         HexEditor.RefreshAddressInfo();
         HexEditor.MarkFieldEdited(args.Field);
-        HexEditor.HighlightField(args.Field);
+        HexEditor.HighlightField(args.Field, moveSelection: true);
         RefreshLayerDisplayText(args.Packet);
         ProtocolEditorService.RefreshEditedFieldBytes(args.Packet, args.Field.Offset, args.Field.Length);
 
