@@ -237,7 +237,7 @@
             <Setter Property="Height" Value="22" />
         </Style>
         <Style Selector="DataGridCell">
-            <Setter Property="Padding" Value="8,0" />
+            <Setter Property="Padding" Value="4,0" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="MinHeight" Value="0" />
             <!-- 单元格正文本无显式色/字重,沿 SukiWindow.Foreground(=SukiText)继承,默认常规字重;
@@ -248,12 +248,19 @@
         <Style Selector="DataGridColumnHeader">
             <Setter Property="MinHeight" Value="26" />
             <Setter Property="FontSize" Value="12" />
-            <Setter Property="Padding" Value="8,3" />
+            <Setter Property="Padding" Value="4,3" />
             <!-- 基础 Fluent 主题把列头 Foreground 设为 DataGridColumnHeaderForegroundBrush
                  (=SystemBaseMediumColor,中等灰);SukiUI 只改成 DemiBold 未改色。这里显式改成
                  SukiText,与正文一致,去掉列头的"灰"。 -->
             <Setter Property="Foreground" Value="{DynamicResource SukiText}" />
+            <!-- 列头内容(含 "No." 列的自定义 StackPanel)与单元格正文一致左对齐。旧写法为居中
+                 + 给模板 ContentPresenter 加 26px 左外边距抵消右侧排序图标占位;该外边距会把
+                 窄列(协议/长度)的列头挤出截断,且列头居中与左对齐的数据正文对不齐。 -->
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
         </Style>
+        <!-- 列头之间的细竖分隔线在 PacketListPaneView.axaml.cs 的 EnsureHeaderSeparators() 里补:
+             SukiUI 7.0.1 把底边画在模板子元素 Border#PART_Border 上,该值是模板内硬编码的,
+             优先级高于普通 Style,App.axaml 的 /template/ 样式覆盖不掉,只能用代码本地值。 -->
         <!-- 协议树行距实测:字段(叶子)行 21px = 文本行 15px + 字段模板根 Border Padding 2,1(+2)
              + TreeViewItem.Padding 6,2(+4);层行 23px 由展开箭头撑高(见下一条样式)。这里把
              TreeViewItem 纵向内边距归零(-4px),字段行收敛到 17px,贴近 Wireshark 的紧凑行距。 -->

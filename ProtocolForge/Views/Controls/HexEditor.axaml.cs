@@ -19,12 +19,12 @@ namespace ProtocolForge.Views.Controls;
 public partial class HexEditor : UserControl
 {
     private const int BytesPerRow = 16;
-    private const double CellWidth = 18;
-    private const double CellHeight = 17;
+    private const double CellWidth = 22;
+    private const double CellHeight = 21;
     private const double CellMargin = 0;
-    private const double AsciiCellWidth = 8;
-    private const double RowLabelWidth = 38;
-    private const double ByteGroupGap = 8;
+    private const double AsciiCellWidth = 10;
+    private const double RowLabelWidth = 46;
+    private const double ByteGroupGap = 10;
 
     private static readonly FontFamily MonospaceFont = new("Cascadia Code, JetBrains Mono, Consolas, 'Courier New', monospace");
 
@@ -259,7 +259,7 @@ public partial class HexEditor : UserControl
             {
                 Text = $"{baseOffset:X4}",
                 FontFamily = MonospaceFont,
-                FontSize = 12,
+                FontSize = 15,
                 Width = RowLabelWidth,
                 Foreground = _offsetTextBrush,
                 VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
@@ -297,7 +297,7 @@ public partial class HexEditor : UserControl
                 {
                     Text = GetHexCellText(hexByte),
                     FontFamily = MonospaceFont,
-                    FontSize = 12,
+                    FontSize = 15,
                     HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
                     VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
                 };
@@ -336,7 +336,7 @@ public partial class HexEditor : UserControl
             }
 
             // Gap between hex and ASCII
-            rowPanel.Children.Add(new Border { Width = 8 });
+            rowPanel.Children.Add(new Border { Width = 10 });
 
             // ASCII cells
             var asciiCells = new Border[countInRow];
@@ -352,7 +352,7 @@ public partial class HexEditor : UserControl
                 {
                     Text = GetAsciiCellText(hexByte),
                     FontFamily = MonospaceFont,
-                    FontSize = 12,
+                    FontSize = 15,
                     HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
                     VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
                 };

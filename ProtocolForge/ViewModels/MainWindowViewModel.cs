@@ -260,6 +260,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
         try
         {
+            _lastLoadFailed = false;
             var document = new PacketDocument { FilePath = filePath };
             PacketList.LoadFromDocument(document);
             EnumCatalog.Reset();
@@ -305,6 +306,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
+            _lastLoadFailed = true;
+            _lastLoadError = ex.Message;
             ShowStatus("Status.Error", ex.Message);
         }
         finally
@@ -325,8 +328,18 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
     public ObservableCollection<string> RecentFiles => new(_session.RecentFiles);
 
+    public ObservableCollection<string> RecentFilters => new(_session.RecentFilters);
+
+    public ObservableCollection<string> RecentFinds => new(_session.RecentFinds);
+
+    public bool HasRecentFilters => _session.RecentFilters.Count > 0;
+
+    public bool HasRecentFinds => _session.RecentFinds.Count > 0;
+
     private string? _loadedFilePath;
     private string _displayFilter = string.Empty;
+    private bool _lastLoadFailed;
+    private string _lastLoadError = string.Empty;
 
     [ObservableProperty]
     private string _findText = string.Empty;
@@ -346,6 +359,15 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     public void FindPrevious() => Find(forward: false);
 
+    [RelayCommand]
+    private void ApplyRecentFind(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return;
+        FindText = value;
+        FindNextCommand.Execute(null);
+    }
+
     private void Find(bool forward)
     {
         string needle = FindText?.Trim() ?? string.Empty;
@@ -356,13 +378,16 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
-        if (FindInPacketList(needle, forward))
-            return;
-
         // A tree hit only exists for the selected packet, so the list search must
         // have already moved the selection there.
-        if (FindInTree(needle))
+        bool hit = FindInPacketList(needle, forward) || FindInTree(needle);
+        if (hit)
+        {
+            _session.NoteFind(needle);
+            OnPropertyChanged(nameof(RecentFinds));
+            OnPropertyChanged(nameof(HasRecentFinds));
             return;
+        }
 
         ShowStatus("Status.FindNotFound", needle);
     }
@@ -451,19 +476,32 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         string candidate = FilterText?.Trim() ?? string.Empty;
         string previous = _displayFilter;
         _displayFilter = candidate;
+        await LoadFileAsync(_loadedFilePath);
 
-        try
-        {
-            await LoadFileAsync(_loadedFilePath);
-            if (_displayFilter.Length > 0)
-                ShowStatus("Status.FilterApplied", _displayFilter, TotalPackets);
-        }
-        catch (Exception ex)
+        if (_lastLoadFailed)
         {
             _displayFilter = previous;
-            ShowStatus("Status.FilterInvalid", candidate, ex.Message);
+            ShowStatus("Status.FilterInvalid", candidate, _lastLoadError);
             await LoadFileAsync(_loadedFilePath);
+            return;
         }
+
+        if (_displayFilter.Length > 0)
+        {
+            _session.NoteFilter(_displayFilter);
+            OnPropertyChanged(nameof(RecentFilters));
+            OnPropertyChanged(nameof(HasRecentFilters));
+            ShowStatus("Status.FilterApplied", _displayFilter, TotalPackets);
+        }
+    }
+
+    [RelayCommand]
+    private void ApplyRecentFilter(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return;
+        FilterText = value;
+        ApplyFilterCommand.Execute(null);
     }
 
     [RelayCommand]
@@ -500,6 +538,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool _isFilterSuggestionOpen;
+
+    [ObservableProperty]
+    private bool _isFilterHistoryOpen;
+
+    [ObservableProperty]
+    private bool _isFindHistoryOpen;
 
     [ObservableProperty]
     private int _selectedFilterSuggestionIndex = -1;

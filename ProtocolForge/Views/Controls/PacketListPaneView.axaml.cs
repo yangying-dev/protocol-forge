@@ -22,6 +22,10 @@ public partial class PacketListPaneView : UserControl
     private CancellationTokenSource? _filterSuggestCts;
     private bool _suppressFilterTextChanged;
 
+    // 列头缓存:列头数量少且基本不变,缓存后每次布局只遍历这一小撮控件,避免对整个(虚拟化)
+    // 视觉树反复做全量枚举;缓存中任一列头被卸载(主题切换/模板重建)即在下次布局时重建。
+    private List<DataGridColumnHeader> _headerCache = [];
+
     public PacketListPaneView()
     {
         InitializeComponent();
@@ -39,14 +43,38 @@ public partial class PacketListPaneView : UserControl
     {
         base.OnAttachedToVisualTree(e);
         _attached = true;
+        PacketListView.LayoutUpdated += OnPacketListLayoutUpdated;
         Wire();
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
+        PacketListView.LayoutUpdated -= OnPacketListLayoutUpdated;
         _attached = false;
         Unwire();
         base.OnDetachedFromVisualTree(e);
+    }
+
+    private void OnPacketListLayoutUpdated(object? sender, EventArgs e) => EnsureHeaderSeparators();
+
+    // SukiUI 7.0.1 的列头模板把底边画在模板子元素 Border#PART_Border 上(BorderThickness 为
+    // 模板内硬编码值);列头控件自身的 BorderThickness 不影响它,且模板值优先级高于普通 Style,
+    // App.axaml 的 /template/ 样式覆盖不掉。这里改用代码本地值,只把右边补到 1px(底边沿用
+    // 模板原值),恢复列与列之间的细竖线;画笔沿用模板自带的 #cecece,与底边同色。
+    private void EnsureHeaderSeparators()
+    {
+        if (_headerCache.Count == 0 || _headerCache.Any(h => h.Parent is null))
+            _headerCache = PacketListView.GetVisualDescendants().OfType<DataGridColumnHeader>().ToList();
+
+        foreach (var header in _headerCache)
+        {
+            var border = header.GetVisualChildren().OfType<Border>()
+                .FirstOrDefault(b => b.Name == "PART_Border");
+            if (border is null || border.BorderThickness.Right >= 1)
+                continue;
+            var thickness = border.BorderThickness;
+            border.BorderThickness = new Thickness(thickness.Left, thickness.Top, 1, thickness.Bottom);
+        }
     }
 
     private void Wire()
@@ -252,6 +280,38 @@ public partial class PacketListPaneView : UserControl
         if (sender is ListBox { SelectedItem: string name })
         {
             AcceptFilterSuggestion(name);
+            e.Handled = true;
+        }
+    }
+
+    private void OnFilterHistoryClick(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is { } vm)
+            vm.IsFilterHistoryOpen = !vm.IsFilterHistoryOpen;
+    }
+
+    private void OnFindHistoryClick(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is { } vm)
+            vm.IsFindHistoryOpen = !vm.IsFindHistoryOpen;
+    }
+
+    private void OnFilterHistoryTapped(object? sender, TappedEventArgs e)
+    {
+        if (sender is ListBox { SelectedItem: string value } && ViewModel is { } vm)
+        {
+            vm.ApplyRecentFilterCommand.Execute(value);
+            vm.IsFilterHistoryOpen = false;
+            e.Handled = true;
+        }
+    }
+
+    private void OnFindHistoryTapped(object? sender, TappedEventArgs e)
+    {
+        if (sender is ListBox { SelectedItem: string value } && ViewModel is { } vm)
+        {
+            vm.ApplyRecentFindCommand.Execute(value);
+            vm.IsFindHistoryOpen = false;
             e.Handled = true;
         }
     }

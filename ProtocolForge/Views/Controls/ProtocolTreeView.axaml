@@ -26,7 +26,7 @@
                     <StackPanel Orientation="Horizontal" Spacing="4"
                                 x:DataType="models:ProtocolLayer">
                         <TextBlock Text="{Binding ShortLabel}"
-                                   FontWeight="SemiBold" FontSize="12" />
+                                   FontWeight="SemiBold" FontSize="15" />
                     </StackPanel>
                 </TreeDataTemplate>
 
@@ -43,15 +43,15 @@
                             </ContextMenu>
                         </Border.ContextMenu>
                         <StackPanel Orientation="Horizontal" Spacing="6">
-                            <TextBlock Text="{Binding Name}" FontSize="12"
+                            <TextBlock Text="{Binding Name}" FontSize="15"
                                         FontWeight="SemiBold" Classes="tree-field-name" />
-                            <TextBlock Text=":" FontSize="12" Classes="tree-field-colon" />
-                            <TextBlock Text="{Binding DisplayValue}" FontSize="12"
+                            <TextBlock Text=":" FontSize="15" Classes="tree-field-colon" />
+                            <TextBlock Text="{Binding DisplayValue}" FontSize="15"
                                         IsVisible="{Binding !IsEditing}" />
                             <TextBox Text="{Binding EditText}"
                                       IsVisible="{Binding IsEditingAndNotEnum}"
                                       Width="160" Padding="3,0"
-                                      FontSize="12" VerticalContentAlignment="Center"
+                                      FontSize="15" VerticalContentAlignment="Center"
                                       FontFamily="Consolas, monospace"
                                       KeyDown="OnEditKeyDown"
                                       LostFocus="OnEditLostFocus" />
@@ -59,28 +59,28 @@
                                        SelectedItem="{Binding SelectedEnumOption, Mode=TwoWay}"
                                        IsVisible="{Binding IsEditingAndEnum}"
                                        MinWidth="200" MaxWidth="340"
-                                       Padding="3,0" FontSize="12"
+                                       Padding="3,0" FontSize="15"
                                        VerticalContentAlignment="Center"
                                        HorizontalAlignment="Left"
                                        SelectionChanged="OnEnumSelectionChanged">
                                 <ComboBox.ItemTemplate>
                                     <DataTemplate DataType="models:EnumOption"
                                                  x:DataType="models:EnumOption">
-                                        <TextBlock Text="{Binding Label}" FontSize="12" />
+                                        <TextBlock Text="{Binding Label}" FontSize="15" />
                                     </DataTemplate>
                                 </ComboBox.ItemTemplate>
                             </ComboBox>
                             <StackPanel Orientation="Horizontal" Spacing="4"
                                     IsVisible="{Binding IsEditing}">
                                     <CheckBox IsChecked="{Binding AllowLengthChange}"
-                                              FontSize="12" VerticalAlignment="Center"
+                                              FontSize="15" VerticalAlignment="Center"
                                               ToolTip.Tip="{DynamicResource L10n.Field.TipLengthChange}" />
                                     <TextBlock Text="{DynamicResource L10n.Field.AllowLengthChange}"
-                                                FontSize="12" VerticalAlignment="Center" />
+                                                FontSize="15" VerticalAlignment="Center" />
                                 </StackPanel>
                                 <TextBlock Text="{Binding HexValue, StringFormat={}[{0}]}"
                                         IsVisible="{Binding ShowHex}"
-                                        FontSize="12" Classes="tree-field-hex"
+                                        FontSize="15" Classes="tree-field-hex"
                                         FontFamily="Consolas, monospace" />
                         </StackPanel>
                     </Border>
