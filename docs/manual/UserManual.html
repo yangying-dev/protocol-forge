@@ -541,11 +541,14 @@ figure.pending img{min-height:180px}
             </tr>
           </thead>
           <tbody>
-            <tr><td>Open PCAP…</td><td><kbd>Ctrl</kbd>+<kbd>O</kbd></td><td><span class="lang-en">Open a <code>.pcap</code> or <code>.pcapng</code> capture.</span><span class="lang-zh">打开 <code>.pcap</code> 或 <code>.pcapng</code> 抓包。</span></td></tr>
-            <tr><td>Save PCAP</td><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td><span class="lang-en">Overwrite the current file with all modifications applied.</span><span class="lang-zh">将当前文件覆盖保存，应用所有改动。</span></td></tr>
-            <tr><td>Export PCAP As…</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd></td><td><span class="lang-en">Write to a new file; the format follows the extension (<code>.pcap</code> or <code>.pcapng</code>).</span><span class="lang-zh">另存为新文件；格式跟随扩展名（<code>.pcap</code> 或 <code>.pcapng</code>）。</span></td></tr>
+            <tr><td><span class="lang-en">Open PCAP…</span><span class="lang-zh">打开 PCAP…</span></td><td><kbd>Ctrl</kbd>+<kbd>O</kbd></td><td><span class="lang-en">Open a <code>.pcap</code> or <code>.pcapng</code> capture.</span><span class="lang-zh">打开 <code>.pcap</code> 或 <code>.pcapng</code> 抓包。</span></td></tr>
+            <tr><td><span class="lang-en">Save PCAP</span><span class="lang-zh">保存 PCAP</span></td><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td><span class="lang-en">Overwrite the current file with all modifications applied.</span><span class="lang-zh">将当前文件覆盖保存，应用所有改动。</span></td></tr>
+            <tr><td><span class="lang-en">Export PCAP As…</span><span class="lang-zh">导出 PCAP 为…</span></td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd></td><td><span class="lang-en">Write to a new file; the format follows the extension (<code>.pcap</code> or <code>.pcapng</code>).</span><span class="lang-zh">另存为新文件；格式跟随扩展名（<code>.pcap</code> 或 <code>.pcapng</code>）。</span></td></tr>
             <tr><td><span class="lang-en">Reset Modifications</span><span class="lang-zh">重置修改</span></td><td>—</td><td><span class="lang-en">Discard all edits and return every packet to its original bytes.</span><span class="lang-zh">丢弃所有编辑，将所有报文恢复为原始字节。</span></td></tr>
+            <tr><td><span class="lang-en">Undo</span><span class="lang-zh">撤销</span></td><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td><span class="lang-en">Revert the most recent committed edit.</span><span class="lang-zh">撤销最近一次已提交的编辑。</span></td></tr>
+            <tr><td><span class="lang-en">Redo</span><span class="lang-zh">重做</span></td><td><kbd>Ctrl</kbd>+<kbd>Y</kbd></td><td><span class="lang-en">Re-apply an edit that was undone.</span><span class="lang-zh">重做被撤销的编辑。</span></td></tr>
             <tr><td><span class="lang-en">Tshark Path…</span><span class="lang-zh">Tshark 路径…</span></td><td>—</td><td><span class="lang-en">Choose the tshark executable and re-run the version gate.</span><span class="lang-zh">选择 tshark 可执行文件，并重新执行版本门禁。</span></td></tr>
+            <tr><td><span class="lang-en">Open Support Data Folder</span><span class="lang-zh">打开支持数据目录</span></td><td>—</td><td><span class="lang-en">Opens the folder that holds logs, layout and session files.</span><span class="lang-zh">打开存放日志、布局与会话文件的文件夹。</span></td></tr>
             <tr><td><span class="lang-en">Exit</span><span class="lang-zh">退出</span></td><td>—</td><td><span class="lang-en">Close the app; you are warned if there are unsaved changes.</span><span class="lang-zh">关闭程序；若有未保存改动会弹出提醒。</span></td></tr>
           </tbody>
         </table>
@@ -585,7 +588,6 @@ figure.pending img{min-height:180px}
           </thead>
           <tbody>
             <tr><td><span class="lang-en">User Manual</span><span class="lang-zh">用户手册</span></td><td><span class="lang-en">Opens this document in your default web browser.</span><span class="lang-zh">在系统默认浏览器中打开本文档。</span></td></tr>
-            <tr><td><span class="lang-en">Open Support Data Folder</span><span class="lang-zh">打开支持数据文件夹</span></td><td><span class="lang-en">Opens the folder that holds logs, layout and session files.</span><span class="lang-zh">打开存放日志、布局与会话文件的文件夹。</span></td></tr>
             <tr><td><span class="lang-en">About</span><span class="lang-zh">关于</span></td><td><span class="lang-en">Shows version, licence and third-party notices.</span><span class="lang-zh">显示版本、许可证与第三方声明。</span></td></tr>
           </tbody>
         </table>
@@ -1239,8 +1241,8 @@ ProtocolForge stats &lt;capture.pcap&gt; --tap &lt;tap&gt; [--filter &lt;display
 
         <dt><span class="lang-en">Where are the logs?</span><span class="lang-zh">日志在哪里？</span></dt>
         <dd>
-          <span class="lang-en">In <code>trace.log</code> under the local application data folder: <code>%LOCALAPPDATA%/ProtocolForge/logs/</code> (Windows), <code>~/.local/share/ProtocolForge/logs/</code> (Linux) or <code>~/Library/Application Support/ProtocolForge/logs/</code> (macOS). <em>Help → Open Support Data Folder</em> takes you straight there.</span>
-          <span class="lang-zh">位于本地应用程序数据文件夹下的 <code>trace.log</code>：Windows 为 <code>%LOCALAPPDATA%/ProtocolForge/logs/</code>，Linux 为 <code>~/.local/share/ProtocolForge/logs/</code>，macOS 为 <code>~/Library/Application Support/ProtocolForge/logs/</code>。<em>帮助 → 打开支持数据文件夹</em> 可直接带你前往该位置。</span>
+          <span class="lang-en">In <code>trace.log</code> under the local application data folder: <code>%LOCALAPPDATA%/ProtocolForge/logs/</code> (Windows), <code>~/.local/share/ProtocolForge/logs/</code> (Linux) or <code>~/Library/Application Support/ProtocolForge/logs/</code> (macOS). <em>File → Open Support Data Folder</em> takes you straight there.</span>
+          <span class="lang-zh">位于本地应用程序数据文件夹下的 <code>trace.log</code>：Windows 为 <code>%LOCALAPPDATA%/ProtocolForge/logs/</code>，Linux 为 <code>~/.local/share/ProtocolForge/logs/</code>，macOS 为 <code>~/Library/Application Support/ProtocolForge/logs/</code>。<em>文件 → 打开支持数据目录</em> 可直接带你前往该位置。</span>
         </dd>
 
       </dl>
