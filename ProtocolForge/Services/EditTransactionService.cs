@@ -249,6 +249,10 @@ public sealed class EditTransactionService
     ///
     /// All splices are applied from the highest offset down, so an earlier edit's
     /// offset is still valid when a later one shifts bytes beneath it.
+    ///
+    /// Test-only: the GUI and CLI use the single-field path. The offset re-shift in
+    /// <c>ApplyEdits</c> assumes one shared delta, which is only correct for a single
+    /// edit; if this ever gains a production caller, re-shift per pivot instead.
     /// </summary>
     public async Task<EditResult> CommitCompoundEditAsync(
         Packet packet,

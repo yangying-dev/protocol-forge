@@ -576,7 +576,11 @@ public sealed class TsharkService
             return _tlsKeylogArgs;
         }
 
-        string optionName = VersionCompare(DetectTshark().Version, "3.0.0") >= 0
+        // DetectTshark().Version is string.Empty when tshark is absent or its -v
+        // output is unparseable; VersionCompare would then throw on int.Parse("").
+        string detectedVersion = DetectTshark().Version;
+        string optionName = !string.IsNullOrEmpty(detectedVersion) &&
+            VersionCompare(detectedVersion, "3.0.0") >= 0
             ? "tls.keylog_file"
             : "ssl.keylog_file";
         _tlsKeylogArgs = ["-o", $"{optionName}:{path}"];

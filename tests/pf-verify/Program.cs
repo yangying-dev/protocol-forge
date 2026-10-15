@@ -680,7 +680,7 @@ try
     G12Vector("Int -5 → 1 byte two's complement", FieldKind.Int, "-5", 1, false, new byte[] { 0xFB }, null);
     G12Vector("Int -5 → 2 bytes", FieldKind.Int, "-5", 2, false, new byte[] { 0xFF, 0xFB }, null);
     G12Vector("Int 0xFB → raw byte", FieldKind.Int, "0xFB", 1, false, new byte[] { 0xFB }, null);
-    G12Vector("Int 999 → truncates to 1 byte (no signed range check)", FieldKind.Int, "999", 1, false, new byte[] { 0xE7 }, null);
+    G12Vector("Int 999 over 1 byte → rejects", FieldKind.Int, "999", 1, true, null, "exceeds 1-byte signed range");
     G12Vector("IPv4 10.0.0.1 → 4 bytes", FieldKind.IPv4, "10.0.0.1", 4, false, new byte[] { 10, 0, 0, 1 }, null);
     G12Vector("IPv4 300.1.1.1 → rejects", FieldKind.IPv4, "300.1.1.1", 4, true, null, "not a valid IPv4");
     G12Vector("IPv4 ::1 → rejects", FieldKind.IPv4, "::1", 4, true, null, "not a valid IPv4");
@@ -1300,10 +1300,10 @@ Banner(17, "PCAP/PCAPNG ingestion — classic endianness/ns, pcapng sections, re
         Report("G17-06 decimal tsresol exponent (0x03): raw 5 → 5000 µs",
             p06a.Packets.Count == 1 && p06a.Packets[0].Timestamp == 5_000, $"ts={p06a.Packets[0].Timestamp}");
 
-        // P-06b: tsresol 0x83 (power-of-two, n=3) raw=125000 → 1 µs
-        var p06b = await G17Read(Concat(MkShb(true), MkIdb(1, 65535, true, 0x83), MkEpb(125_000, new byte[] { 0xBB }, true)));
-        Report("G17-07 power-of-two tsresol (0x83): raw 125000 → 1 µs",
-            p06b.Packets.Count == 1 && p06b.Packets[0].Timestamp == 1, $"ts={p06b.Packets[0].Timestamp}");
+        // P-06b: tsresol 0x83 (power-of-two, n=3 → tick = 2^-3 s) raw=1 → 0.125 s = 125000 µs
+        var p06b = await G17Read(Concat(MkShb(true), MkIdb(1, 65535, true, 0x83), MkEpb(1, new byte[] { 0xBB }, true)));
+        Report("G17-07 power-of-two tsresol (0x83): raw 1 → 125000 µs",
+            p06b.Packets.Count == 1 && p06b.Packets[0].Timestamp == 125_000, $"ts={p06b.Packets[0].Timestamp}");
 
         // P-07: truncated record tail tolerated
         var p07 = await G17Read(Concat(ClassicHeader(false, true), ClassicRecord(100, new byte[] { 0xAA, 0x55, 0x00, 0xFF }, false, true), new byte[10]));

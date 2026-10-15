@@ -141,7 +141,7 @@ public sealed partial class HexEditorViewModel : ObservableObject
             return;
 
         ComputeFieldSpan(field, _currentPacket.EffectiveData.Length, out int start, out int length);
-        if (length <= 0)
+        if (start < 0 || length <= 0)
             return;
         // Virtual/reassembly fields (e.g. IP fragments) carry synthetic raw spans
         // beyond the packet's real bytes; a single-field highlight must not stretch

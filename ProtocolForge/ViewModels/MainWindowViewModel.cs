@@ -283,6 +283,11 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             _loadedFilePath = filePath;
             _history.Clear();
             TcpStreams.Clear();
+            // Per-packet caches keyed by Packet reference would otherwise retain the
+            // previous document's packets (and their context-frame byte arrays) for
+            // the whole session. Reset them whenever a new capture is loaded.
+            _packetContextFrames.Clear();
+            _reparseVersions.Clear();
             _session.NoteOpened(filePath);
             RaiseHistoryState();
             OnPropertyChanged(nameof(RecentFiles));
@@ -1501,6 +1506,17 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private void OnPacketSelected(Packet? packet)
     {
         HexEditor.LoadPacket(packet);
+
+        // Keep the pending verify-before-commit context in sync with the selected
+        // packet. When the early-return below fires for a packet whose layers were
+        // already prefetched, PendingContextFrames would otherwise still hold the
+        // previous packet's context and the edit transaction would build its temp
+        // PCAP with mismatched context frames.
+        ProtocolTree.PendingContextFrames =
+            packet != null && _packetContextFrames.TryGetValue(packet, out var cachedContext)
+                ? cachedContext
+                : null;
+        ProtocolTree.PendingLinkLayerType = Document?.LinkLayerType ?? 1;
 
         if (packet == null || packet.Layers.Count > 0)
         {

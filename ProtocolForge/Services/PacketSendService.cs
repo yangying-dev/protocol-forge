@@ -712,8 +712,11 @@ public sealed class PacketSendService
     private static async Task<(PacketSendResult? Result, string? Error)> TrySendIpDatagramAsync(
         Socket socket, byte[] data, int ipOffset, int index)
     {
+        if (ipOffset >= data.Length)
+            return (null, LocalizationService.Resolve("Send.FrameTooShort"));
+
         byte[] ipData = ipOffset > 0 ? data[ipOffset..] : data;
-        if (ipOffset >= 0 && (data[ipOffset] >> 4) == 4)
+        if (ipOffset >= 0 && data.Length >= ipOffset + 20 && (data[ipOffset] >> 4) == 4)
         {
             var dest = new IPEndPoint(new IPAddress(data[(ipOffset + 16)..(ipOffset + 20)]), 0);
             await socket.SendToAsync(ipData, SocketFlags.None, dest);

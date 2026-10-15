@@ -169,22 +169,27 @@ public sealed class ProtocolEditorService
 
     private static byte[] ConvertInt(string text, int length)
     {
+        int bitWidth = length * 8;
         if (text.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
         {
             if (!ulong.TryParse(text.AsSpan(2), System.Globalization.NumberStyles.HexNumber, null, out ulong hex))
                 throw new ArgumentException($"'{text}' is not a valid hexadecimal value.", nameof(text));
+
+            ulong hexMax = bitWidth >= 64 ? ulong.MaxValue : (1UL << bitWidth) - 1ul;
+            if (hex > hexMax)
+                throw new ArgumentException($"'{text}' exceeds {length}-byte range ({hexMax}).", nameof(text));
             return LengthCheckedBigEndian(hex, length, unsigned: false, text);
         }
 
         if (!long.TryParse(text, out long value))
             throw new ArgumentException($"'{text}' is not a valid signed integer.", nameof(text));
 
-        if (value < 0)
-        {
-            ulong ul = unchecked((ulong)value);
-            return LengthCheckedBigEndian(ul, length, unsigned: false, text);
-        }
-        return LengthCheckedBigEndian((ulong)value, length, unsigned: false, text);
+        long min = bitWidth >= 64 ? long.MinValue : -(1L << (bitWidth - 1));
+        long max = bitWidth >= 64 ? long.MaxValue : (1L << (bitWidth - 1)) - 1L;
+        if (value < min || value > max)
+            throw new ArgumentException($"'{text}' exceeds {length}-byte signed range ({min}..{max}).", nameof(text));
+
+        return LengthCheckedBigEndian(unchecked((ulong)value), length, unsigned: false, text);
     }
 
     private static byte[] LengthCheckedBigEndian(ulong value, int length, bool unsigned, string text)
