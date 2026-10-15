@@ -241,7 +241,8 @@ public sealed class TsharkService
         Packet packet,
         int linkLayerType,
         IReadOnlyList<(long Timestamp, byte[] Data)>? contextFrames = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        bool foreground = false)
     {
         EnsureTsharkAvailable();
 
@@ -257,7 +258,7 @@ public sealed class TsharkService
                 await _pcapExport.SavePacketAsync(packet, tempPath, linkLayerType, ct);
             }
 
-            return await ParsePacketFromPcapFileAsync(packet, tempPath, ct);
+            return await ParsePacketFromPcapFileAsync(packet, tempPath, ct, foreground);
         }
         finally
         {
@@ -275,13 +276,14 @@ public sealed class TsharkService
     public async Task<bool> ParsePacketFromPcapFileAsync(
         Packet packet,
         string filePath,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        bool foreground = false)
     {
         EnsureTsharkAvailable();
 
-        var jsonRawTask = RunTsharkJsonRawAsync(filePath, ct);
-        var jsonTask = RunTsharkJsonAsync(filePath, ct);
-        var pdmlTask = RunTsharkPdmlAsync(filePath, ct);
+        var jsonRawTask = RunTsharkJsonRawAsync(filePath, ct, foreground);
+        var jsonTask = RunTsharkJsonAsync(filePath, ct, foreground);
+        var pdmlTask = RunTsharkPdmlAsync(filePath, ct, foreground);
 
         string jsonOutput = await jsonRawTask;
         string jsonDisplayOutput = await jsonTask;
@@ -591,7 +593,24 @@ public sealed class TsharkService
     // Tshark process invocation
     // ────────────────────────────────────────────────────────
 
-    private async Task<string> RunTsharkJsonRawAsync(string filePath, CancellationToken ct)
+    /// <summary>
+    /// Best-effort priority bump so the foreground build is not starved behind
+    /// concurrent prefetch work. Raising priority is permission-gated (a non-root
+    /// Linux process cannot lower its nice), so failures are swallowed.
+    /// </summary>
+    private static void TrySetHighPriority(Process process)
+    {
+        try
+        {
+            process.PriorityClass = ProcessPriorityClass.AboveNormal;
+        }
+        catch (Exception)
+        {
+            // Priority is opportunistic; ignore Win32/InvalidOperation failures.
+        }
+    }
+
+    private async Task<string> RunTsharkJsonRawAsync(string filePath, CancellationToken ct, bool foreground = false)
     {
         var psi = new ProcessStartInfo
         {
@@ -611,6 +630,8 @@ public sealed class TsharkService
 
         using var process = new Process { StartInfo = psi };
         process.Start();
+        if (foreground)
+            TrySetHighPriority(process);
 
         // Read both streams concurrently to avoid deadlocks
         var outputTask = process.StandardOutput.ReadToEndAsync(ct);
@@ -628,7 +649,7 @@ public sealed class TsharkService
         return output;
     }
 
-    private async Task<string> RunTsharkJsonAsync(string filePath, CancellationToken ct)
+    private async Task<string> RunTsharkJsonAsync(string filePath, CancellationToken ct, bool foreground = false)
     {
         var psi = new ProcessStartInfo
         {
@@ -649,6 +670,8 @@ public sealed class TsharkService
 
         using var process = new Process { StartInfo = psi };
         process.Start();
+        if (foreground)
+            TrySetHighPriority(process);
 
         // Read both streams concurrently to avoid deadlocks
         var outputTask = process.StandardOutput.ReadToEndAsync(ct);
@@ -666,7 +689,7 @@ public sealed class TsharkService
         return output;
     }
 
-    private async Task<string> RunTsharkPdmlAsync(string filePath, CancellationToken ct)
+    private async Task<string> RunTsharkPdmlAsync(string filePath, CancellationToken ct, bool foreground = false)
     {
         var psi = new ProcessStartInfo
         {
@@ -686,6 +709,8 @@ public sealed class TsharkService
 
         using var process = new Process { StartInfo = psi };
         process.Start();
+        if (foreground)
+            TrySetHighPriority(process);
 
         var outputTask = process.StandardOutput.ReadToEndAsync(ct);
         var errorTask = process.StandardError.ReadToEndAsync(ct);

@@ -1536,7 +1536,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             ProtocolTree.PendingContextFrames = context;
             ProtocolTree.PendingLinkLayerType = Document?.LinkLayerType ?? 1;
 
-            bool ok = await _tshark.BuildPacketTreeAsync(packet, Document?.LinkLayerType ?? 1, context);
+            bool ok = await _tshark.BuildPacketTreeAsync(packet, Document?.LinkLayerType ?? 1, context, foreground: true);
             if (ok && seq == _treeBuildSeq)
             {
                 ProtocolTree.LoadPacket(packet);
