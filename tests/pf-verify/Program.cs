@@ -619,9 +619,9 @@ try
         g12ed.CheckTreeEditFence(g12pkt, fU).Reason);
 
     var fBit = new ProtocolField { Name = "Src", OriginalPdmlName = "ip.src", Offset = 26, Length = 4, LengthBits = 1, Kind = FieldKind.UInt, RawBytes = g12src };
-    Report("G12a-02 bit-level field → fence rejects (BitLevel)",
+    Report("G12a-02 bit-level field with no mask → fence rejects (BitMaskMissing)",
         !g12ed.CheckTreeEditFence(g12pkt, fBit).Allowed
-        && g12ed.CheckTreeEditFence(g12pkt, fBit).Reason == LocalizationService.Resolve("Fence.BitLevel"),
+        && g12ed.CheckTreeEditFence(g12pkt, fBit).Reason == LocalizationService.Resolve("Fence.BitMaskMissing"),
         g12ed.CheckTreeEditFence(g12pkt, fBit).Reason);
 
     var fOut = new ProtocolField { Name = "Src", OriginalPdmlName = "ip.src", Offset = 1000, Length = 4, Kind = FieldKind.UInt, RawBytes = g12src };
@@ -1940,6 +1940,16 @@ try
                 && flagsRb != null && flagsRb.LengthBits == 1
                 && ipSrc != null && ipSrc.LengthBits == -1,
             $"dscp={dscp?.LengthBits}, ecn={ecn?.LengthBits}, rb={flagsRb?.LengthBits}, src={ipSrc?.LengthBits}");
+
+        // ── TR-10: real bit fields carry their raw mask and pass the fence (plan PBLE F5).
+        var tr10ed = new ProtocolEditorService();
+        var tr10Pkt = ipLayer?.ParentPacket;
+        bool tr10DscpMasked = dscp != null && dscp.BitMask != 0 && dscp.IsBitField;
+        bool tr10EcnMasked = ecn != null && ecn.BitMask != 0 && ecn.IsBitField;
+        bool tr10Fence = dscp != null && tr10Pkt != null && tr10ed.CheckTreeEditFence(tr10Pkt, dscp).Allowed;
+        Report("TR-10 real bit fields (dscp/ecn) carry a BitMask and pass the fence",
+            tr10DscpMasked && tr10EcnMasked && tr10Fence,
+            $"dscp.mask=0x{dscp?.BitMask:X}, ecn.mask=0x{ecn?.BitMask:X}, fence={(tr10Fence ? "OK" : tr10Pkt == null ? "no packet" : tr10ed.CheckTreeEditFence(tr10Pkt, dscp!).Reason)}");
 
         // ── TR-08: malformed — _ws.malformed dropped, note appended to innermost layer.
         var malPkt = new Packet { Index = 0, Timestamp = 0, RawData = malFrame };
@@ -5306,10 +5316,13 @@ try
     var g46F7 = g46Editor.CheckTreeEditFence(g46Packet, g46Good);
     Report("FE-08 a well-formed field is still allowed", g46F7.Allowed, g46F7.Reason);
 
-    // The relaxation must not have made the menu offer an editor for junk.
-    Report("FE-09 an undecoded marker is never offered an editor",
-        !new ProtocolField { Name = "x", Kind = FieldKind.UInt, Offset = 4, Length = 2, IsUndecodedMarker = true }.IsTreeEditable,
-        "undecoded marker");
+    // Plan C: an undecoded marker is offered an editor only once it carries a derived
+    // whole-blob span (Kind == Bytes); any other kind on a marker stays refused.
+    Report("FE-09 an undecoded marker is editable only as a derived Bytes blob",
+        new ProtocolField { Name = "x", Kind = FieldKind.Bytes, Offset = 4, Length = 2, RawBytes = new byte[2], IsUndecodedMarker = true }.IsTreeEditable
+        && !new ProtocolField { Name = "x", Kind = FieldKind.UInt, Offset = 4, Length = 2, IsUndecodedMarker = true }.IsTreeEditable
+        && !new ProtocolField { Name = "x", Kind = FieldKind.Unknown, IsUndecodedMarker = true }.IsTreeEditable,
+        "marker editable iff Kind == Bytes");
     Report("FE-10 a field with a valid type but no span IS offered, so the fence can explain",
         new ProtocolField { Name = "x", Kind = FieldKind.UInt, Offset = 4, Length = 0 }.IsTreeEditable,
         "the fence reports the precise reason instead of the menu hiding it");
@@ -5729,6 +5742,418 @@ try
 catch (Exception ex)
 {
     Report("G55 group execution", false, ex.ToString());
+}
+
+// ══ GROUP 56: bit-level field editing — fence / RMW / range (plan PBLE) ══
+Banner(56, "bit-level field editing (RMW / range / fence)");
+try
+{
+    var g56Editor = new ProtocolEditorService();
+
+    // Frame bytes: byte 0 = 0b1010_1010, byte 1 = 0x34 (the pair reads 0xAA34 big-endian).
+    var g56Bytes = new byte[16];
+    g56Bytes[0] = 0xAA; g56Bytes[1] = 0x34; g56Bytes[2] = 0x56;
+    var g56Pkt = new Packet { Index = 0, RawData = (byte[])g56Bytes.Clone() };
+
+    var g56LowNibble = new ProtocolField
+    {
+        Name = "dscp", OriginalPdmlName = "ip.dsfield.dscp",
+        Offset = 0, Length = 1, LengthBits = 4, BitMask = 0x0F,
+        Kind = FieldKind.UInt, RawBytes = new byte[] { 0xAA },
+    };
+    var g56fence = g56Editor.CheckTreeEditFence(g56Pkt, g56LowNibble);
+    Report("BLE-01 a contiguous bit field is editable (fence allows)",
+        g56fence.Allowed, g56fence.Reason);
+
+    Report("BLE-02 a typed bit field is tree-editable (bit path reachable)",
+        g56LowNibble.IsTreeEditable, $"IsTreeEditable={g56LowNibble.IsTreeEditable}");
+
+    var g56NonContig = new ProtocolField
+    {
+        Name = "x", OriginalPdmlName = "x", Offset = 0, Length = 1, LengthBits = 2,
+        BitMask = 0x05, Kind = FieldKind.UInt, RawBytes = new byte[] { 0xAA },
+    };
+    var g56fenceNc = g56Editor.CheckTreeEditFence(g56Pkt, g56NonContig);
+    Report("BLE-03 a non-contiguous mask is refused (BitMaskNonContiguous)",
+        !g56fenceNc.Allowed
+        && g56fenceNc.Reason == LocalizationService.Resolve("Fence.BitMaskNonContiguous"),
+        g56fenceNc.Reason);
+
+    var g56Wide = new ProtocolField
+    {
+        Name = "x", OriginalPdmlName = "x", Offset = 0, Length = 9, LengthBits = 4,
+        BitMask = 0x0F, Kind = FieldKind.UInt, RawBytes = new byte[9],
+    };
+    var g56fenceWide = g56Editor.CheckTreeEditFence(g56Pkt, g56Wide);
+    Report("BLE-04 a bit field wider than 8 bytes is refused (BitOutOfRange)",
+        !g56fenceWide.Allowed
+        && g56fenceWide.Reason == LocalizationService.Resolve("Fence.BitOutOfRange"),
+        g56fenceWide.Reason);
+
+    var g56NoMask = new ProtocolField
+    {
+        Name = "x", OriginalPdmlName = "x", Offset = 0, Length = 1, LengthBits = 4,
+        Kind = FieldKind.UInt, RawBytes = new byte[] { 0xAA },
+    };
+    var g56fenceNoMask = g56Editor.CheckTreeEditFence(g56Pkt, g56NoMask);
+    Report("BLE-05 a bit-level field with no mask is refused (BitMaskMissing)",
+        !g56fenceNoMask.Allowed
+        && g56fenceNoMask.Reason == LocalizationService.Resolve("Fence.BitMaskMissing"),
+        g56fenceNoMask.Reason);
+
+    var g56NoRaw = new ProtocolField
+    {
+        Name = "dscp", OriginalPdmlName = "ip.dsfield.dscp", Offset = 0, Length = 1,
+        LengthBits = 4, BitMask = 0x0F, Kind = FieldKind.UInt, RawBytes = [],
+    };
+    var g56fenceNoRaw = g56Editor.CheckTreeEditFence(g56Pkt, g56NoRaw);
+    Report("BLE-10 a bit field with no RawBytes is still editable (real tshark shape)",
+        g56fenceNoRaw.Allowed, g56fenceNoRaw.Reason);
+
+    byte[] g56Edit = ProtocolEditorService.ComputeBitFieldEditBytes(g56Pkt, g56LowNibble, 0x5);
+    Report("BLE-06 RMW changes only the masked bits (0xAA low nibble -> 0x5)",
+        g56Edit.Length == 1 && g56Edit[0] == 0xA5, $"-> {g56Edit[0]:X2}");
+
+    byte[] g56Same = ProtocolEditorService.ComputeBitFieldEditBytes(g56Pkt, g56LowNibble, 0xA);
+    Report("BLE-07 RMW is idempotent when writing the current value",
+        g56Same.Length == 1 && g56Same[0] == 0xAA, $"-> {g56Same[0]:X2}");
+
+    var g56Twelve = new ProtocolField
+    {
+        Name = "x", OriginalPdmlName = "x", Offset = 0, Length = 2, LengthBits = 12,
+        BitMask = 0x0FFF, Kind = FieldKind.UInt, RawBytes = new byte[] { 0xAA, 0x34 },
+    };
+    byte[] g56Set = ProtocolEditorService.ComputeBitFieldEditBytes(g56Pkt, g56Twelve, 0xABC);
+    Report("BLE-08 RMW keeps the high nibble of a multi-byte bit field (0xAA34 -> 0xAABC)",
+        g56Set.Length == 2 && g56Set[0] == 0xAA && g56Set[1] == 0xBC,
+        $"-> {g56Set[0]:X2}{g56Set[1]:X2}");
+
+    bool g56RangeThrew = false;
+    try { ProtocolEditorService.ComputeBitFieldEditBytes(g56Pkt, g56LowNibble, 0x10); }
+    catch (ArgumentException) { g56RangeThrew = true; }
+    Report("BLE-09 RMW rejects a value wider than the mask (0x10 in a 4-bit field)",
+        g56RangeThrew, g56RangeThrew ? "throws" : "accepted");
+}
+catch (Exception ex)
+{
+    Report("G56 group execution", false, ex.ToString());
+}
+
+// ══ GROUP 57: UTLE — unknown-type leaf editing (Bytes fallback + container guard) ══
+Banner(57, "unknown-type leaf editing (Bytes fallback + container guard)");
+try
+{
+    var g57Infer = typeof(TsharkService).GetMethod("InferFieldKind",
+        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+    FieldKind Infer(string name, int len, string? disp, bool isContainer) =>
+        (FieldKind)g57Infer.Invoke(null, new object?[] { name, len, disp, isContainer })!;
+
+    Report("UTLE-01 a 9+ byte opaque leaf falls back to Bytes (editable as hex)",
+        Infer("myvendor.ie", 9, null, false) == FieldKind.Bytes,
+        $"kind={Infer("myvendor.ie", 9, null, false)}");
+
+    Report("UTLE-02 a 1-8 byte unknown leaf stays UInt (no regression)",
+        Infer("x", 4, null, false) == FieldKind.UInt,
+        $"kind={Infer("x", 4, null, false)}");
+
+    Report("UTLE-03 a length<=0 leaf stays Unknown (no byte span to edit)",
+        Infer("x", 0, null, false) == FieldKind.Unknown,
+        $"kind={Infer("x", 0, null, false)}");
+
+    Report("UTLE-04 a 9+ byte container stays Unknown (UTLE-F1 guard, never Bytes)",
+        Infer("some.proto", 16, null, true) == FieldKind.Unknown,
+        $"kind={Infer("some.proto", 16, null, true)}");
+
+    Report("UTLE-05 the Bytes fallback never overrides the BCD shape heuristic",
+        Infer("nas.imsi", 8, "12345678", false) == FieldKind.Bcd,
+        $"kind={Infer("nas.imsi", 8, "12345678", false)}");
+
+    var g57Editor = new ProtocolEditorService();
+    var g57Bytes = new byte[20];
+    for (int i = 0; i < g57Bytes.Length; i++) g57Bytes[i] = (byte)(0x10 + i);
+    var g57Pkt = new Packet { Index = 0, RawData = (byte[])g57Bytes.Clone() };
+
+    var g57Good = new ProtocolField
+    {
+        Name = "VendorBlob", OriginalPdmlName = "myvendor.ie",
+        Offset = 2, Length = 9, Kind = FieldKind.Bytes,
+        RawBytes = g57Bytes.AsSpan(2, 9).ToArray(),
+    };
+    var g57fenceGood = g57Editor.CheckTreeEditFence(g57Pkt, g57Good);
+    Report("UTLE-06 a well-formed Bytes leaf passes the fence (hex REPLACE editable)",
+        g57fenceGood.Allowed, g57fenceGood.Reason);
+
+    var g57Bad = new ProtocolField
+    {
+        Name = "VendorBlob", OriginalPdmlName = "myvendor.ie",
+        Offset = 2, Length = 9, Kind = FieldKind.Bytes,
+        RawBytes = new byte[4],
+    };
+    var g57fenceBad = g57Editor.CheckTreeEditFence(g57Pkt, g57Bad);
+    Report("UTLE-07 a Bytes leaf with mismatched evidence is refused (fence not relaxed)",
+        !g57fenceBad.Allowed
+        && g57fenceBad.Reason == LocalizationService.Resolve("Fence.NoByteEvidence", 4, 9),
+        g57fenceBad.Reason);
+
+    string g57Src = await File.ReadAllTextAsync(Path.Combine(ProjectDir, "Services/TsharkService.cs"));
+    Report("UTLE-08 source: container guard + Bytes fallback present in InferFieldKind",
+        g57Src.Contains("if (isContainer)")
+        && g57Src.Contains("return length >= 1 ? FieldKind.Bytes : FieldKind.Unknown;"),
+        "missing container guard or Bytes fallback");
+}
+catch (Exception ex)
+{
+    Report("G57 group execution", false, ex.ToString());
+}
+
+// ══ GROUP 58: CWLE — container whole-edit (derived span, Bytes-only, no length change) ══
+Banner(58, "container whole-edit (span derivation, Bytes-only, length change hidden)");
+try
+{
+    var g58Derive = typeof(TsharkService).GetMethod("DeriveContainerSpans",
+        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+    void Derive(System.Collections.ObjectModel.ObservableCollection<ProtocolField> fields, Packet pkt) =>
+        g58Derive.Invoke(null, new object?[] { fields, pkt });
+
+    var g58Bytes = new byte[32];
+    for (int i = 0; i < g58Bytes.Length; i++) g58Bytes[i] = (byte)(0x40 + i);
+    var g58Pkt = new Packet { Index = 0, RawData = (byte[])g58Bytes.Clone() };
+    var g58Editor = new ProtocolEditorService();
+
+    var g58Spanning = new ProtocolField
+    {
+        Name = "IE", OriginalPdmlName = "vendor.ie",
+        Offset = 2, Length = 6, RawBytes = g58Bytes.AsSpan(2, 6).ToArray(),
+        Kind = FieldKind.UInt,
+    };
+    g58Spanning.Children.Add(new ProtocolField
+    {
+        Name = "len", OriginalPdmlName = "vendor.ie.len",
+        Offset = 2, Length = 2, RawBytes = g58Bytes.AsSpan(2, 2).ToArray(), Kind = FieldKind.UInt,
+    });
+    Derive(new System.Collections.ObjectModel.ObservableCollection<ProtocolField> { g58Spanning }, g58Pkt);
+    Report("CWLE-01 a container with a raw span is re-kinded to Bytes, never a scalar",
+        g58Spanning.Kind == FieldKind.Bytes, $"kind={g58Spanning.Kind}");
+
+    var g58Fence = g58Editor.CheckTreeEditFence(g58Pkt, g58Spanning);
+    Report("CWLE-02 that container is editable as one whole hex blob",
+        g58Fence.Allowed, g58Fence.Reason);
+
+    var g58Derived = new ProtocolField
+    {
+        Name = "IE2", OriginalPdmlName = "vendor.ie2",
+        Offset = 0, Length = 0, Kind = FieldKind.Unknown,
+    };
+    g58Derived.Children.Add(new ProtocolField
+    {
+        Name = "a", OriginalPdmlName = "vendor.ie2.a",
+        Offset = 10, Length = 3, RawBytes = g58Bytes.AsSpan(10, 3).ToArray(), Kind = FieldKind.UInt,
+    });
+    g58Derived.Children.Add(new ProtocolField
+    {
+        Name = "b", OriginalPdmlName = "vendor.ie2.b",
+        Offset = 14, Length = 2, RawBytes = g58Bytes.AsSpan(14, 2).ToArray(), Kind = FieldKind.UInt,
+    });
+    Derive(new System.Collections.ObjectModel.ObservableCollection<ProtocolField> { g58Derived }, g58Pkt);
+    Report("CWLE-03 a zero-length container derives Offset/Length from its children",
+        g58Derived.Offset == 10 && g58Derived.Length == 6 && g58Derived.Kind == FieldKind.Bytes,
+        $"off={g58Derived.Offset} len={g58Derived.Length} kind={g58Derived.Kind}");
+
+    var g58DerivedFence = g58Editor.CheckTreeEditFence(g58Pkt, g58Derived);
+    Report("CWLE-04 the derived container is editable as one whole hex blob",
+        g58DerivedFence.Allowed, g58DerivedFence.Reason);
+
+    var g58NoSpan = new ProtocolField
+    {
+        Name = "expert", OriginalPdmlName = "vendor.expert",
+        Offset = 0, Length = 0, Kind = FieldKind.Unknown,
+    };
+    g58NoSpan.Children.Add(new ProtocolField
+    {
+        Name = "note", OriginalPdmlName = "vendor.expert.note",
+        Offset = 0, Length = 0, Kind = FieldKind.Unknown,
+    });
+    Derive(new System.Collections.ObjectModel.ObservableCollection<ProtocolField> { g58NoSpan }, g58Pkt);
+    var g58NoSpanFence = g58Editor.CheckTreeEditFence(g58Pkt, g58NoSpan);
+    Report("CWLE-05 a container with no derivable span stays Unknown and is refused",
+        g58NoSpan.Kind == FieldKind.Unknown && !g58NoSpanFence.Allowed
+        && g58NoSpanFence.Reason == LocalizationService.Resolve("Fence.UnknownField"),
+        $"kind={g58NoSpan.Kind} reason={g58NoSpanFence.Reason}");
+
+    g58Spanning.IsEditing = true;
+    Report("CWLE-06 a container in edit mode does not show the length-change opt-in",
+        !g58Spanning.IsEditingScalar, $"isEditingScalar={g58Spanning.IsEditingScalar}");
+
+    var g58Leaf = new ProtocolField { Name = "leaf" };
+    g58Leaf.IsEditing = true;
+    Report("CWLE-07 a scalar leaf still shows the length-change opt-in",
+        g58Leaf.IsEditingScalar, $"isEditingScalar={g58Leaf.IsEditingScalar}");
+
+    Report("CWLE-08 length change stays opt-in (off by default) on a container",
+        !g58Spanning.AllowLengthChange, $"allow={g58Spanning.AllowLengthChange}");
+}
+catch (Exception ex)
+{
+    Report("G58 group execution", false, ex.ToString());
+}
+
+// ══ GROUP 59: MKE — undecoded-marker blob editing (ordered span pairing, fail-closed) ══
+Banner(59, "undecoded-marker blob editing (ordered PDML span pairing)");
+try
+{
+    var g59DeriveMarker = typeof(TsharkService).GetMethod("DeriveMarkerSpans",
+        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+    var g59Collect = typeof(TsharkService).GetMethod("CollectPdmlFields",
+        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+
+    var g59Pdml = System.Xml.Linq.XElement.Parse(
+        "<proto name='pfcp'>" +
+        "<field name='' show='IE not decoded yet' size='4' pos='257'/>" +
+        "<field name='' show='IE not decoded yet' size='1' pos='267'/>" +
+        "<field name='' show='IE not decoded yet(WS:IE id too large)' size='69' pos='274'/>" +
+        "<field name='pfcp.enterprise_ie_data' show='IE not decoded yet' size='3' pos='10'/>" +
+        "<field name='' show='IE not decoded yet' size='0' pos='999'/>" +
+        "</proto>");
+    var g59Spans = new List<(int Pos, int Size)>();
+    g59Collect.Invoke(null, new object?[]
+    {
+        g59Pdml,
+        new Dictionary<(string, int), string>(),
+        new Dictionary<(string, int), string>(),
+        new Dictionary<string, HashSet<int>>(),
+        new Dictionary<string, HashSet<int>>(),
+        null, null, g59Spans,
+    });
+    Report("MKE-01 anonymous 'not decoded' spans are collected in document order",
+        g59Spans.Count == 3 && g59Spans[0] == (257, 4) && g59Spans[1] == (267, 1) && g59Spans[2] == (274, 69),
+        string.Join(",", g59Spans));
+    Report("MKE-02 named or zero-size 'not decoded' fields are not collected",
+        !g59Spans.Contains((10, 3)) && !g59Spans.Contains((999, 0)), "named/size-0 excluded");
+
+    var g59Bytes = new byte[32];
+    for (int i = 0; i < g59Bytes.Length; i++) g59Bytes[i] = (byte)(0x10 + i);
+    var g59Pkt = new Packet { Index = 0, RawData = (byte[])g59Bytes.Clone() };
+    var g59Editor = new ProtocolEditorService();
+
+    static ProtocolField Marker(string name)
+        => new ProtocolField { Name = name, OriginalPdmlName = string.Empty, IsUndecodedMarker = true, Kind = FieldKind.Unknown };
+
+    ProtocolLayer LayerWith(params ProtocolField[] fields)
+    {
+        var layer = new ProtocolLayer { ProtocolName = "pfcp", ParentPacket = g59Pkt };
+        foreach (var f in fields) layer.Fields.Add(f);
+        return layer;
+    }
+
+    void DeriveMarker(IEnumerable<ProtocolLayer> layers, List<(int Pos, int Size)> spans) =>
+        g59DeriveMarker.Invoke(null, new object?[] { layers, spans, g59Pkt });
+
+    var m3 = Marker("IE");
+    m3.Children.Add(new ProtocolField { Name = "expert", OriginalPdmlName = "_ws.expert", Kind = FieldKind.Unknown });
+    DeriveMarker(new[] { LayerWith(m3) }, new List<(int, int)> { (4, 5) });
+    Report("MKE-03 a matched marker gets its own span and Bytes kind",
+        m3.Kind == FieldKind.Bytes && m3.Offset == 4 && m3.Length == 5
+        && m3.RawBytes.AsSpan().SequenceEqual(g59Bytes.AsSpan(4, 5)),
+        $"off={m3.Offset} len={m3.Length} kind={m3.Kind}");
+
+    var g59Fence6 = g59Editor.CheckTreeEditFence(g59Pkt, m3);
+    Report("MKE-04 a marker with a derived span passes the fence and edits as a blob",
+        g59Fence6.Allowed, g59Fence6.Reason);
+
+    var m5a = Marker("A");
+    var m5b = Marker("B");
+    DeriveMarker(new[] { LayerWith(m5a, m5b) }, new List<(int, int)> { (2, 4), (6, 2) });
+    Report("MKE-05 several markers in one packet get distinct spans by document order (no show-text collision)",
+        m5a.Offset == 2 && m5a.Length == 4 && m5b.Offset == 6 && m5b.Length == 2
+        && m5a.Kind == FieldKind.Bytes && m5b.Kind == FieldKind.Bytes,
+        $"a=({m5a.Offset},{m5a.Length}) b=({m5b.Offset},{m5b.Length})");
+
+    var m6 = Marker("IE");
+    var m6Nested = new ProtocolField { Name = "null", OriginalPdmlName = "pfcp.ie_not_decoded_null", IsUndecodedMarker = true, Kind = FieldKind.Unknown };
+    m6.Children.Add(m6Nested);
+    DeriveMarker(new[] { LayerWith(m6) }, new List<(int, int)> { (5, 3) });
+    Report("MKE-06 the nested named '...not_decoded...' leaf does not consume a span",
+        m6.Kind == FieldKind.Bytes && m6.Offset == 5 && m6.Length == 3 && m6Nested.Kind == FieldKind.Unknown,
+        $"outer=({m6.Offset},{m6.Length},{m6.Kind}) inner={m6Nested.Kind}");
+
+    var m7 = Marker("IE");
+    DeriveMarker(new[] { LayerWith(m7) }, new List<(int, int)>());
+    var g59Fence7 = g59Editor.CheckTreeEditFence(g59Pkt, m7);
+    Report("MKE-07 an underivable marker is failed closed and refused with the marker-specific reason",
+        m7.Kind == FieldKind.Unknown && m7.Offset == -1 && m7.Length == 0
+        && !g59Fence7.Allowed && g59Fence7.Reason == LocalizationService.Resolve("Fence.UndecodedSpanUnknown"),
+        $"kind={m7.Kind} off={m7.Offset} reason={g59Fence7.Reason}");
+
+    var m8a = Marker("A");
+    var m8b = Marker("B");
+    DeriveMarker(new[] { LayerWith(m8a, m8b) }, new List<(int, int)> { (2, 4) });
+    var g59Fence8 = g59Editor.CheckTreeEditFence(g59Pkt, m8b);
+    Report("MKE-08 a marker past the end of the span list is failed closed",
+        m8a.Kind == FieldKind.Bytes && m8b.Kind == FieldKind.Unknown
+        && !g59Fence8.Allowed && g59Fence8.Reason == LocalizationService.Resolve("Fence.UndecodedSpanUnknown"),
+        $"a={m8a.Kind} b={m8b.Kind} reason={g59Fence8.Reason}");
+
+    var m9 = Marker("IE");
+    DeriveMarker(new[] { LayerWith(m9) }, new List<(int, int)> { (100, 5) });
+    Report("MKE-09 a marker whose span runs past the frame is failed closed",
+        m9.Kind == FieldKind.Unknown && m9.Length == 0,
+        $"kind={m9.Kind} off={m9.Offset} len={m9.Length}");
+
+    // MKE-10 (VBC 情形 b, behavioral): an empty-name marker is verified by the
+    // ("", pos) key only. Editing VerifyFieldInReparse directly with a synthetic
+    // reparse keeps this deterministic (no tshark re-dissection) while proving the
+    // anonymous position-only branch commits and the miss path is NotLanding — not
+    // the plain-leaf hard abort (Vbc.NoPdmlName).
+    var g59Verify = typeof(EditTransactionService).GetMethod("VerifyFieldInReparse",
+        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+    PdmlData FreshWith(string pdmlName, int pos) => new(
+        new Dictionary<(string, int), string>(),
+        new Dictionary<(string, int), string> { [(pdmlName, pos)] = "IE not decoded yet" },
+        new Dictionary<(string, int), string>(),
+        new Dictionary<string, List<int>>(),
+        new Dictionary<string, List<int>>(),
+        new HashSet<string>(),
+        new Dictionary<string, HashSet<int>>());
+
+    var m10 = Marker("IE");
+    m10.Offset = 4;
+    m10.Length = 5;
+    m10.Kind = FieldKind.Bytes;
+    m10.RawBytes = g59Bytes.AsSpan(4, 5).ToArray();
+    byte[] m10New = g59Bytes.AsSpan(4, 5).ToArray();
+    m10New[0] ^= 0xFF;
+    var r10Hit = (EditResult)g59Verify.Invoke(null, new object?[] { m10, m10New, FreshWith("", 4) })!;
+    var r10Miss = (EditResult)g59Verify.Invoke(null, new object?[] { m10, m10New, FreshWith("", 99) })!;
+    string noNameReason = LocalizationService.Resolve("Vbc.NoPdmlName");
+    Report("MKE-10 an empty-name marker commits via the (\u0022\u0022, pos) match and a miss aborts NotLanding (VBC 情形 b)",
+        r10Hit.Success && r10Hit.Reason == "OK"
+        && !r10Miss.Success && r10Miss.Reason != noNameReason
+        && r10Miss.Reason == LocalizationService.Resolve("Vbc.NotLanding", "(anonymous)", 4),
+        $"hit={r10Hit.Success}/{r10Hit.Reason}, miss=\"{r10Miss.Reason}\"");
+
+    // MKE-11 (UDTE-F5 highlight regression): a marker with a derived Length>0
+    // highlights its own bytes via the normal leaf path; an underivable marker
+    // (Length==0) still falls back to the enclosing IE's undecoded tail.
+    var g59Span = typeof(HexEditorViewModel).GetMethod("ComputeFieldSpan",
+        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+    object?[] spanDerived = { m3, 32, 0, 0 };
+    g59Span.Invoke(null, spanDerived);
+    int dStart = (int)spanDerived[2]!, dLen = (int)spanDerived[3]!;
+    Report("MKE-11 a derived marker highlights its own span (no zero-length special case)",
+        dStart == 4 && dLen == 5, $"start={dStart} len={dLen}");
+
+    var m11Ancestor = new ProtocolField { Name = "IE", OriginalPdmlName = "", Offset = 2, Length = 30, Kind = FieldKind.Bytes };
+    var m11Tail = Marker("IE");
+    m11Tail.ParentField = m11Ancestor;
+    object?[] spanTail = { m11Tail, 32, 0, 0 };
+    g59Span.Invoke(null, spanTail);
+    int tStart = (int)spanTail[2]!, tLen = (int)spanTail[3]!;
+    Report("MKE-11b an underivable marker still highlights the enclosing undecoded tail",
+        tStart == 2 && tLen == 30, $"start={tStart} len={tLen}");
+}
+catch (Exception ex)
+{
+    Report("G59 group execution", false, ex.ToString());
 }
 
 string skipNote = "";

@@ -71,7 +71,7 @@
                                 </ComboBox.ItemTemplate>
                             </ComboBox>
                             <StackPanel Orientation="Horizontal" Spacing="4"
-                                    IsVisible="{Binding IsEditing}">
+                                    IsVisible="{Binding IsEditingScalar}">
                                     <CheckBox IsChecked="{Binding AllowLengthChange}"
                                               FontSize="15" VerticalAlignment="Center"
                                               ToolTip.Tip="{DynamicResource L10n.Field.TipLengthChange}" />

@@ -371,10 +371,76 @@ public sealed class EditTransactionService
         return result;
     }
 
+    /// <summary>
+    /// Bit fields do not reparse to the same hex string as their whole byte span:
+    /// the PDML value is the extracted bit value (decimal / 0x / 0b) in most
+    /// dissectors, and the whole-span hex in others. Accept either interpretation,
+    /// plus the whole-span hex fed back through the mask. Anything else is a genuine
+    /// mismatch and the edit is rejected.
+    /// </summary>
+    private static bool BitFieldValueMatches(ProtocolField field, byte[] newValue, string? reparseValue)
+    {
+        if (string.IsNullOrWhiteSpace(reparseValue))
+            return false;
+
+        ulong mask = (ulong)field.BitMask;
+        int k = System.Numerics.BitOperations.PopCount(mask);
+        ulong max = k >= 64 ? ulong.MaxValue : (1UL << k) - 1UL;
+
+        ulong expectedRaw = 0;
+        foreach (byte b in newValue)
+            expectedRaw = (expectedRaw << 8) | b;
+        expectedRaw = (expectedRaw >> field.BitShift) & max;
+
+        // 1) Whole-span hex ("00:.." already flattened by PDML to contiguous hex):
+        //    mask it down to the field's bits and compare.
+        if (reparseValue.Length % 2 == 0 && reparseValue.Length <= 16 &&
+            ulong.TryParse(reparseValue, System.Globalization.NumberStyles.HexNumber,
+                System.Globalization.CultureInfo.InvariantCulture, out ulong spanHex))
+        {
+            if (((spanHex >> field.BitShift) & max) == expectedRaw)
+                return true;
+        }
+
+        string text = reparseValue.Trim();
+
+        // 2) 0x-prefixed hex extracted value.
+        if (text.StartsWith("0x", StringComparison.OrdinalIgnoreCase) &&
+            ulong.TryParse(text.AsSpan(2), System.Globalization.NumberStyles.HexNumber,
+                System.Globalization.CultureInfo.InvariantCulture, out ulong hx))
+            return hx == expectedRaw;
+
+        // 3) 0b binary extracted value.
+        if (text.StartsWith("0b", StringComparison.OrdinalIgnoreCase))
+        {
+            ulong bin = 0;
+            foreach (char c in text.AsSpan(2))
+            {
+                if (c == '1') bin = (bin << 1) | 1;
+                else if (c == '0') bin <<= 1;
+                else return false;
+            }
+            return bin == expectedRaw;
+        }
+
+        // 4) Plain decimal extracted value.
+        if (ulong.TryParse(text, System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture, out ulong dec))
+            return dec == expectedRaw;
+
+        return false;
+    }
+
     private static EditResult VerifyFieldInReparse(ProtocolField field, byte[] newValue, PdmlData fresh)
     {
         string pdmlName = field.OriginalPdmlName;
-        if (pdmlName.Length == 0)
+        bool isAnonymous = pdmlName.Length == 0;
+
+        // An anonymous field has no PDML name to verify against, so only the two
+        // shapes the tree legitimately presents position-only are let through:
+        // IE containers with children (D1 whole-container edit) and undecoded-marker
+        // leaves (C blob edit). A plain anonymous leaf keeps the original hard abort.
+        if (isAnonymous && !(field.HasChildren || field.IsUndecodedMarker))
             return Abort(field.Name, LocalizationService.Resolve("Vbc.NoPdmlName"));
 
         int primaryPos = field.Offset;
@@ -399,6 +465,13 @@ public sealed class EditTransactionService
 
         if (!foundAtPosition)
         {
+            if (isAnonymous)
+            {
+                // For anonymous containers, only match by position - don't do name scan
+                return Abort(field.Name,
+                    LocalizationService.Resolve("Vbc.NotLanding", string.IsNullOrEmpty(pdmlName) ? "(anonymous)" : pdmlName, searchPos));
+            }
+
             int wrongPos = -1;
             foreach (var ((name, pos), _) in fresh.FieldLookup)
             {
@@ -427,7 +500,11 @@ public sealed class EditTransactionService
 
         if (fresh.ValueLookup != null && fresh.ValueLookup.TryGetValue((pdmlName, searchPos), out string? reparseValue))
         {
-            if (!string.Equals(reparseValue, expectedHex, StringComparison.OrdinalIgnoreCase))
+            bool valuesMatch = string.Equals(reparseValue, expectedHex, StringComparison.OrdinalIgnoreCase);
+            if (!valuesMatch && field.IsBitField)
+                valuesMatch = BitFieldValueMatches(field, newValue, reparseValue);
+
+            if (!valuesMatch)
             {
                 return Abort(field.Name,
                     LocalizationService.Resolve("Vbc.ValueMismatch", reparseValue, searchPos, expectedHex));

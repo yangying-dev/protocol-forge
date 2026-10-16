@@ -389,6 +389,56 @@ public sealed partial class ProtocolTreeViewModel : ObservableObject
                     return;
                 }
             }
+            else if (field.IsBitField)
+            {
+                // Parse bit value as integer
+                string txt = field.EditText?.Trim() ?? "0";
+                ulong newRaw = 0;
+                bool okParse = false;
+                if (txt.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+                    okParse = ulong.TryParse(txt[2..], System.Globalization.NumberStyles.HexNumber, null, out newRaw);
+                else if (txt.StartsWith("0b", StringComparison.OrdinalIgnoreCase))
+                {
+                    string bin = txt[2..];
+                    okParse = true;
+                    newRaw = 0;
+                    foreach (char c in bin)
+                    {
+                        if (c == '1') newRaw = (newRaw << 1) | 1;
+                        else if (c == '0') newRaw = newRaw << 1;
+                        else { okParse = false; break; }
+                    }
+                }
+                else
+                {
+                    okParse = ulong.TryParse(txt, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out newRaw);
+                    if (!okParse)
+                        okParse = ulong.TryParse(txt, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out newRaw);
+                }
+                if (!okParse)
+                {
+                    ShowStatus("Field.InvalidValue", field.Name);
+                    return;
+                }
+
+                int bitWidth = System.Numerics.BitOperations.PopCount((ulong)field.BitMask);
+                ulong maxValue = bitWidth >= 64 ? ulong.MaxValue : (1UL << bitWidth) - 1UL;
+                if (newRaw > maxValue)
+                {
+                    ShowStatus("Edit.BitValueOutOfRange", newRaw, maxValue);
+                    return;
+                }
+
+                try
+                {
+                    bytes = ProtocolEditorService.ComputeBitFieldEditBytes(packet, field, newRaw);
+                }
+                catch (Exception ex)
+                {
+                    ShowStatus("Field.Blocked", ex.Message);
+                    return;
+                }
+            }
             else
             {
                 bytes = ProtocolEditorService.ConvertRawValue(field.Kind, field.EditText, field.Length);
@@ -476,6 +526,26 @@ public sealed partial class ProtocolTreeViewModel : ObservableObject
     /// </summary>
     private static string FormatForEdit(ProtocolField field)
     {
+        if (field.IsBitField)
+        {
+            // Real tshark bit subfields carry no RawBytes; read the live frame bytes.
+            byte[]? span = field.RawBytes.Length > 0
+                ? field.RawBytes
+                : field.ParentLayer?.ParentPacket?.EffectiveData;
+            if (span != null && field.Length > 0 && field.Offset >= 0
+                && field.Offset + field.Length <= span.Length)
+            {
+                ulong current = 0;
+                for (int i = 0; i < field.Length; i++)
+                    current = (current << 8) | span[field.Offset + i];
+                int k = System.Numerics.BitOperations.PopCount((ulong)field.BitMask);
+                ulong max = k >= 64 ? ulong.MaxValue : ((ulong)1 << k) - 1UL;
+                ulong val = (current >> field.BitShift) & max;
+                return field.HexPreferred ? "0x" + val.ToString("X") : val.ToString();
+            }
+            return string.Empty;
+        }
+
         var bytes = field.RawBytes;
         if (bytes.Length == 0)
             return string.Empty;

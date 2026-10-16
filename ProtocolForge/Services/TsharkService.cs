@@ -48,7 +48,13 @@ public sealed record PdmlData(
     // wrapper) has no _raw twin to carry its offset, so the only way to find its
     // showname — and with it the "Expert Info (Note/Sequence)" label Wireshark shows —
     // is to look the name up here.
-    Dictionary<string, HashSet<int>>? NamePositions = null);
+    Dictionary<string, HashSet<int>>? NamePositions = null,
+    // UDTE-F7: the byte spans of anonymous "not decoded" PDML fields, in document
+    // order, as (Pos, Size). jsonraw keys these markers by their rendered text, which
+    // collides when one packet has several undecoded IEs (every twin resolves to the
+    // last span), so the tree's marker containers are paired to this list by document
+    // order instead of by key — see DeriveMarkerSpans.
+    List<(int Pos, int Size)>? AnonymousMarkerSpans = null);
 
 /// <summary>
 /// Wireshark 显示过滤器校验结论。<see cref="IsValid"/> 为 <c>false</c> 时
@@ -1167,6 +1173,7 @@ public sealed class TsharkService
         var protoPositions = pdmlData?.ProtoPositions;
         var protoBiases = pdmlData?.ProtoBiases;
         var pdmlAnonSpans = pdmlData?.AnonymousSpans;
+        var pdmlMarkerSpans = pdmlData?.AnonymousMarkerSpans;
         var reassemblyRegion = pdmlData?.ReassemblyRegion;
 
         string? malformedNote = null;
@@ -1233,6 +1240,13 @@ public sealed class TsharkService
                 }
             }
         }
+
+        // UDTE-F7: undecoded markers take their span from the ordered PDML anonymous
+        // span list (document order) rather than the colliding show-text map. Runs
+        // before the offset sort so the walk order still matches the PDML document
+        // order the list was collected in.
+        if (pdmlMarkerSpans is { Count: > 0 })
+            DeriveMarkerSpans(packet.Layers, pdmlMarkerSpans, packet);
 
         // tshark --no-duplicate-keys merges repeated dissections of the same
         // protocol into a single array key at the first instance's JSON position,
@@ -1321,6 +1335,7 @@ public sealed class TsharkService
 
         ParseJsonrawObject(layerValue, hasDisplay ? displayLayer : default, pdmlLookup, pdmlTypeLookup, pdmlHiddenNames, pdmlHiddenPositions, layer.Fields, protocolName, layer, offsetBias: offsetBias, pdmlAnonSpans: pdmlAnonSpans, pdmlNamePositions: pdmlNamePositions);
         AttachEnumOptions(layer.Fields);
+        DeriveContainerSpans(layer.Fields, packet);
 
         if (protoShowNames != null &&
             protoShowNames.TryGetValue((protocolName, layerOffset), out var showname))
@@ -1333,6 +1348,122 @@ public sealed class TsharkService
         }
 
         packet.Layers.Add(layer);
+    }
+
+    /// <summary>
+    /// CWLE-F1 / D1 span derivation: containers that have no byte span of their own
+    /// (Length == 0) but whose descendants do receive an explicit span here — start
+    /// = smallest descendant offset, length = max end − start, RawBytes = the frame
+    /// slice, Kind = Bytes (whole-container hex semantics, never a scalar kind).
+    /// Positionless metadata containers (Wireshark stream indices etc.) have no
+    /// descendant spans and stay untouched, so the edit fence keeps rejecting them
+    /// with NoByteSpan. Undecoded-marker leaves are excluded from the union
+    /// (their "span" is the enclosing IE tail and belongs to plan C).
+    /// </summary>
+    private static void DeriveContainerSpans(
+        System.Collections.ObjectModel.ObservableCollection<ProtocolField> fields, Packet packet)
+    {
+        var frame = packet.EffectiveData;
+        foreach (var field in fields)
+        {
+            if (!field.HasChildren)
+                continue;
+
+            DeriveContainerSpans(field.Children, packet);
+
+            // Plan C owns undecoded markers: their span comes from the PDML
+            // ("", pos) anonymous field, derived on its own path.
+            if (field.IsUndecodedMarker)
+                continue;
+
+            if (field.Length == 0)
+            {
+                int min = int.MaxValue;
+                int maxEnd = int.MinValue;
+                foreach (var child in field.Children)
+                {
+                    if (child.IsUndecodedMarker)
+                        continue;
+                    // leaf span, or already-derived container span (post-order)
+                    int cs = child.Offset;
+                    int cl = child.Length;
+                    if (cs < 0 || cl <= 0)
+                        continue;
+                    if (cs < min) min = cs;
+                    if (cs + cl > maxEnd) maxEnd = cs + cl;
+                }
+
+                if (min != int.MaxValue && maxEnd > min && maxEnd <= frame.Length)
+                {
+                    field.Offset = min;
+                    field.Length = maxEnd - min;
+                    field.RawBytes = frame.AsSpan(min, field.Length).ToArray();
+                }
+            }
+
+            // Whatever the heuristic or a raw twin gave a container, it is edited as
+            // one hex blob, never as a scalar. A usable in-frame span means Bytes;
+            // anything else stays Unknown so the fence still rejects it (CWLE-F1).
+            bool usableSpan = field.Length > 0
+                && field.Offset >= 0
+                && field.Offset <= frame.Length - field.Length
+                && field.RawBytes.Length == field.Length;
+            field.Kind = usableSpan ? FieldKind.Bytes : FieldKind.Unknown;
+        }
+    }
+
+    /// <summary>
+    /// UDTE-F7: pairs each anonymous undecoded-marker container with its byte span from
+    /// the ordered PDML anonymous-span list. Markers are keyed in jsonraw by their
+    /// rendered text, which collides when one packet holds several undecoded IEs (every
+    /// twin resolves to the last span), so both sides are walked in document order and
+    /// matched positionally. Only anonymous markers (empty
+    /// <see cref="ProtocolField.OriginalPdmlName"/>) are matched — the named
+    /// "…_not_decoded…" leaves a marker wraps are left alone. A marker that finds no
+    /// span is failed closed: span cleared, <see cref="FieldKind.Unknown"/>, so the
+    /// fence refuses it instead of editing the wrong bytes.
+    /// </summary>
+    private static void DeriveMarkerSpans(
+        IEnumerable<ProtocolLayer> layers, List<(int Pos, int Size)> spans, Packet packet)
+    {
+        var frame = packet.EffectiveData;
+        int cursor = 0;
+        foreach (var layer in layers)
+            AssignMarkerSpans(layer.Fields, spans, ref cursor, frame);
+
+        if (cursor != spans.Count)
+            TraceLog.Write($"Marker span mismatch: {spans.Count} PDML anon span(s), {cursor} marker(s) matched");
+    }
+
+    private static void AssignMarkerSpans(
+        ObservableCollection<ProtocolField> fields, List<(int Pos, int Size)> spans, ref int cursor, byte[] frame)
+    {
+        foreach (var field in fields)
+        {
+            if (field.IsUndecodedMarker && field.OriginalPdmlName.Length == 0)
+            {
+                if (cursor < spans.Count && spans[cursor] is var (pos, size) &&
+                    size > 0 && pos >= 0 && pos <= frame.Length - size)
+                {
+                    field.Offset = pos;
+                    field.Length = size;
+                    field.RawBytes = frame.AsSpan(pos, size).ToArray();
+                    field.Kind = FieldKind.Bytes;
+                }
+                else
+                {
+                    field.Offset = -1;
+                    field.Length = 0;
+                    field.RawBytes = [];
+                    field.Kind = FieldKind.Unknown;
+                }
+                if (cursor < spans.Count)
+                    cursor++;
+            }
+
+            if (field.HasChildren)
+                AssignMarkerSpans(field.Children, spans, ref cursor, frame);
+        }
     }
 
     /// <summary>
@@ -1682,6 +1813,7 @@ public sealed class TsharkService
                         container.Offset = rawInfo.Value.Offset + offsetBias;
                         container.Length = rawInfo.Value.Length;
                         container.LengthBits = MaskToLengthBits(rawInfo.Value.Mask, rawInfo.Value.Length);
+                        container.BitMask = rawInfo.Value.Mask;
                         container.RawBytes = ProtocolEditorService.ParseTsharkHexValue(rawInfo.Value.HexValue);
                         if (isTreeContainer)
                             container.DisplayValue = GetDisplayValue(displayObj, baseName) ?? rawInfo.Value.HexValue;
@@ -1691,9 +1823,9 @@ public sealed class TsharkService
                         // possibly vendor-prefixed text like "Xensource_6c:21:54 (…)".
                         container.Kind = ResolveFieldKind(pdmlTypeLookup, baseName,
                             rawInfo.Value.Offset, rawInfo.Value.Length,
-                            container.DisplayValue ?? rawInfo.Value.HexValue);
+                            container.DisplayValue ?? rawInfo.Value.HexValue, true);
                     }
-                    else if (isAnonymousContainer && pdmlAnonSpans != null &&
+                    else if (isAnonymousContainer && !container.IsUndecodedMarker && pdmlAnonSpans != null &&
                              pdmlAnonSpans.TryGetValue(baseName, out var anonSpan))
                     {
                         container.Offset = anonSpan.Pos + offsetBias;
@@ -1792,6 +1924,7 @@ public sealed class TsharkService
                             Offset = twin.Offset + offsetBias,
                             Length = twin.Length,
                             LengthBits = MaskToLengthBits(twin.Mask, twin.Length),
+                            BitMask = twin.Mask,
                             RawBytes = ProtocolEditorService.ParseTsharkHexValue(twin.HexValue),
                             Kind = ResolveFieldKind(pdmlTypeLookup, baseName, twin.Offset, twin.Length, twinDisplay),
                             ParentLayer = parentLayer,
@@ -1869,6 +2002,7 @@ public sealed class TsharkService
                                 Offset = data.Value.Offset + offsetBias,
                                 Length = data.Value.Length,
                                 LengthBits = MaskToLengthBits(data.Value.Mask, data.Value.Length),
+                                BitMask = data.Value.Mask,
                                 RawBytes = ProtocolEditorService.ParseTsharkHexValue(data.Value.HexValue),
                                 Kind = ResolveFieldKind(pdmlTypeLookup, pdmlFieldName, data.Value.Offset, data.Value.Length, displayVal),
                                 ParentLayer = parentLayer,
@@ -1937,6 +2071,7 @@ public sealed class TsharkService
                     Offset = raw.Value.Length > 0 ? raw.Value.Offset + offsetBias : -1,
                     Length = raw.Value.Length,
                     LengthBits = MaskToLengthBits(raw.Value.Mask, raw.Value.Length),
+                    BitMask = raw.Value.Mask,
                     RawBytes = ProtocolEditorService.ParseTsharkHexValue(raw.Value.HexValue),
                     Kind = kind2,
                     ParentLayer = parentLayer,
@@ -2045,6 +2180,7 @@ public sealed class TsharkService
                 Offset = rawLeft.Offset + offsetBias,
                 Length = rawLeft.Length,
                 LengthBits = MaskToLengthBits(rawLeft.Mask, rawLeft.Length),
+                BitMask = rawLeft.Mask,
                 RawBytes = ProtocolEditorService.ParseTsharkHexValue(rawLeft.HexValue),
                 Kind = ResolveFieldKind(pdmlTypeLookup, left.Key, rawLeft.Offset, rawLeft.Length, leftDisplayVal),
                 ParentLayer = parentLayer,
@@ -2206,6 +2342,7 @@ public sealed class TsharkService
             var allPositions = new Dictionary<string, HashSet<int>>(StringComparer.Ordinal);
             var anonSpans = new Dictionary<string, (int Pos, int Size)>(StringComparer.Ordinal);
             var valueLookup = new Dictionary<(string, int), string>();
+            var markerSpans = new List<(int Pos, int Size)>();
 
             // Track IP/TCP reassembly: when a proto contains a reassembly-indicator
             // field (ip.fragments, tcp.segments), descendant protos report offsets
@@ -2229,7 +2366,7 @@ public sealed class TsharkService
                     // <proto name="fake-field-wrapper">, but its child fields
                     // (data.data, data.len) carry real positions — without them
                     // the post-edit refresh lookup can never match those nodes.
-                    CollectPdmlFields(proto, fieldLookup, typeLookup, hiddenPositions, allPositions, anonSpans, valueLookup);
+                    CollectPdmlFields(proto, fieldLookup, typeLookup, hiddenPositions, allPositions, anonSpans, valueLookup, markerSpans);
                     continue;
                 }
 
@@ -2263,7 +2400,7 @@ public sealed class TsharkService
                 if (!string.IsNullOrEmpty(showname))
                     protoShowNames[(name, pos + bias)] = showname;
 
-                CollectPdmlFields(proto, fieldLookup, typeLookup, hiddenPositions, allPositions, anonSpans, valueLookup);
+                CollectPdmlFields(proto, fieldLookup, typeLookup, hiddenPositions, allPositions, anonSpans, valueLookup, markerSpans);
 
                 if (reassemblyBase < 0 && HasReassemblyField(proto, name))
                 {
@@ -2292,7 +2429,8 @@ public sealed class TsharkService
                                     anonSpans.Count > 0 ? anonSpans : null,
                                     reassemblyBase >= 0 ? (reassemblyBase, reassemblyEnd - reassemblyBase) : null,
                                     valueLookup,
-                                    allPositions));
+                                    allPositions,
+                                    markerSpans.Count > 0 ? markerSpans : null));
         }
 
         return result;
@@ -2305,7 +2443,8 @@ public sealed class TsharkService
         Dictionary<string, HashSet<int>> hiddenPositions,
         Dictionary<string, HashSet<int>> allPositions,
         Dictionary<string, (int Pos, int Size)>? anonSpans = null,
-        Dictionary<(string, int), string>? valueLookup = null)
+        Dictionary<(string, int), string>? valueLookup = null,
+        List<(int Pos, int Size)>? markerSpans = null)
     {
         foreach (var field in parent.Elements("field"))
         {
@@ -2338,17 +2477,23 @@ public sealed class TsharkService
                     // stable (empty-name, pos) key instead — see ParseJsonrawObject.
                     lookup[("", pos)] = show;
 
+                    int spanSize = int.TryParse(field.Attribute("size")?.Value ?? "0", out int ss) ? ss : 0;
+
                     // Anonymous spans keyed by show text. tshark keys an anonymous
                     // container by its rendered text and gives it no _raw twin, so its
                     // byte span is only knowable from PDML — both leaves (an SSDP "\r\n"
                     // blank line) and containers (a PFCP IE header) need it, otherwise
                     // they render with a zero-length span: no hex highlight, not editable,
                     // unreachable by hex→tree sync.
-                    if (anonSpans != null &&
-                        int.TryParse(field.Attribute("size")?.Value ?? "0", out int spanSize) && spanSize > 0)
-                    {
+                    if (anonSpans != null && spanSize > 0)
                         anonSpans[show] = (pos, spanSize);
-                    }
+
+                    // UDTE-F7: undecoded-tail markers also get an order-preserving list of
+                    // spans, because the show-text map above collides on the several
+                    // "IE not decoded yet" twins of one packet.
+                    if (markerSpans != null && spanSize > 0 &&
+                        show.Contains("not decoded", StringComparison.OrdinalIgnoreCase))
+                        markerSpans.Add((pos, spanSize));
                 }
                 else if (!string.IsNullOrEmpty(showname))
                 {
@@ -2365,11 +2510,11 @@ public sealed class TsharkService
                 }
             }
 
-            CollectPdmlFields(field, lookup, typeLookup, hiddenPositions, allPositions, anonSpans, valueLookup);
+            CollectPdmlFields(field, lookup, typeLookup, hiddenPositions, allPositions, anonSpans, valueLookup, markerSpans);
         }
 
         foreach (var subProto in parent.Elements("proto"))
-            CollectPdmlFields(subProto, lookup, typeLookup, hiddenPositions, allPositions, anonSpans, valueLookup);
+            CollectPdmlFields(subProto, lookup, typeLookup, hiddenPositions, allPositions, anonSpans, valueLookup, markerSpans);
     }
 
     /// <summary>
@@ -2493,7 +2638,8 @@ public sealed class TsharkService
         string fieldName,
         int offset,
         int length,
-        string? displayValue)
+        string? displayValue,
+        bool isContainer = false)
     {
         if (pdmlTypeLookup != null &&
             pdmlTypeLookup.TryGetValue((fieldName, offset), out var pdmlType))
@@ -2503,7 +2649,7 @@ public sealed class TsharkService
                 return mapped;
         }
 
-        return InferFieldKind(fieldName, length, displayValue);
+        return InferFieldKind(fieldName, length, displayValue, isContainer);
     }
 
     private static FieldKind MapPdmlType(string pdmlType) => pdmlType switch
@@ -2529,7 +2675,7 @@ public sealed class TsharkService
     /// a colon-hex display of 4/6/8 groups is a MAC; anything else of 1-8
     /// bytes is a plain unsigned integer.
     /// </summary>
-    private static FieldKind InferFieldKind(string fieldName, int length, string? displayValue)
+    private static FieldKind InferFieldKind(string fieldName, int length, string? displayValue, bool isContainer = false)
     {
         // User ID sub-fields NAI/SUPI/GPSI/PEI are TS 29.571 string types (ASCII with
         // TS 23.003 prefixes), not BCD digits; SUPI/GPSI can be all-digit yet are strings.
@@ -2547,7 +2693,17 @@ public sealed class TsharkService
         if (IsMacShapedField(length, displayValue))
             return FieldKind.Mac;
 
-        return length is >= 1 and <= 8 ? FieldKind.UInt : FieldKind.Unknown;
+        // UTLE-F1 / CWLE-F1: the heuristic fallback must never decide for
+        // containers. B forbids landing them on Bytes (that would silently open
+        // whole-container editing); D1 forbids scalar kinds (1-8B containers
+        // were being edited as plain numbers). Eligible containers get an
+        // explicit Kind=Bytes later, from DeriveContainerSpans.
+        if (isContainer)
+            return FieldKind.Unknown;
+
+        if (length is >= 1 and <= 8)
+            return FieldKind.UInt;
+        return length >= 1 ? FieldKind.Bytes : FieldKind.Unknown;
     }
 
     /// <summary>

@@ -23,8 +23,8 @@ protocol-forge/
 
 | Task | Location | Notes |
 |------|----------|-------|
-| tshark integration, tree building, version gate | `ProtocolForge/Services/TsharkService.cs` | 2156 lines — largest file |
-| Edit fence + field-level edits | `ProtocolForge/Services/ProtocolEditorService.cs`, `EditTransactionService.cs` | VBC reparse verification |
+| tshark integration, tree building, version gate | `ProtocolForge/Services/TsharkService.cs` | 2747 lines — largest file |
+| Edit fence + field-level edits | `ProtocolForge/Services/ProtocolEditorService.cs`, `EditTransactionService.cs` | VBC reparse verification; byte-level fence + bit-field RMW (A), untyped-leaf `Bytes` fallback (B), container whole-edit (D1), undecoded-marker blob (C) |
 | Hex display + inline hex editing | `ProtocolForge/ViewModels/HexEditorViewModel.cs`, `Views/Controls/HexEditor.axaml.cs` | REPLACE-only editing |
 | Packet injection rung ladder | `ProtocolForge/Services/PacketSendService.cs` | Npcap/BPF/AF_PACKET/IP/UDP fallback |
 | Manual DI composition | `ProtocolForge/App.axaml.cs` | All services constructed here in order |

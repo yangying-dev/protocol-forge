@@ -26,14 +26,11 @@ public sealed class ProtocolEditorService
     public EditFence CheckTreeEditFence(Packet packet, ProtocolField field)
     {
         if (!field.IsTreeEditable)
-            return RejectFence(field.Name, LocalizationService.Resolve("Fence.UnknownField"));
+            return RejectFence(field.Name, LocalizationService.Resolve(
+                field.IsUndecodedMarker ? "Fence.UndecodedSpanUnknown" : "Fence.UnknownField"));
 
         if (field.Offset < 0 || field.Length <= 0)
             return RejectFence(field.Name, LocalizationService.Resolve("Fence.NoByteSpan"));
-
-        // Bit-level fields (LengthBits >= 0 means sub-byte) cannot be edited as whole bytes.
-        if (field.LengthBits >= 0)
-            return RejectFence(field.Name, LocalizationService.Resolve("Fence.BitLevel"));
 
         if (field.Offset + field.Length > packet.EffectiveData.Length)
         {
@@ -41,12 +38,32 @@ public sealed class ProtocolEditorService
             return RejectFence(field.Name, LocalizationService.Resolve("Fence.OutOfFrame", field.Offset, field.Length, packet.EffectiveData.Length, hint));
         }
 
+        // Bit field: read-modify-write of the whole byte span, so the mask must be
+        // one contiguous run of bits (ComputeBitFieldEditBytes assumes it).
+        if (field.IsBitField)
+        {
+            if (field.Length > 8)
+                return RejectFence(field.Name, LocalizationService.Resolve("Fence.BitOutOfRange"));
+
+            int k = System.Numerics.BitOperations.PopCount((ulong)field.BitMask);
+            long shifted = field.BitMask >> field.BitShift;
+            long expected = k >= 64 ? -1 : (1L << k) - 1;
+            if (shifted != expected)
+                return RejectFence(field.Name, LocalizationService.Resolve("Fence.BitMaskNonContiguous"));
+
+            // No RawBytes evidence check: bit subfields usually carry none, and the
+            // RMW reads the live frame bytes at (Offset, Length) instead.
+            return new EditFence(true, "OK");
+        }
+
+        // Bit-level in the PDML (LengthBits set) but no usable mask: not editable.
+        if (field.LengthBits >= 0)
+            return RejectFence(field.Name, LocalizationService.Resolve("Fence.BitMaskMissing"));
+
         if (field.RawBytes.Length != field.Length || field.RawBytes.Length == 0)
             return RejectFence(field.Name, LocalizationService.Resolve("Fence.NoByteEvidence", field.RawBytes.Length, field.Length));
 
         // Recorded bytes must agree with actual frame bytes at the field's offset.
-        // Also catches masked bit-value fields whose RawBytes carry '0'/'1' chars
-        // instead of real frame bytes.
         if (!field.RawBytes.AsSpan().SequenceEqual(packet.EffectiveData.AsSpan(field.Offset, field.Length)))
             return RejectFence(field.Name, LocalizationService.Resolve("Fence.BytesDisagree"));
 
@@ -349,10 +366,8 @@ public sealed class ProtocolEditorService
     {
         foreach (var field in fields)
         {
-            // Bit-level fields (LengthBits >= 0) carry masked values, not whole
-            // bytes; backfilling their RawBytes would fabricate byte evidence the
-            // edit fence relies on, so the tree's gray hex stays empty for them.
-            if (field.LengthBits < 0 && field.Offset >= 0 && field.Length > 0 && field.Offset + field.Length <= data.Length)
+            // Bit fields included too: the fence RMWs effective bytes, not RawBytes.
+            if (field.Offset >= 0 && field.Length > 0 && field.Offset + field.Length <= data.Length)
             {
                 int fieldEndExclusive = field.Offset + field.Length;
                 if (field.Offset < editEnd && editStart < fieldEndExclusive)
@@ -446,6 +461,50 @@ public sealed class ProtocolEditorService
         for (int i = 0; i < result.Length; i++)
             result[i] = Convert.ToByte(clean.Substring(i * 2, 2), 16);
 
+        return result;
+    }
+
+
+    /// <summary>
+    /// Computes the full field bytes for a bit-level RMW edit: keeps every bit in the
+    /// field's byte span except those covered by <see cref="ProtocolField.BitMask"/>,
+    /// which take <paramref name="newRaw"/>. Pure by design — the caller passes the
+    /// result through verify-before-commit, which mutates the packet only on success,
+    /// so this method must not touch <paramref name="packet"/>.
+    /// </summary>
+    public static byte[] ComputeBitFieldEditBytes(Packet packet, ProtocolField field, ulong newRaw)
+    {
+        if (field.Offset < 0 || field.Length <= 0)
+            throw new ArgumentException("Field has no valid byte span.", nameof(field));
+
+        if (field.BitMask == 0)
+            throw new ArgumentException("Field has no bit mask.", nameof(field));
+
+        var data = packet.EffectiveData;
+        if (field.Offset + field.Length > data.Length)
+            throw new ArgumentOutOfRangeException(nameof(field),
+                $"Field at offset {field.Offset} with length {field.Length} exceeds packet data.");
+
+        ulong mask = (ulong)field.BitMask;
+        int k = System.Numerics.BitOperations.PopCount(mask);
+        ulong max = k >= 64 ? ulong.MaxValue : (1UL << k) - 1UL;
+        if (newRaw > max)
+            throw new ArgumentException(
+                $"Bit value {newRaw} exceeds maximum {max} for a {k}-bit field.", nameof(newRaw));
+
+        // Read the whole field span big-endian — the same convention the tree uses.
+        ulong current = 0;
+        for (int i = 0; i < field.Length; i++)
+            current = (current << 8) | data[field.Offset + i];
+
+        ulong updated = (current & ~mask) | ((newRaw << field.BitShift) & mask);
+
+        var result = new byte[field.Length];
+        for (int i = field.Length - 1; i >= 0; i--)
+        {
+            result[i] = (byte)(updated & 0xFF);
+            updated >>= 8;
+        }
         return result;
     }
 

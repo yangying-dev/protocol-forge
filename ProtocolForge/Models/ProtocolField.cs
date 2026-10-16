@@ -66,6 +66,16 @@ public partial class ProtocolField : ObservableObject
     [ObservableProperty]
     private int _lengthBits = -1;
 
+    /// <summary>Raw bitmask for bit-level fields (0 if byte-aligned).</summary>
+    [ObservableProperty]
+    private long _bitMask;
+
+    /// <summary>Bit shift (trailing zero count) for the bitmask.</summary>
+    public int BitShift => BitMask == 0 ? 0 : System.Numerics.BitOperations.TrailingZeroCount((ulong)BitMask);
+
+    /// <summary>True if this is a bit-level field with a valid bitmask.</summary>
+    public bool IsBitField => LengthBits >= 0 && BitMask != 0;
+
     /// <summary>
     /// Original PDML field name (e.g., "pfcp.seid") used to match re-parsed
     /// shownames back to this field after an edit (with <see cref="Offset"/>).
@@ -112,6 +122,12 @@ public partial class ProtocolField : ObservableObject
 
     public bool IsEditingAndNotEnum => IsEditing && !HasEnumOptions;
 
+    /// <summary>
+    /// True while editing a non-container field. Containers are whole-blob REPLACE
+    /// edits, so the "allow length change" opt-in is hidden for them (CWLE-F4).
+    /// </summary>
+    public bool IsEditingScalar => IsEditing && !HasChildren;
+
     /// <summary>The option matching this field's current bytes, or null if unobserved.</summary>
     [ObservableProperty]
     private EnumOption? _selectedEnumOption;
@@ -127,6 +143,7 @@ public partial class ProtocolField : ObservableObject
     {
         OnPropertyChanged(nameof(IsEditingAndEnum));
         OnPropertyChanged(nameof(IsEditingAndNotEnum));
+        OnPropertyChanged(nameof(IsEditingScalar));
     }
 
     /// <summary>True while this field's value editor is open in the tree.</summary>
@@ -147,7 +164,11 @@ public partial class ProtocolField : ObservableObject
 
     /// <summary>
     /// Whether the tree should offer an editor for this field. This deliberately
-    /// answers only "is there a type to edit and is this not an undecoded tail".
+    /// answers only "is there a type to edit".
+    ///
+    /// Undecoded markers become editable only once they carry a derived whole-blob span
+    /// (<see cref="FieldKind.Bytes"/>, set by TsharkService.DeriveMarkerSpans); any other
+    /// kind on a marker is not a supported edit form and stays refused.
     ///
     /// The remaining requirements — a valid byte span, in-frame, byte-aligned — belong
     /// to <see cref="Services.ProtocolEditorService.CheckTreeEditFence"/>, which reports
@@ -156,7 +177,7 @@ public partial class ProtocolField : ObservableObject
     /// same fields with a vaguer reason.
     /// </summary>
     public bool IsTreeEditable =>
-        Kind != FieldKind.Unknown && !IsUndecodedMarker;
+        Kind != FieldKind.Unknown && (!IsUndecodedMarker || Kind == FieldKind.Bytes);
 
     /// <summary>First byte this field or its descendants occupy; -1 when positionless.</summary>
     public int EffectiveStart
