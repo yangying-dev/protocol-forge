@@ -183,6 +183,7 @@
   "Dlg.CloseSave": "Save",
   "Dlg.CloseDiscard": "Discard",
   "Dlg.Cancel": "Cancel",
+  "Dlg.OK": "OK",
   "Filter.Label": "Display filter",
   "Filter.Placeholder": "Wireshark display filter, e.g. pfcp",
   "Filter.Apply": "Apply",

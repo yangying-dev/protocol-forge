@@ -3,16 +3,15 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
-using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
-using Avalonia.Platform;
 using Avalonia.Platform.Storage;
 using System.Diagnostics;
 using System.Reflection;
 using ProtocolForge.Services;
 using ProtocolForge.ViewModels;
 using SukiUI.Controls;
+using SukiUI.MessageBox;
 
 namespace ProtocolForge.Views;
 
@@ -41,69 +40,48 @@ public partial class MainWindow : SukiWindow
         Discard,
     }
 
+    // 固定宽度让长文案按该宽度换行,高度自适应内容(旧实现写死高度会裁掉长文本);
+    // 居中于主窗口/不进任务栏/不可缩放由 SukiUI 默认处理,不要在此重复设置。
+    private static SukiMessageBoxOptions DialogWindow(double width) => new()
+    {
+        Width = width,
+        SizeToContent = SizeToContent.Height,
+    };
+
     private async Task<UnsavedCloseAction> ShowUnsavedChangesDialogAsync()
     {
-        var completion = new TaskCompletionSource<UnsavedCloseAction>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var cancelButton = new Button
-        {
-            Content = LocalizationService.Resolve("Dlg.Cancel"),
-            IsCancel = true,
-            IsDefault = true,
-            MinWidth = 110,
-        };
-        var discardButton = new Button
-        {
-            Content = LocalizationService.Resolve("Dlg.CloseDiscard"),
-            MinWidth = 130,
-        };
-        var saveButton = new Button
-        {
-            Content = LocalizationService.Resolve("Dlg.CloseSave"),
-            MinWidth = 130,
-            FontWeight = FontWeight.Bold,
-        };
+        var cancelButton = SukiMessageBoxButtonsFactory.CreateButton(
+            LocalizationService.Resolve("Dlg.Cancel"), SukiMessageBoxResult.Cancel);
+        cancelButton.IsCancel = true;
+        cancelButton.IsDefault = true;
+        cancelButton.MinWidth = 110;
 
-        var buttons = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8,
-            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
-        };
-        buttons.Children.Add(cancelButton);
-        buttons.Children.Add(discardButton);
-        buttons.Children.Add(saveButton);
+        var discardButton = SukiMessageBoxButtonsFactory.CreateButton(
+            LocalizationService.Resolve("Dlg.CloseDiscard"), SukiMessageBoxResult.No);
+        discardButton.MinWidth = 130;
 
-        var content = new StackPanel
-        {
-            Margin = new Thickness(20),
-            Spacing = 18,
-        };
-        content.Children.Add(new TextBlock
-        {
-            Text = LocalizationService.Resolve("Dlg.CloseUnsavedText"),
-            TextWrapping = TextWrapping.Wrap,
-            FontSize = 13,
-        });
-        content.Children.Add(buttons);
+        var saveButton = SukiMessageBoxButtonsFactory.CreateButton(
+            LocalizationService.Resolve("Dlg.CloseSave"), SukiMessageBoxResult.Yes);
+        saveButton.MinWidth = 130;
+        saveButton.FontWeight = FontWeight.Bold;
 
-        var dialog = new Window
-        {
-            Title = LocalizationService.Resolve("Dlg.CloseUnsavedTitle"),
-            Width = 500,
-            Height = 220,
-            CanResize = false,
-            ShowInTaskbar = false,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://ProtocolForge/Assets/protocol-forge.ico"))),
-            Content = content,
-        };
+        var result = await SukiMessageBox.ShowDialogResult(
+            this,
+            new SukiMessageBoxHost
+            {
+                IconPreset = SukiMessageBoxIcons.Warning,
+                Content = LocalizationService.Resolve("Dlg.CloseUnsavedText"),
+                ActionButtonsSource = [cancelButton, discardButton, saveButton],
+            },
+            LocalizationService.Resolve("Dlg.CloseUnsavedTitle"),
+            DialogWindow(500));
 
-        cancelButton.Click += (_, _) => completion.TrySetResult(UnsavedCloseAction.Cancel);
-        discardButton.Click += (_, _) => completion.TrySetResult(UnsavedCloseAction.Discard);
-        saveButton.Click += (_, _) => completion.TrySetResult(UnsavedCloseAction.Save);
-        dialog.Closed += (_, _) => completion.TrySetResult(UnsavedCloseAction.Cancel);
-        _ = dialog.ShowDialog(this);
-        return await completion.Task;
+        return result switch
+        {
+            SukiMessageBoxResult.Yes => UnsavedCloseAction.Save,
+            SukiMessageBoxResult.No => UnsavedCloseAction.Discard,
+            _ => UnsavedCloseAction.Cancel,
+        };
     }
 
     private async Task ConfirmCloseAsync()
@@ -257,59 +235,29 @@ public partial class MainWindow : SukiWindow
     /// </summary>
     private async Task<bool> ConfirmResetModificationsAsync(int modifiedCount)
     {
-        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var cancelButton = new Button
-        {
-            Content = LocalizationService.Resolve("Dlg.Cancel"),
-            IsCancel = true,
-            MinWidth = 110,
-        };
-        var confirmButton = new Button
-        {
-            Content = LocalizationService.Resolve("Dlg.ResetModsConfirm"),
-            IsDefault = true,
-            MinWidth = 130,
-            FontWeight = FontWeight.Bold,
-        };
-        var buttons = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8,
-            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
-        };
-        buttons.Children.Add(cancelButton);
-        buttons.Children.Add(confirmButton);
+        var cancelButton = SukiMessageBoxButtonsFactory.CreateButton(
+            LocalizationService.Resolve("Dlg.Cancel"), SukiMessageBoxResult.Cancel);
+        cancelButton.IsCancel = true;
+        cancelButton.MinWidth = 110;
 
-        var content = new StackPanel
-        {
-            Margin = new Thickness(20),
-            Spacing = 18,
-        };
-        content.Children.Add(new TextBlock
-        {
-            Text = LocalizationService.Resolve("Dlg.ResetModsText", modifiedCount),
-            TextWrapping = TextWrapping.Wrap,
-            FontSize = 13,
-        });
-        content.Children.Add(buttons);
+        var confirmButton = SukiMessageBoxButtonsFactory.CreateButton(
+            LocalizationService.Resolve("Dlg.ResetModsConfirm"), SukiMessageBoxResult.Yes);
+        confirmButton.IsDefault = true;
+        confirmButton.MinWidth = 130;
+        confirmButton.FontWeight = FontWeight.Bold;
 
-        var dialog = new Window
-        {
-            Title = LocalizationService.Resolve("Dlg.ResetModsTitle"),
-            Width = 460,
-            Height = 220,
-            CanResize = false,
-            ShowInTaskbar = false,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://ProtocolForge/Assets/protocol-forge.ico"))),
-            Content = content,
-        };
+        var result = await SukiMessageBox.ShowDialogResult(
+            this,
+            new SukiMessageBoxHost
+            {
+                IconPreset = SukiMessageBoxIcons.Warning,
+                Content = LocalizationService.Resolve("Dlg.ResetModsText", modifiedCount),
+                ActionButtonsSource = [cancelButton, confirmButton],
+            },
+            LocalizationService.Resolve("Dlg.ResetModsTitle"),
+            DialogWindow(460));
 
-        cancelButton.Click += (_, _) => completion.TrySetResult(false);
-        confirmButton.Click += (_, _) => completion.TrySetResult(true);
-        dialog.Closed += (_, _) => completion.TrySetResult(false);
-        _ = dialog.ShowDialog(this);
-        return await completion.Task;
+        return result is SukiMessageBoxResult.Yes;
     }
 
     private void OnExitClicked(object? sender, RoutedEventArgs e)
@@ -359,62 +307,43 @@ public partial class MainWindow : SukiWindow
         ViewModel?.ResetDockLayout();
     }
 
-    private void OnAboutClicked(object? sender, RoutedEventArgs e)
+    private async void OnAboutClicked(object? sender, RoutedEventArgs e)
     {
         string version = Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "0.0.0";
-        var dialog = new Window
-        {
-            Title = LocalizationService.Resolve("Dlg.About"),
-            Width = 460,
-            Height = 280,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://ProtocolForge/Assets/protocol-forge.ico"))),
-            Content = new TextBlock
+        var okButton = SukiMessageBoxButtonsFactory.CreateButton(
+            LocalizationService.Resolve("Dlg.OK"), SukiMessageBoxResult.OK);
+        okButton.IsDefault = true;
+        okButton.MinWidth = 100;
+
+        await SukiMessageBox.ShowDialog(
+            this,
+            new SukiMessageBoxHost
             {
-                Text = LocalizationService.Resolve("Dlg.AboutText", version),
-                Margin = new Thickness(20),
-                TextWrapping = TextWrapping.Wrap,
+                IconPreset = SukiMessageBoxIcons.Information,
+                Content = LocalizationService.Resolve("Dlg.AboutText", version),
+                ActionButtonsSource = [okButton],
             },
-        };
-        dialog.ShowDialog(this);
+            LocalizationService.Resolve("Dlg.About"),
+            DialogWindow(460));
     }
-
-
 
     private async Task ShowInfoAsync(string title, string message)
     {
-        var closeButton = new Button
-        {
-            Content = LocalizationService.Resolve("Lic.OK"),
-            IsDefault = true,
-            MinWidth = 100,
-        };
-        var content = new StackPanel
-        {
-            Margin = new Thickness(20),
-            Spacing = 18,
-        };
-        content.Children.Add(new TextBlock
-        {
-            Text = message,
-            TextWrapping = TextWrapping.Wrap,
-            FontSize = 13,
-        });
-        content.Children.Add(closeButton);
+        var okButton = SukiMessageBoxButtonsFactory.CreateButton(
+            LocalizationService.Resolve("Dlg.OK"), SukiMessageBoxResult.OK);
+        okButton.IsDefault = true;
+        okButton.MinWidth = 100;
 
-        var dialog = new Window
-        {
-            Title = title,
-            Width = 440,
-            Height = 220,
-            CanResize = false,
-            ShowInTaskbar = false,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://ProtocolForge/Assets/protocol-forge.ico"))),
-            Content = content,
-        };
-        closeButton.Click += (_, _) => dialog.Close();
-        await dialog.ShowDialog(this);
+        await SukiMessageBox.ShowDialog(
+            this,
+            new SukiMessageBoxHost
+            {
+                IconPreset = SukiMessageBoxIcons.Information,
+                Content = message,
+                ActionButtonsSource = [okButton],
+            },
+            title,
+            DialogWindow(440));
     }
 
     private void OnOpenLogDirClicked(object? sender, RoutedEventArgs e)

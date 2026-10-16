@@ -183,6 +183,7 @@
   "Dlg.CloseSave": "保存",
   "Dlg.CloseDiscard": "放弃修改",
   "Dlg.Cancel": "取消",
+  "Dlg.OK": "确定",
   "Filter.Label": "显示过滤器",
   "Filter.Placeholder": "Wireshark 显示过滤器，例如 pfcp",
   "Filter.Apply": "应用",
