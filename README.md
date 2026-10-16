@@ -109,8 +109,8 @@ ProtocolForge/
 ├── ProtocolForge.csproj       # .NET 10, Avalonia 12.1.3, Dock 12.1.0.7, SukiUI 7.0.1, CommunityToolkit.Mvvm 8.4.2, DataGrid 12.1.2
 │
 ├── Assets/Lang/               # Localization dictionaries — en-US.json + zh-CN.json (embedded as resources)
-│   ├── en-US.json            # English UI strings (229 keys)
-│   └── zh-CN.json            # 简体中文 UI strings (229 keys, identical key set)
+│   ├── en-US.json            # English UI strings (233 keys)
+│   └── zh-CN.json            # 简体中文 UI strings (233 keys, identical key set)
 │
 ├── Models/                    # Domain objects
 │   ├── Packet.cs              # Single packet: raw data, modifications, address/port, layers

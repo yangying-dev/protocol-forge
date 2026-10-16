@@ -80,7 +80,6 @@
   "Fence.UnknownField": "Field is not editable (unknown type)",
   "Fence.UndecodedSpanUnknown": "Undecoded IE with no resolvable byte span",
   "Fence.NoByteSpan": "Field has no valid byte span",
-  "Fence.BitLevel": "Bit-level field cannot be edited from the tree",
   "Fence.BitMaskMissing": "Bit field is missing its mask",
   "Fence.BitOutOfRange": "Bit field spans more than 8 bytes",
   "Fence.BitMaskNonContiguous": "Bit field mask is not a contiguous run of bits",

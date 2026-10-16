@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Extended protocol-tree editable scope.** Three field shapes the edit fence used to refuse
+  are now editable, so IEs tshark leaves partly opaque can be patched in place. A **bit-level
+  sub-field** (e.g. IPv4 DSCP/ECN) is rewritten in place by read-modify-write against the live
+  frame bytes — a single contiguous bit mask of up to 8 bytes is accepted, an unmasked or
+  non-contiguous mask is still refused. An **untyped opaque leaf** tshark emits with no field
+  type falls back to a raw-hex `Bytes` editor once it is 9 bytes or longer, so unknown IEs
+  become editable instead of silently dead. A field **with children** — an IE container, or an
+  undecoded `IE not decoded yet` marker whose byte span is derivable — is edited as one whole
+  hex blob; a marker now derives its span by pairing the PDML anonymous "not decoded" children
+  with the marker's jsonraw `_raw` entries in document order (the PDML alone cannot — every
+  anonymous child shares the same empty name and `show` text), and a marker or container with
+  no derivable span stays read-only and says so. Byte-level edits still clear the same five
+  checks; bit fields go through read-modify-write and containers/markers through whole-blob
+  verification, both via Verify-Before-Commit. New harness groups pin the verdicts.
+
 ### Changed
 
 - **Unified theming on SukiUI.** The window chrome, controls and dock panes now share one

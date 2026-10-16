@@ -26,7 +26,7 @@
 | 4 | PCAP 读取（IngestService） | P-01 ~ P-12 | A |
 | 5 | 数据包列表加载（流式/只读） | L-01 ~ L-04 | A |
 | 6 | 协议树构建（jsonraw 三遍解析） | TR-01 ~ TR-10 | A/C |
-| 7 | 编辑围栏（CheckTreeEditFence 六检查） | F-01 ~ F-06 | A |
+| 7 | 编辑围栏（CheckTreeEditFence） | F-01 ~ F-06 | A |
 | 8 | 树字段值编辑（转换/内联编辑器） | CV-01 ~ CV-13 | A/C |
 | 9 | Hex 编辑（REPLACE-only） | H-01 ~ H-13 | A/C |
 | 10 | Verify-Before-Commit（VBC） | V-01 ~ V-10 | A/C |
@@ -138,15 +138,15 @@
 
 ---
 
-## 8. 编辑围栏（CheckTreeEditFence 六检查）
+## 8. 编辑围栏（CheckTreeEditFence）
 
 | 用例 | 分类 | 前置条件 | 步骤 | 预期 |
 |---|---|---|---|---|
 | **F-01** | A | pcap/capture.pcap | pf-verify G1a | 元数据/位级字段被拦截（blockedByReason.Count>0） |
 | **F-02** | A | 同上 | pf-verify G1b | ≥1 个常规帧内字段放行 |
 | **F-03** | A | 同上 | pf-verify G1c | 放行/拦截两类判定并存（判别力） |
-| **F-04** | A | 构造六类字段各一 | pf-verify G12a-01~07 逐一 CheckTreeEditFence | 六检查各自拒绝并返回对应 Reason：UnknownField / BitLevel / OutOfFrame(+PduHint) / NoByteEvidence / BytesDisagree（构造 60B 合成帧；NoByteSpan 因 IsTreeEditable 门在负长度处先拦截而不可达——见附录诚实注记）；合法 IPv4 字段放行 |
-| **F-05** | C | 正常模式 | 双击一个不可编辑字段（如位级掩码 / ip.addr） | 状态区显示"不可编辑: {reason}"；不打开编辑器 |
+| **F-04** | A | 构造六类字段各一 | pf-verify G12a-01~07 逐一 CheckTreeEditFence | 各检查拒绝并返回对应 Reason：UnknownField / BitMaskMissing / OutOfFrame(+PduHint) / NoByteEvidence / BytesDisagree（构造 60B 合成帧；NoByteSpan 因 IsTreeEditable 门在负长度处先拦截而不可达——见附录诚实注记）；合法 IPv4 字段放行 |
+| **F-05** | C | 正常模式 | 双击一个不可编辑字段（如无掩码的位级子字段 / ip.addr） | 状态区显示"不可编辑: {reason}"；不打开编辑器 |
 | **F-06** | A | pf-verify 产物 | 检查 trace 日志 | 每次拒绝写 TraceLog 行 |
 
 ---
@@ -406,7 +406,7 @@
 | G6 hex 代码面 | 同上 | REPLACE-only/事件/只读门 PASS |
 | G7/G8 Npcap/BPF 纯逻辑 | 同上 | 路径探测/设备匹配/ifreq 构造 PASS |
 | G11 本地化 | 同上 | 6 断言全过（键一致性/占位符/切换/回退/格式化） |
-| G12a 围栏构造 | 同上 | 7 断言全过（UnknownField/BitLevel/OutOfFrame±PduHint/NoByteEvidence/BytesDisagree/放行） |
+| G12a 围栏构造 | 同上 | 7 断言全过（UnknownField/BitMaskMissing/OutOfFrame±PduHint/NoByteEvidence/BytesDisagree/放行） |
 | G12b 转换矩阵 | 同上 | 27 断言全过（UInt 越界拒/Int 补码+截断/IPv4/IPv6/MAC/BCD 交换/String 零填充/未知 Kind） |
 | G13 字段应用 | 同上 | 9 断言全过（ApplyFieldEdit/ApplyHexStringEdit/FindFieldAtOffset 全矩阵） |
 | G14 层树（真实帧2） | 同上 | 7 断言全过（层存在/父链/重复层名/嵌套字段含位级/ProtocolStack） |
@@ -445,7 +445,7 @@
 
 **诚实注记（覆盖边界与现状记录）**：
 
-1. **F-04 的 NoByteSpan 分支不可达**：六 Reason 中 UnknownField / BitLevel / OutOfFrame(+PduHint) / NoByteEvidence / BytesDisagree 由 G12a-01~06 直接断言；`NoByteSpan` 因上游 `IsTreeEditable` 门（长度/偏移前置检查）先行拦截，无法从公开入口构造触发——语义恒"拒绝"但无独立断言行。
+1. **F-04 的 NoByteSpan 分支不可达**：六 Reason 中 UnknownField / BitMaskMissing / OutOfFrame(+PduHint) / NoByteEvidence / BytesDisagree 由 G12a-01~06 直接断言；`NoByteSpan` 因上游 `IsTreeEditable` 门（长度/偏移前置检查）先行拦截，无法从公开入口构造触发——语义恒"拒绝"但无独立断言行。
 2. **Int 无符号越界检查**：CV-02 的越界断言仅对 UInt 成立；Int 路径 `999 → 1 字节截断`（无范围检查，G12b 固化该现状）为当前实现行为，非缺陷主张。
 3. **G14-05 为占位断言（恒真）**：`Report("G14-05 duplicate layer names tolerated (TR-03)", true, …)` 的历史占位——TR-03 真实孪生键解析已由 **G24** 行为化覆盖（`dhcp.option.type` 重复键按序消费），G14-05 保留原样不误导（同一代码路径 G14 层树断言照常有效）。G14-06 的位级计数仅证明字段可遍历；`MaskToLengthBits` 语义已由 **G24 TR-09** 断言（DSCP 位宽 6）。
 4. **G21 不锁定具体 rung**：仍成立（回环注入断言"任一 rung 成功 + 严格计数"）；N-10~N-13 的阶梯下降现已由 **G27** 定向覆盖（root：AF_PACKET→IP raw→UDP 三跳 trace 实证 + NoSocketType/FrameTooShort/TCP 文案）。

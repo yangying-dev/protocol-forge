@@ -23,7 +23,7 @@ ProtocolForge/
 | Entry/Program | `Program.cs` | Avalonia bootstrap + trace.log listener setup |
 | tshark integration | `Services/TsharkService.cs` | Streamed `-T fields` list, per-packet jsonraw tree, PDML reparse, version gate |
 | Verify-Before-Commit | `Services/EditTransactionService.cs` | Candidate → temp PCAP → reparse → verify (name, offset) → commit/abort |
-| Edit fence | `Services/ProtocolEditorService.cs` | `CheckTreeEditFence` — byte-level 6 checks; bit fields edit via RMW (mask required); container/marker edit as a whole `Bytes` blob |
+| Edit fence | `Services/ProtocolEditorService.cs` | `CheckTreeEditFence` — byte-level five checks; bit fields edit via RMW (mask required); container/marker edit as a whole `Bytes` blob |
 | Send rung ladder | `Services/PacketSendService.cs` + `IL2SendRung.cs`, `NpcapSendService.cs`, `BpfSendService.cs` | L2(native) → AF_PACKET → IP raw → UDP |
 | Hex editing | `ViewModels/HexEditorViewModel.cs` + `Views/Controls/HexEditor.axaml.cs` | REPLACE-only runs, pending preview, Enter/Esc |
 | Tree ↔ hex sync | `ViewModels/MainWindowViewModel.cs`, `ProtocolTreeViewModel.cs` | `FieldSelected`, `FieldFoundAtOffset`, `_treeBuildSeq` |

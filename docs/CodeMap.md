@@ -53,11 +53,11 @@ Models (8 个)                          ← Packet / ProtocolField / PacketDocum
 
 | 类别 | 服务 | 一句话职责 |
 |---|---|---|
-| instance（sealed class，App.axaml.cs 手工 DI） | `TsharkService` | 列表流式加载 + 按包 jsonraw/json/pdml 树构建 + 单包 pdml 重解析 + 版本门禁（2156 行，最大文件） |
+| instance（sealed class，App.axaml.cs 手工 DI） | `TsharkService` | 列表流式加载 + 按包 jsonraw/json/pdml 树构建 + 单包 pdml 重解析 + 版本门禁（2747 行，最大文件） |
 | | `PcapIngestService` | 原生字节读 PCAP/PCAPNG（大小端、µs/ns 时间戳、pcapng 块遍历） |
 | | `PcapExportService` | 写标准 libpcap（覆盖保存 / 另存为 / VBC 与刷新用的临时单包文件） |
 | | `EditTransactionService` | Verify-Before-Commit：候选帧 → 临时 pcap → tshark 重解析 → (name,offset) 校验 → 提交/中止 |
-| | `ProtocolEditorService` | 编辑栅栏 `CheckTreeEditFence`（6 检查）、字段偏移反查、hex↔value 转换 |
+| | `ProtocolEditorService` | 编辑栅栏 `CheckTreeEditFence`（字节级五检查 + 位级 RMW + 容器/标记整体编辑）、字段偏移反查、hex↔value 转换 |
 | | `PacketSendService` | rung 阶梯注入：L2(Npcap/BPF) → AF_PACKET → IP raw → UDP |
 | | `NetworkInterfaceService` | 网卡枚举 + 取 IP |
 | | `LayoutService` | 窗口几何/分隔条/面板可见性持久化 |
@@ -379,18 +379,23 @@ ProtocolTreeView.OnTreePointerPressed（隧道）
 
 `FormatForEdit` 按 `field.Kind`：UInt/Int → 十进制（`HexPreferred` 时 `0x…`），IPv4 点分，IPv6，MAC 冒号hex，Bcd 交换半字节数字串，String UTF8。
 
-**6 道栅栏（verbatim，`ProtocolEditorService.CheckTreeEditFence` :26-54）**：
+**编辑栅栏（`ProtocolEditorService.CheckTreeEditFence` :26-71）**：
 
 ```
-1. !field.IsTreeEditable        → "Field is not editable (unknown type or undecoded marker)"
-2. Offset<0 || Length<=0        → "Field has no valid byte span"
-3. LengthBits >= 0              → "Bit-level field cannot be edited from the tree"
-4. Offset+Length > 帧大小        → $"Field offset {offset} + length {length} exceeds frame size {size}{hint}"
-                                   hint = " (possibly reassembled PDU)"（Layers.Count>0 时）
-5. RawBytes.Length != Length    → $"No byte evidence for this field (RawBytes.Length={n}, expected {len})"
-6. RawBytes 与帧字节不一致       → "Recorded bytes disagree with frame bytes (offset drift or masked value)"
+1. !field.IsTreeEditable         → 标记字段 ? "Fence.UndecodedSpanUnknown" : "Fence.UnknownField"
+2. Offset<0 || Length<=0         → "Fence.NoByteSpan"
+3. Offset+Length > 帧大小         → "Fence.OutOfFrame"（+ Layers.Count>0 时后缀 "Fence.PduHint"）
+4. field.IsBitField（位级子字段，走整段 RMW）：
+     Length>8                    → "Fence.BitOutOfRange"
+     掩码非连续单段               → "Fence.BitMaskNonContiguous"
+     否则                         → Allowed（RMW 改写整段字节，不校验 RawBytes 证据）
+5. LengthBits>=0（位级但无掩码）   → "Fence.BitMaskMissing"
+6. RawBytes.Length != Length     → "Fence.NoByteEvidence"
+7. RawBytes 与帧字节逐字节不一致   → "Fence.BytesDisagree"
 通过 → EditFence(true, "OK")（UI 前缀 "Not editable: "）
 ```
+
+位级判定（步骤 4）放宽为「存在可用的单段连续掩码且整段 ≤8 字节」即允许编辑；此前「位级子字段直接拒绝」的旧栅栏已移除。未定型叶子（`Kind==Unknown`）与容器/未解码标记的可编辑性由 `ProtocolField.IsTreeEditable` 裁决（标记需能推出字节跨度，否则 `Fence.UndecodedSpanUnknown`）。
 
 **`CommitFieldEditAsync`（VM）**：RO 检查 → `ConvertRawValue(kind, text, length)`（异常 → `SelectedFieldInfo = ex.Message`，编辑器保持打开）→ `_editTransaction.CommitFieldEditAsync(packet, field, bytes, PendingContextFrames, PendingLinkLayerType)` → `!Success` → `SelectedFieldInfo = $"Blocked: {result.Reason}"`（包字节不变，编辑器保持打开）→ `result.Fresh` → `RefreshFieldDisplays` → 关编辑器 → `FieldEdited?.Invoke((packet, edited))`。
 
@@ -465,7 +470,7 @@ REPLACE 钳位：currentOffset = _pendingAnchor + _pendingRunBytes.Count；>= By
 - 逐层 `TryGetProtoShowName(proto, offset)` → `layer.DisplayText`；offset 不中时回退首个 `(name,pos)`。
 - `PatchFieldTexts`：`matchOffset = Offset>0 ? Offset : EffectiveStart`（**容器 Offset==0 回退后代最小 offset**）；**匿名 IE 容器**（空 `OriginalPdmlName`）经 `("", pos)` 空名查找表键匹配（PDML `<field name="" show="…">`）；命中 → `TrySplitShowname`（按首个 `": "` 切分；含 `" = "` 位域行返回 null）→ 更新 `field.Name/DisplayValue`；未命中 → miss++ 并递归子字段。miss 数仅记日志，不致命。
 
-**`RefreshEditedFieldBytes`（ProtocolEditorService.cs:298-334）**：编辑后把所有层里 `LengthBits<0 && Offset>=0 && Length>0 && 帧内 && 跨重叠` 的字段 `RawBytes` 回填成 `EffectiveData` 当前字节。**位级字段跳过**（RawBytes 载的是带掩码值，回填会伪造栅栏依赖的字节证据）。这让树里灰色 `[HexValue]` 在 hex 编辑后立即新鲜。
+**`RefreshEditedFieldBytes`（ProtocolEditorService.cs:350-384）**：编辑后把所有层里 `Offset>=0 && Length>0 && 帧内 && 跨重叠` 的字段 `RawBytes` 回填成 `EffectiveData` 当前字节（**位级字段也包含**——栅栏的位级编辑走整段 RMW，改的是帧内字节，回填 RawBytes 使其保持同步）。这让树里灰色 `[HexValue]` 在 hex 编辑后立即新鲜。
 
 ### 5.4 脏跟踪
 
@@ -615,7 +620,7 @@ Rungs 1-3（foreach socket，label=AF_PACKET/UDP/IP raw）:
 | 列表列全空/N/A | tshark 缺失或 <2.6 → 只读（3.8）；tshark 非零退出（3.4）；行解析失败被跳过 | `DetectTshark`、`LoadPcapReadOnlyAsync` |
 | 选中包后树不出现 | 4.1 守卫链 + 构建失败（trace.log "tree build failure"） | `_treeBuildSeq`、`BuildTreeAsync` catch、`_buildingPackets` |
 | 树显示旧包的包 | 旧选择构建覆盖（`_treeBuildSeq` 未生效） | `BuildTreeAsync` 的 `seq == _treeBuildSeq` 检查 |
-| 编辑被拒 "Not editable: …" | 5.1 六道栅栏逐条核对（最常中 4/5/6：越界、无字节证据、漂移） | `CheckTreeEditFence` |
+| 编辑被拒 "Not editable: …" | 5.1 字节级五道栅栏逐条核对（最常中：越界、无字节证据、漂移）；位级字段另有掩码检查（缺失/非连续/超 8 字节） | `CheckTreeEditFence` |
 | 编辑被拒 "Blocked: …" | 5.1 七个 VBC 中止串；tshark 重解析异常会落 "Reparse produced no data" | `VerifyFieldInReparse` |
 | 编辑后树文本没变 | 5.3 PDML 补丁 miss（trace.log 刷新 miss 数）；`_reparseVersions` 陈旧刷新 | `RefreshFieldDisplays`、`PatchFieldTexts` |
 | hex 编辑后列表地址/端口旧 | 5.3 `ReExtractAddressInfo` 未触发/未命中 | `OnHexEdited` → `RefreshAddressInfo` |

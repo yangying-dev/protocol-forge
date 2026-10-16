@@ -80,7 +80,6 @@
   "Fence.UnknownField": "字段不可编辑（未知类型）",
   "Fence.UndecodedSpanUnknown": "未解码 IE 无可解析的字节范围",
   "Fence.NoByteSpan": "字段没有有效的字节范围",
-  "Fence.BitLevel": "位级字段无法从树中编辑",
   "Fence.BitMaskMissing": "位级字段缺少掩码",
   "Fence.BitOutOfRange": "位级字段超过 8 字节",
   "Fence.BitMaskNonContiguous": "位级字段的掩码不是连续的一段比特",
