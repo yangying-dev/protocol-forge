@@ -1482,10 +1482,22 @@ if (OperatingSystem.IsLinux())
                 nR1.Sent == 1 && nR1.Failed == 0 && nR1.TotalSent == 1 && nR1.Done,
                 $"sent={nR1.Sent}, failed={nR1.Failed}, total={nR1.TotalSent}, last=\"{nR1.LastMsg}\"");
 
+            // TCP has no UDP fallback, so delivery needs a privileged rung (AF_PACKET /
+            // IP raw). Unprivileged, the ladder is UDP-only and must fail with a reason.
             var nR2 = await RunSendAsync(new PacketSendService(), new[] { nTcpPkt }, gNIface);
-            Report("G21-02 eth/ipv4/tcp frame sent (any rung, strict counts)",
-                nR2.Sent == 1 && nR2.Failed == 0 && nR2.TotalSent == 1 && nR2.Done,
-                $"sent={nR2.Sent}, failed={nR2.Failed}, total={nR2.TotalSent}, last=\"{nR2.LastMsg}\"");
+            if (Environment.IsPrivilegedProcess)
+            {
+                Report("G21-02 eth/ipv4/tcp frame sent (any rung, strict counts)",
+                    nR2.Sent == 1 && nR2.Failed == 0 && nR2.TotalSent == 1 && nR2.Done,
+                    $"sent={nR2.Sent}, failed={nR2.Failed}, total={nR2.TotalSent}, last=\"{nR2.LastMsg}\"");
+            }
+            else
+            {
+                Report("G21-02 eth/ipv4/tcp frame → TcpNeedsPriv without privileges",
+                    nR2.Sent == 0 && nR2.Failed == 1
+                        && nR2.LastMsg == LocalizationService.Resolve("Send.TcpNeedsPriv"),
+                    $"sent={nR2.Sent}, failed={nR2.Failed}, total={nR2.TotalSent}, last=\"{nR2.LastMsg}\"");
+            }
 
             var nR3 = await RunSendAsync(new PacketSendService(), new[] { nBarePkt }, gNIface);
             Report("G21-03 bare-ip/udp frame sent (any rung, strict counts)",
@@ -1869,17 +1881,31 @@ try
             var rungLines = n27Trace.Lines.Where(l => l.Contains("Send rung")).ToList();
 
             bool garbageExhaustsLadder = rG.Failed == 1 && rG.Sent == 0 && rG.LastMsg == udpParseFailed;
-            Report("N-11 <14B frame → AF_PACKET FrameTooShort on the FIRST rung, then descends",
-                rungLines.Count >= 1 && rungLines[0].Contains("AF_PACKET") && rungLines[0].Contains(frameTooShort)
-                    && garbageExhaustsLadder,
-                $"first=\"{(rungLines.Count > 0 ? rungLines[0] : "(none)")}\", sent={rG.Sent}, failed={rG.Failed}, last=\"{rG.LastMsg}\"");
-
             int aIdx = rungLines.FindIndex(l => l.Contains("AF_PACKET"));
             int bIdx = rungLines.FindIndex(l => l.Contains("IP raw"));
             int cIdx = rungLines.FindIndex(l => l.Contains("UDP"));
-            Report("N-10 ladder descent order visible in trace (AF_PACKET → IP raw → UDP failures)",
-                garbageExhaustsLadder && aIdx >= 0 && bIdx > aIdx && cIdx > bIdx,
-                $"idx=({aIdx},{bIdx},{cIdx}), trace=[{string.Join(" | ", n27Trace.Lines)}]");
+            if (g27Root)
+            {
+                Report("N-11 <14B frame → AF_PACKET FrameTooShort on the FIRST rung, then descends",
+                    rungLines.Count >= 1 && rungLines[0].Contains("AF_PACKET") && rungLines[0].Contains(frameTooShort)
+                        && garbageExhaustsLadder,
+                    $"first=\"{(rungLines.Count > 0 ? rungLines[0] : "(none)")}\", sent={rG.Sent}, failed={rG.Failed}, last=\"{rG.LastMsg}\"");
+                Report("N-10 ladder descent order visible in trace (AF_PACKET → IP raw → UDP failures)",
+                    garbageExhaustsLadder && aIdx >= 0 && bIdx > aIdx && cIdx > bIdx,
+                    $"idx=({aIdx},{bIdx},{cIdx}), trace=[{string.Join(" | ", n27Trace.Lines)}]");
+            }
+            else
+            {
+                // AF_PACKET and IP raw sockets need CAP_NET_RAW, so an unprivileged run
+                // creates only the UDP rung: the descent is degenerate but must still
+                // exhaust the ladder with the UDP parse error.
+                Report("N-11 <14B frame → UDP rung is the only rung without privileges",
+                    rungLines.Count >= 1 && rungLines[0].Contains("UDP") && garbageExhaustsLadder,
+                    $"first=\"{(rungLines.Count > 0 ? rungLines[0] : "(none)")}\", sent={rG.Sent}, failed={rG.Failed}, last=\"{rG.LastMsg}\"");
+                Report("N-10 unprivileged ladder is UDP-only in the trace (privileged rungs need CAP_NET_RAW)",
+                    garbageExhaustsLadder && aIdx < 0 && bIdx < 0 && cIdx >= 0,
+                    $"idx=({aIdx},{bIdx},{cIdx}), trace=[{string.Join(" | ", n27Trace.Lines)}]");
+            }
 
             if (g27Root)
             {
