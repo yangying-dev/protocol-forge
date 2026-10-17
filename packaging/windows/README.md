@@ -6,7 +6,7 @@ Windows 发布使用**多文件** self-contained 目录，客户拿到一个 ZIP
 
 ```text
 artifacts/windows-x64/
-├── ProtocolForge-0.1.0-win-x86_64.zip
+├── ProtocolForge-1.1.0-beta.1-win-x86_64.zip
 └── SHA256SUMS
 ```
 

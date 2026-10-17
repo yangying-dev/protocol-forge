@@ -88,7 +88,7 @@ and `ProtocolForge/Views/Controls/PacketListPaneView.axaml` (packet-list context
 
 ```bash
 # 1. isolate the pre-built app
-cp -r /mnt/d/protocol-forge-pro/ProtocolForge/bin/Debug/net10.0/linux-x64 /tmp/pf-app
+cp -r ./ProtocolForge/bin/Debug/net10.0/linux-x64 /tmp/pf-app
 
 # 2. real X server (no WM)
 setsid Xvfb :99 -screen 0 1440x900x24 </dev/null >/tmp/xvfb.log 2>&1 &

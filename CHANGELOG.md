@@ -111,7 +111,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   out of scope: a file that merged several adapters is reported on load and again on save,
   so the merge is never silent.
 
-- The verification harness generates its own capture. With `PF_CAPTURE` unset it builds a 4413-frame synthetic capture into the temp directory and deletes it afterwards, so the capture-dependent groups — the edit fence, Verify-Before-Commit, address re-extraction — run in CI instead of skipping. A bare run reports 414 PASS / 0 FAIL / 1 SKIP (+ HG-01..10 headless UI); the one skip is `G17-13`, which needs the ≥180k-packet pcapng that cannot be synthesised. No capture is committed and the no-pcap rule is unchanged.
+- The verification harness generates its own capture. With `PF_CAPTURE` unset it builds a 4413-frame synthetic capture into the temp directory and deletes it afterwards, so the capture-dependent groups — the edit fence, Verify-Before-Commit, address re-extraction — run in CI instead of skipping. A bare run reports 464 PASS / 0 FAIL / 1 SKIP; the one skip is `G17-13`, which needs the ≥180k-packet pcapng that cannot be synthesised. The headless UI groups are not part of a bare run — they run separately in their own process via `dotnet run --project tests/pf-verify -- --ui`. No capture is committed and the no-pcap rule is unchanged.
 
 ### Fixed
 

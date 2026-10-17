@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
-VERSION="${VERSION:-0.1.0}"
+VERSION="${VERSION:-1.1.0-beta.1}"
 ARCH="amd64"
 RID="linux-x64"
 OUT="${OUT:-$ROOT/artifacts/linux-x64}"

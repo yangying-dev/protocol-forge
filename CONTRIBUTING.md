@@ -101,7 +101,7 @@ dotnet run --project tests/pf-verify/PfVerify.csproj -- --only 12   # print one 
 
 `--only <group#>` and `--group <title-text>` are an **output-only** filter: every group still executes, FAIL lines always print, and the footer/exit code still judge the whole run, so a filtered run can never look green when something failed. Group banners and diagnostic lines inside a group must be emitted through the harness's `Banner(n, title)` / `Detail(text)` helpers, or they slip past the filter.
 
-It contains roughly 414 assertions grouped into numbered groups (G1 through G54, some numbers unused) and covers the tshark version gate, the edit-fence verdicts, Verify-Before-Commit commit / offset-drift abort / default length-change rejection and opt-in splice acceptance, read-only loading, hex-edit code surfaces, the send-ladder descent order, localization dictionary consistency, and (in the separate `--ui` mode) a headless render of the real main window. It also writes `report.txt` next to the built binary.
+It contains roughly 464 assertions grouped into numbered groups (G1 through G54, some numbers unused) and covers the tshark version gate, the edit-fence verdicts, Verify-Before-Commit commit / offset-drift abort / default length-change rejection and opt-in splice acceptance, read-only loading, hex-edit code surfaces, the send-ladder descent order, localization dictionary consistency, and (in the separate `--ui` mode) a headless render of the real main window. It also writes `report.txt` next to the built binary.
 
 ### SKIP is not PASS
 
@@ -177,12 +177,14 @@ Because `G17-13` is never satisfied by `PF_CAPTURE`, a strict run cannot reach a
 
 Conventional style is not enforced by tooling; this is house style, and it is quite distinctive:
 
-- **Messages are in Chinese.**
+- **Messages are in English.**
 - The subject names the file(s) touched and gives a line delta, then a colon and a short description.
 
-For example: `TsharkService.cs +187：版本检测/门禁/流式列表加载与按需建树`
+For example: `TsharkService.cs +187: version detection, gate, streamed list load and on-demand tree build`
 
 Follow it. It makes `git log` readable in a way that a conventional-commits subject line does not for this codebase.
+
+A note on history: the pre-open-source fork recorded its commits in Chinese. This repository's own history is English — including the 46 `protocol-forge-pro` commits migrated from gitee — and new commits follow the English form above.
 
 ## Pull requests
 
@@ -305,7 +307,7 @@ dotnet run --project tests/pf-verify/PfVerify.csproj -- --only 12   # 迭代时�
 
 `--only <组号>` 与 `--group <标题子串>` 是**只过滤输出**的开关：所有组照常执行、FAIL 行无条件打印、结尾行与退出码始终按全量判定，所以过滤后的运行不可能在有失败时「看起来是绿的」。组横幅与组内诊断行必须走 harness 的 `Banner(n, title)` / `Detail(text)` 辅助函数，否则会绕过过滤漏出来。
 
-其中有约 414 条断言，按编号分组（G1 到 G54，部分编号未使用），覆盖 tshark 版本门禁、编辑围栏裁决、Verify-Before-Commit 的提交 / 偏移漂移中止 / 长度变化拒绝、只读加载、十六进制编辑代码面、发送阶梯的下降顺序、本地化字典一致性，以及独立 `--ui` 模式下对真实主窗口的无头渲染。同时会在构建产物旁写出 `report.txt`。
+其中有约 464 条断言，按编号分组（G1 到 G54，部分编号未使用），覆盖 tshark 版本门禁、编辑围栏裁决、Verify-Before-Commit 的提交 / 偏移漂移中止 / 长度变化拒绝、只读加载、十六进制编辑代码面、发送阶梯的下降顺序、本地化字典一致性，以及独立 `--ui` 模式下对真实主窗口的无头渲染。同时会在构建产物旁写出 `report.txt`。
 
 ### SKIP 不是 PASS
 
@@ -379,12 +381,14 @@ PF_STRICT_CAPTURE=1 PF_CAPTURE=/path/to/local.pcap dotnet run --project tests/pf
 
 工具层面并不强制某种约定式提交规范；这是本仓库的既定风格，而且相当有辨识度：
 
-- **信息用中文书写。**
+- **信息用英文书写。**
 - 主题行写出涉及的文件名与行数增量，然后是冒号和一句简短说明。
 
-例如：`TsharkService.cs +187：版本检测/门禁/流式列表加载与按需建树`
+例如：`TsharkService.cs +187: version detection, gate, streamed list load and on-demand tree build`
 
 请沿用这种写法。对本代码库而言，它能让 `git log` 以约定式提交主题行做不到的方式保持可读。
+
+关于历史：开源前的分叉仓库用中文记录提交。本仓库自身的历史为英文——包括从 gitee 迁移过来的 46 个 `protocol-forge-pro` 提交——新提交一律按上面的英文写法。
 
 ## Pull Request
 
