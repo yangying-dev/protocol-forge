@@ -87,6 +87,23 @@ jobs:
           chmod +x "$RUNNER_TEMP/appimagetool"
           sudo install "$RUNNER_TEMP/appimagetool" /usr/local/bin/appimagetool
 
+      # The packaging scripts fall back to a hardcoded 0.1.0 when no version is given,
+      # which no longer matches the csproj <Version>. Resolve it from the project and
+      # fail loudly rather than silently naming the artifacts with a stale literal.
+      - name: Resolve version from csproj
+        run: |
+          set -euo pipefail
+          if ! version="$(dotnet build ProtocolForge/ProtocolForge.csproj -getProperty:Version -nologo | tr -d '\r' | tail -n1)"; then
+            echo "::error::dotnet could not evaluate <Version> from ProtocolForge/ProtocolForge.csproj" >&2
+            exit 1
+          fi
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9] ]]; then
+            echo "::error::ProtocolForge.csproj resolved an unusable <Version>: '$version'" >&2
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "Resolved version: $version"
+
       - name: Build Linux AppImage and deb
         env:
           # appimagetool is itself an AppImage. libfuse2 is installed above, but the
@@ -119,6 +136,24 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
+
+      # Same reason as the Linux job: publish-windows.ps1 falls back to its own
+      # hardcoded 0.1.0 unless PROTOCOLFORGE_VERSION is set.
+      - name: Resolve version from csproj
+        shell: pwsh
+        run: |
+          $version = (dotnet build ProtocolForge/ProtocolForge.csproj -getProperty:Version -nologo | Select-Object -Last 1)
+          if ($LASTEXITCODE -ne 0 -or -not $version) {
+            Write-Error "dotnet could not evaluate <Version> from ProtocolForge/ProtocolForge.csproj (exit $LASTEXITCODE)"
+            exit 1
+          }
+          $version = $version.Trim()
+          if ($version -notmatch '^\d+\.\d') {
+            Write-Error "ProtocolForge.csproj resolved an unusable <Version>: '$version'"
+            exit 1
+          }
+          "PROTOCOLFORGE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Resolved version: $version"
 
       - name: Publish multi-file Windows x64
         shell: pwsh
