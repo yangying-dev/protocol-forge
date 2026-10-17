@@ -25,7 +25,7 @@ ProtocolForge/
 | Verify-Before-Commit | `Services/EditTransactionService.cs` | Candidate → temp PCAP → reparse → verify (name, offset) → commit/abort |
 | Edit fence | `Services/ProtocolEditorService.cs` | `CheckTreeEditFence` — byte-level five checks; bit fields edit via RMW (mask required); container/marker edit as a whole `Bytes` blob |
 | Send rung ladder | `Services/PacketSendService.cs` + `IL2SendRung.cs`, `NpcapSendService.cs`, `BpfSendService.cs` | L2(native) → AF_PACKET → IP raw → UDP |
-| Hex editing | `ViewModels/HexEditorViewModel.cs` + `Views/Controls/HexEditor.axaml.cs` | REPLACE-only runs, pending preview, Enter/Esc |
+| Hex editing | `ViewModels/HexEditorViewModel.cs` + `Views/Controls/HexEditor.axaml.cs` | REPLACE-only hex-pane runs (same-length), pending preview, Enter/Esc |
 | Tree ↔ hex sync | `ViewModels/MainWindowViewModel.cs`, `ProtocolTreeViewModel.cs` | `FieldSelected`, `FieldFoundAtOffset`, `_treeBuildSeq` |
 | Layout persistence | `Services/LayoutService.cs` | JSON in ApplicationData |
 | User manual | `Manual/UserManual.html` (shipped), source `../docs/manual/` | Single self-contained bilingual HTML (base64 screenshots); **帮助 → 用户手册** opens it; csproj `<Content Include="Manual\**">` ships it |
@@ -43,7 +43,7 @@ ProtocolForge/
 
 ## ANTI-PATTERNS
 
-- **Never mutate packet length** — edits are REPLACE-only; `ProtocolField` offsets must stay valid.
+- **Never mutate packet length by default** — the hex pane is REPLACE-only and tree edits are same-length; a length change is opt-in only (`ProtocolField.AllowLengthChange`, hex value, default off, reset on each editor open) and goes through `EditTransactionService.CommitLengthChangingEditAsync`, which shifts the later offsets (`Packet.ShiftFieldOffsets`) after the reparse verifies.
 - **Never bypass `EditTransactionService`** for field edits — no direct `ApplyModification` outside VBC.
 - **Never rebuild the tree from scratch on edit** — use `RefreshFieldDisplays()` (in-place PDML text patch) to preserve selection/expansion.
 - **Never let stale async results clobber UI** — respect `_treeBuildSeq` (selection), `_reparseVersions` (per-packet refresh), `_prefetchSeq` (neighbor prefetch).

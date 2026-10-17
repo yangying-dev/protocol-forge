@@ -25,7 +25,7 @@ protocol-forge/
 |------|----------|-------|
 | tshark integration, tree building, version gate | `ProtocolForge/Services/TsharkService.cs` | 2747 lines — largest file |
 | Edit fence + field-level edits | `ProtocolForge/Services/ProtocolEditorService.cs`, `EditTransactionService.cs` | VBC reparse verification; byte-level fence + bit-field RMW (A), untyped-leaf `Bytes` fallback (B), container whole-edit (D1), undecoded-marker blob (C) |
-| Hex display + inline hex editing | `ProtocolForge/ViewModels/HexEditorViewModel.cs`, `Views/Controls/HexEditor.axaml.cs` | REPLACE-only editing |
+| Hex display + inline hex editing | `ProtocolForge/ViewModels/HexEditorViewModel.cs`, `Views/Controls/HexEditor.axaml.cs` | REPLACE-only hex-pane editing (same-length); tree field edits are separate and support opt-in length change |
 | Packet injection rung ladder | `ProtocolForge/Services/PacketSendService.cs` | Npcap/BPF/AF_PACKET/IP/UDP fallback |
 | Manual DI composition | `ProtocolForge/App.axaml.cs` | All services constructed here in order |
 | Cross-panel orchestration | `ProtocolForge/ViewModels/MainWindowViewModel.cs` | Event wiring, read-only propagation, dock pane toggles/persistence |
@@ -53,7 +53,7 @@ protocol-forge/
 - **DO NOT add an IoC container** — project deliberately uses manual DI.
 - **DO NOT bundle native libraries** — Npcap/BPF are probed at runtime on Windows/macOS only; L2 rung must be optional. The app silently degrades to managed sockets when native L2 is unavailable.
 - **DO NOT hardcode file paths** — use `Path.Combine()` + `Environment.GetFolderPath(SpecialFolder.ApplicationData)`.
-- **DO NOT break packet length on edits** — hex editing is REPLACE-only; length-changing edits are rejected by design (offsets must stay valid).
+- **DO NOT change packet length by default** — hex-pane editing is REPLACE-only and tree-field edits are same-length by default; a length change is allowed only via the explicit per-field `AllowLengthChange` opt-in (hex value only, default off, reset on each editor open) and must go through `EditTransactionService.CommitLengthChangingEditAsync`, never a hand-rolled splice.
 - **DO NOT bypass the edit fence** — field edits must pass `CheckTreeEditFence` and go through `EditTransactionService` (Verify-Before-Commit tshark reparse).
 - **Editing/parsing must respect the sequence guards** — `_treeBuildSeq`, `_reparseVersions`, `_prefetchSeq` exist to prevent stale async results overwriting newer state.
 
