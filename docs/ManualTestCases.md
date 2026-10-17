@@ -309,7 +309,7 @@ python3 docs/make-synthetic-capture.py /tmp/pf-manual.pcap
 
 #### MT-G2 导出为
 - **步骤**：Ctrl+Shift+S，选 `.pcap` 路径。
-- **预期**：写出 PCAP 文件；用 tshark `tshark -r out.pcap` 可正常读取且包含修改后的字节。
+- **预期**：写出 PCAP 文件；用 tshark `tshark -r output.pcap` 可正常读取且包含修改后的字节。
   记录：☐ 通过　☐ 失败
 
 #### MT-G3 PCAPNG 写回保真

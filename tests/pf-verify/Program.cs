@@ -3786,8 +3786,8 @@ try
             return ms.ToArray();
         }
 
-        string g53One = Path.Combine(g53Dir, "one.pcapng");
-        string g53Two = Path.Combine(g53Dir, "two.pcapng");
+        string g53One = Path.Combine(g53Dir, "pf-g53-one.pcapng");
+        string g53Two = Path.Combine(g53Dir, "pf-g53-two.pcapng");
         await File.WriteAllBytesAsync(g53One, OneIdb());
         await File.WriteAllBytesAsync(g53Two, TwoIdbs());
 
@@ -3811,7 +3811,7 @@ try
 
         // Classic PCAP has no IDB concept and must stay at the default so the save path
         // never mistakes it for a merged capture.
-        string g53Pcap = Path.Combine(g53Dir, "classic.pcap");
+        string g53Pcap = Path.Combine(g53Dir, "pf-g53-classic.pcap");
         await File.WriteAllBytesAsync(g53Pcap, BuildFixturePcap([g53Frame]));
         var g53R3 = await g53Svc.ReadPacketsAsync(g53Pcap);
         Report("IF-04 classic PCAP reports one interface and no merge warning",
@@ -3897,7 +3897,7 @@ try
             try
             {
                 // The same frame on its own: does it keep its capture-wide stream id?
-                string solo = Path.Combine(g52Dir, name.Replace(".pcap", "-solo.pcap"));
+                string solo = Path.Combine(g52Dir, Path.GetFileNameWithoutExtension(name) + "-solo" + Path.GetExtension(name));
                 await File.WriteAllBytesAsync(solo, BuildFixturePcap([frames[1]]));
                 var soloDoc = new PacketDocument { FilePath = solo };
                 await svc.LoadPcapAsync(soloDoc, solo, null);
@@ -3909,9 +3909,9 @@ try
             return text + " | solo=" + single;
         }
 
-        string g52Base = await Streams("g52-base.pcap", Segs(4321, 0x10, [], [10, 0, 0, 2]));
-        string g52Len = await Streams("g52-len.pcap", Segs(4321, 0x18, new byte[40], [10, 0, 0, 2]));
-        string g52Port = await Streams("g52-port.pcap", Segs(7777, 0x10, [], [10, 0, 0, 2]));
+        string g52Base = await Streams("pf-g52-base.pcap", Segs(4321, 0x10, [], [10, 0, 0, 2]));
+        string g52Len = await Streams("pf-g52-len.pcap", Segs(4321, 0x18, new byte[40], [10, 0, 0, 2]));
+        string g52Port = await Streams("pf-g52-port.pcap", Segs(7777, 0x10, [], [10, 0, 0, 2]));
 
         Report("SI-01 a payload-length edit leaves stream numbering untouched",
             g52Base == g52Len && g52Base.Contains("0=[1/2/3]"),
@@ -3932,7 +3932,7 @@ try
         // Invalidate must actually force a re-read: overwrite the capture behind the
         // provider's closed-over path with a *different* stream layout and confirm the
         // next query sees it. Without a real rescan this would still report 0=[1/2/3].
-        string g52Live = Path.Combine(g52Dir, "g52-live.pcap");
+        string g52Live = Path.Combine(g52Dir, "pf-g52-live.pcap");
         await File.WriteAllBytesAsync(g52Live, BuildFixturePcap(Segs(4321, 0x10, [], [10, 0, 0, 2])));
         var g52Svc = new TsharkService(new PcapIngestService(), new PcapExportService());
         var g52Doc = new PacketDocument { FilePath = g52Live };

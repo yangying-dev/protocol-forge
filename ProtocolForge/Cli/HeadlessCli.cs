@@ -30,7 +30,7 @@ public static class HeadlessCli
 
             Usage:
               protocolforge validate <capture.pcap> [--filter <display-filter>]
-              protocolforge edit <capture.pcap> --offset <n> --length <n> --hex <hex> --out <out.pcap>
+              protocolforge edit <capture.pcap> --offset <n> --length <n> --hex <hex> --out <output.pcap>
               protocolforge send <capture.pcap> --interface <name> [--count <n>] [--interval <ms>] [--all]
               protocolforge stats <capture.pcap> --tap <tap> [--filter <display-filter>]
 
