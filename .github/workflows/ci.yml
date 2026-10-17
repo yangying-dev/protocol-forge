@@ -88,6 +88,12 @@ jobs:
           sudo install "$RUNNER_TEMP/appimagetool" /usr/local/bin/appimagetool
 
       - name: Build Linux AppImage and deb
+        env:
+          # appimagetool is itself an AppImage. libfuse2 is installed above, but the
+          # mount can still fail on a runner with no usable FUSE ("dlopen(): error
+          # loading libfuse.so.2"). Extract-and-run skips the mount and produces the
+          # same artifact, so the packaging step cannot fail on FUSE availability.
+          APPIMAGE_EXTRACT_AND_RUN: "1"
         run: APPIMAGETOOL=/usr/local/bin/appimagetool ./packaging/linux/publish-linux.sh
 
       - name: Upload Linux packages

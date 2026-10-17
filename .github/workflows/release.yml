@@ -118,6 +118,9 @@ jobs:
 
       - name: Build AppImage + deb
         env:
+          # Same FUSE-availability hardening as ci.yml: extract-and-run never mounts,
+          # so the release build cannot die on a runner without a usable /dev/fuse.
+          APPIMAGE_EXTRACT_AND_RUN: "1"
           APPIMAGETOOL: /tmp/appimagetool/appimagetool
           # The tag carries the version; the packaging script only reads $VERSION,
           # whose own default is a stale 0.1.0, so it MUST be passed in or the
