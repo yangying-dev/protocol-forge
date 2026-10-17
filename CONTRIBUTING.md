@@ -65,7 +65,7 @@ CI runs the build with warnings as errors, so **`dotnet build ProtocolForge.sln 
 
 Two rules are load-bearing. Breaking either is a correctness regression, not a style issue.
 
-- **Hex editing is REPLACE-only.** Each edit run is built from full hex-digit pairs, so packet length never changes and every offset outside the edited span stays valid. Length-changing edits are rejected by design.
+- **Hex-pane editing is REPLACE-only.** Each edit run is built from full hex-digit pairs, so the hex pane never changes packet length and every offset outside the edited span stays valid. Tree field edits are same-length by default too: a value that would change the field's length is refused unless the field's `AllowLengthChange` opt-in is set (hex value only, default off, reset each time the editor opens), in which case the frame is spliced through `EditTransactionService.CommitLengthChangingEditAsync` after the same reparse verification. "Never changes length" is therefore the default, not an invariant you may assume everywhere.
 - **Nothing bypasses the edit fence.** Field edits must pass `CheckTreeEditFence` and go through `EditTransactionService`, which reparses with tshark and verifies the new value lands at the expected `(PDML name, byte offset)` before committing. Verify-Before-Commit is the reason this tool can be trusted to edit a capture; do not write a path that writes bytes directly.
 
 ### Text and encoding
@@ -101,7 +101,7 @@ dotnet run --project tests/pf-verify/PfVerify.csproj -- --only 12   # print one 
 
 `--only <group#>` and `--group <title-text>` are an **output-only** filter: every group still executes, FAIL lines always print, and the footer/exit code still judge the whole run, so a filtered run can never look green when something failed. Group banners and diagnostic lines inside a group must be emitted through the harness's `Banner(n, title)` / `Detail(text)` helpers, or they slip past the filter.
 
-It contains roughly 414 assertions grouped into numbered groups (G1 through G54, some numbers unused) and covers the tshark version gate, the edit-fence verdicts, Verify-Before-Commit commit / offset-drift abort / length-change rejection, read-only loading, hex-edit code surfaces, the send-ladder descent order, localization dictionary consistency, and (in the separate `--ui` mode) a headless render of the real main window. It also writes `report.txt` next to the built binary.
+It contains roughly 414 assertions grouped into numbered groups (G1 through G54, some numbers unused) and covers the tshark version gate, the edit-fence verdicts, Verify-Before-Commit commit / offset-drift abort / default length-change rejection and opt-in splice acceptance, read-only loading, hex-edit code surfaces, the send-ladder descent order, localization dictionary consistency, and (in the separate `--ui` mode) a headless render of the real main window. It also writes `report.txt` next to the built binary.
 
 ### SKIP is not PASS
 
@@ -269,7 +269,7 @@ CI 以警告即错误方式构建，所以**「`dotnet build ProtocolForge.sln -
 
 以下两条规则是承重的。任何一条被破坏都是正确性回归，而非风格问题。
 
-- **十六进制编辑仅支持 REPLACE。** 每次编辑串都由完整的十六进制数字对构成，因此报文长度永不改变，编辑跨度之外的每个偏移量都保持有效。改变长度的编辑按设计被拒绝。
+- **十六进制面板编辑仅支持 REPLACE。** 每次编辑串都由完整的十六进制数字对构成，因此 hex 面板不改变报文长度，编辑跨度之外的每个偏移量都保持有效。树字段编辑默认同样是等长的：会导致字段长度变化的值会被拒绝，除非开启了该字段的 `AllowLengthChange` 选择加入（仅限十六进制值，默认关闭，每次打开编辑器即重置），此时报文会经 `EditTransactionService.CommitLengthChangingEditAsync` 拼接，并经过与等长编辑相同的重解析校验。因此「长度永不改变」是**默认行为**，而非可以到处假定的不变式。
 - **任何路径都不得绕过编辑围栏。** 字段编辑必须通过 `CheckTreeEditFence` 并经由 `EditTransactionService`，后者会用 tshark 重新解析，验证新值确实落在预期的 `(PDML name, byte offset)` 位置后才提交。Verify-Before-Commit 是这个工具可以被信任用来修改抓包的原因；不要写出直接写字节的路径。
 
 ### 文本与编码

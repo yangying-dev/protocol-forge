@@ -428,6 +428,8 @@ $"Length mismatch: field expects {field.Length} bytes, newValue is {newValue.Len
 
 **转换错误串**（`ConvertRawValue`，编辑器保持打开）：`"Value cannot be empty."` / `"'{t}' is not a valid hexadecimal value."` / `"'{t}' is not a valid unsigned integer."` / `"'{t}' is not a valid signed integer."` / `"'{t}' exceeds {len}-byte unsigned range (0..{max})."` / `"'{t}' is not a valid IPv4 address."` / `"'{t}' is not a valid IPv6 address."` / `"'{t}' is not a valid MAC address (expected aa:bb:...)."` / `"'{t}' is not a valid MAC address."` / `"'{t}' is not a valid BCD digit string for a {len}-byte field."` / `"'{t}' is not a valid BCD digit string."` / `"Value too long: {n} bytes, field holds {expected}."` / `"Field type {kind} is not editable."`
 
+**变长 / 复合编辑链（opt-in）**：`ProtocolField.AllowLengthChange`（`Models/ProtocolField.cs:158`，默认 `false`）是唯一的变长开关；`ProtocolTreeViewModel.BeginFieldEdit`（:283）每次打开编辑器都把它重置为 `false`。开启后 `CommitFieldEditAsync`（:381）要求输入为纯 hex（否则 `Field.NeedHexForLength`），且当 `bytes.Length != field.Length` 时不再走长度拒绝（`Field.LengthNotAllowed` 仅在未开启时触发），改走 `EditTransactionService.CommitLengthChangingEditAsync`（`EditTransactionService.cs:114`）：拼接候选帧 → 临时 PCAP + `ReparseSinglePacketAsync` → 字段须落回**原偏移**且值匹配，且重解析不得出现 malformed 标记（`Vbc.MalformedAfterSplice`，用于捕获外层 length 字段失同步）→ 通过后 `Packet.SpliceBytes` 并 `ShiftFieldOffsets` 迁移后续偏移。`CommitCompoundEditAsync`（:257）可在**单次事务**内提交多字段（用于「扩大载荷 + 同步修正外层 length」这类单个提交必然经历畸形中间态的场景）；其 XML 注释标注为 **test-only** —— GUI 与 CLI 目前只走单字段路径。因此默认不变长，变长是**显式 opt-in**，且不改变「树字段编辑经 VBC」这一前提。
+
 ### 5.2 hex 字节编辑链
 
 **点击/键盘**（`HexEditor.axaml.cs`）：cell `PointerPressed` → 若 `IsHexEditPending` 先 `CommitHexEditAsync()` → `SelectByteAtOffset` → Focus；`LostFocus` 同样先提交。`OnCellKeyDown`：pending 时 Enter=提交、Esc=取消、Tab 吞掉；非 pending 时方向键先提交再 `MoveSelection`（16 字节行环绕，钳位包界）；hex 键 `TryGetHexKeyChar`（D0-D9/NumPad/A-F，Ctrl/Alt 时拒绝）→ `HandleHexInput`。
@@ -455,7 +457,7 @@ REPLACE 钳位：currentOffset = _pendingAnchor + _pendingRunBytes.Count；>= By
 9. HexEdited?.Invoke((packet, anchor, newBytes.Length))
 ```
 
-**`CancelHexEdit`**：清 `[anchor, anchor+count)` 的 pending → `"Edit cancelled"`。**包从未被碰过**。长度不变式：每个 run 字节由完整 hex 键对（或补零高半字节）构成 → `ApplyModification` 只覆盖等长区间，任何编辑都不改变包长（offsets 恒有效）。
+**`CancelHexEdit`**：清 `[anchor, anchor+count)` 的 pending → `"Edit cancelled"`。**包从未被碰过**。**hex 链长度不变式**：每个 run 字节由完整 hex 键对（或补零高半字节）构成 → `ApplyModification` 只覆盖等长区间，故 **hex 面板编辑**不改变包长（offsets 恒有效）。hex 面板本身没有变长路径；变长只存在于树字段编辑的 opt-in 路径（见 §5.1 末）。
 
 ### 5.3 编辑后传播 / 刷新内部
 
