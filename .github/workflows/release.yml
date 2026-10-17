@@ -126,7 +126,7 @@ jobs:
         run: VERSION="${TAG#v}" ./packaging/linux/publish-linux.sh
 
       - name: Collect Linux artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-packages
           if-no-files-found: error
@@ -158,7 +158,7 @@ jobs:
           ./packaging/windows/publish-windows.ps1
 
       - name: Collect Windows artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-packages
           if-no-files-found: error
