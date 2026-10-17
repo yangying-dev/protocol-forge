@@ -31,5 +31,28 @@ public partial class ProtocolLayer : ObservableObject
     /// <summary>Short label for tree display.</summary>
     public string ShortLabel => DisplayText;
 
+    /// <summary>
+    /// True when this layer's field tree carries both halves of a transport port
+    /// pair, using tshark's own field-name convention (srcport/dstport plus the
+    /// showname variants the port scanners accept). Structural signature instead
+    /// of a protocol allow-list, so any transport tshark dissects — tcp/udp/sctp
+    /// today, dccp/udplite/whatever tomorrow — is recognised without code changes.
+    /// Mirrors the name sets ScanPortFields matches, recursively.
+    /// </summary>
+    public bool HasPortFields => ContainsPortPair(Fields);
+
+    private static bool ContainsPortPair(IEnumerable<ProtocolField> fields)
+    {
+        bool hasSrc = false, hasDst = false;
+        foreach (var f in fields)
+        {
+            if (f.Name is "srcport" or "port" or "Source Port") hasSrc = true;
+            else if (f.Name is "dstport" or "Destination Port") hasDst = true;
+            if (hasSrc && hasDst) return true;
+            if (f.HasChildren && ContainsPortPair(f.Children)) return true;
+        }
+        return false;
+    }
+
     public override string ToString() => ShortLabel;
 }

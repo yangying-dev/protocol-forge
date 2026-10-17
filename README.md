@@ -2,12 +2,12 @@
 
 **3GPP Protocol Simulation & Debugging Workbench**
 
-ProtocolForge is a cross-platform desktop application for inspecting, editing, and replaying 3GPP protocol packets (PFCP, NGAP, GTP-U, NAS, S1AP, Diameter, etc.) captured in PCAP files. It combines Wireshark's parsing engine (tshark) with a native packet editor and raw socket injection — all in a single .NET 8 + Avalonia UI application.
+ProtocolForge is a cross-platform desktop application for inspecting, editing, and replaying 3GPP protocol packets (PFCP, NGAP, GTP-U, NAS, S1AP, Diameter, etc.) captured in PCAP files. It combines Wireshark's parsing engine (tshark) with a native packet editor and raw socket injection — all in a single .NET 10 + Avalonia UI application.
 
 > **Free and open source (Apache-2.0).** Everything currently shipped is free and unlimited — there is no feature gate and no send quota. On Windows, install Wireshark yourself and keep the Npcap option enabled during installation (it is selected by default); ProtocolForge does not bundle or silently install Npcap.
 
-![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4)
-![Avalonia](https://img.shields.io/badge/Avalonia-12.0.5-8B5CF6)
+![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4)
+![Avalonia](https://img.shields.io/badge/Avalonia-12.1.3-8B5CF6)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%2F%20Linux%20%2F%20macOS-lightgrey)
 
 ---
@@ -34,14 +34,15 @@ so no real operator capture is involved and reproducing them does not require co
 - **Tshark Integration** — Two-mode tshark use: one streamed `-T fields` pass fills the packet list (Source/Destination/Protocol/Info columns, progressively as tshark dissects), and the protocol detail tree is parsed per-packet on demand with `-T jsonraw`/`json`/`pdml` for byte-offset accuracy. Supports any protocol Wireshark knows (PFCP, NGAP, GTP-U, NAS, S1AP, HTTP/2, Diameter, SCTP, etc.).
 - **Tshark Environment Gate** — On startup and on path change, the installed tshark's version is checked against a minimum of 2.6.0. If tshark is missing or too old, the app still opens the capture in **read-only mode**: the warning banner is shown, raw packet data loads normally (`N/A` columns), but tree/hex editing, export, and packet injection are disabled. A tshark path can be re-selected at runtime via **File → Tshark Path…**, which re-detects and lifts the gate when a valid tshark is found. The chosen path is persisted (and can be overridden by the `TSHARK_PATH` environment variable).
 - **Bilingual UI (简体中文 / English)** — Full UI localization with instant runtime language switching via the **语言 / Language** menu (between View and Help); the preference is persisted and the system locale is auto-detected on first run.
+- **Theming (SukiUI)** — One runtime theme system built on [SukiUI](https://github.com/kikipoulet/SukiUI): pick the base (**System / Light / Dark**) from the **Theme** menu; the choice is persisted. The window chrome, menu and every dock pane follow it, the SukiUI accent is fixed at **Blue**, and the stock Dock chrome is restyled by `SukiUI.Dock` so the panes and the host share one look. Switching is instant, no restart.
 - **Three-Pass jsonraw Parser** — Walks tshark's JSON structure for the *selected* packet only (not the whole file):
   1. Collect all `_raw` arrays (hex value, offset, length)
   2. Process `_tree` containers and sub-objects with recursive field nesting
   3. Emit orphaned `_raw` entries (fields like `ip.src_raw` without a `_tree` parent)
-- **Hex Viewer + Inline Editing** — Wireshark-style hex dump: 16 bytes per row with offset column, hex (grouped 8+8) and ASCII panes. Click a cell or use arrow keys to navigate; selected bytes render dark blue, protocol field ranges are highlighted in a protocol-specific color, and bytes modified via the tree or the hex editor are marked in orange. Bytes can also be **edited directly in the hex pane**: start typing hex digits (0-9/A-F or NumPad) over any byte, the pending value is previewed in place (yellow background, grey ASCII), press Enter to commit the whole run as a single replace, or Esc to cancel. Editing is **REPLACE-only** — each run is built from full hex-digit pairs, so the packet never changes length and every offset outside the edited span stays valid.
+- **Hex Viewer + Inline Editing** — Wireshark-style hex dump: 16 bytes per row with offset column, hex (grouped 8+8) and ASCII panes. Click a cell or use arrow keys to navigate; selected bytes render dark blue, protocol field ranges are highlighted in a protocol-specific color, and bytes modified via the tree or the hex editor are marked in orange. Bytes can also be **edited directly in the hex pane**: start typing hex digits (0-9/A-F or NumPad) over any byte, the pending value is previewed in place (yellow background, grey ASCII), press Enter to commit the whole run as a single replace, or Esc to cancel. Hex-pane editing is **REPLACE-only** — each run is built from full hex-digit pairs, so the hex pane never changes packet length and every offset outside the edited span stays valid. (Changing a field's *length* is a separate, explicitly opted-in tree action — see **Protocol Tree** below.)
 - **Tree ↔ Hex Bidirectional Sync** — Clicking a field in the protocol tree highlights its byte range in the hex viewer. Conversely, selecting/editing bytes in the hex pane resolves the owning field and scrolls + selects the matching node in the tree (`FieldFoundAtOffset` → tree reveal).
-- **Protocol Tree** — Hierarchical tree view of parsed Information Elements. Click any field to highlight its byte range in the hex viewer. Right-click a field (or double-click it) to open an inline value editor: type the value in its natural form (decimal, dotted IP, MAC, string, or hex) and press Enter (or click elsewhere) to apply, Esc to cancel. Editing is gated by an **edit fence** (`CheckTreeEditFence`) — six checks must all hold for a field to be editable: a resolvable field type, a non-negative byte span, byte-aligned (not a bit-level sub-field), an in-frame span (fanning into a reassembled PDU fails), concrete byte evidence (`RawBytes.Length` matches the field length), and recorded bytes agreeing with the actual frame bytes (catches masked/offset-drifted values). Blocked fields show the reason (`Not editable: …`) in the status area and refuse to open an editor.
-- **Verify-Before-Commit (VBC)** — Applies to both tree and hex edits. A proposed edit is not written straight into the packet: the candidate frame is saved to a temp PCAP (with surrounding context frames when available), **re-parsed via tshark**, and the field's new hex value must land at the expected `(PDML name, byte offset)` position. Offset drift, wrong values, or length mismatches abort the commit with a reason and leave the packet byte-identical.
+- **Protocol Tree** — Hierarchical tree view of parsed Information Elements. Click any field to highlight its byte range in the hex viewer. Right-click a field (or double-click it) to open an inline value editor: type the value in its natural form (decimal, dotted IP, MAC, string, or hex) and press Enter (or click elsewhere) to apply, Esc to cancel. Editing is gated by an **edit fence** (`CheckTreeEditFence`). A byte-level edit must clear five checks: a resolvable field type, a non-negative byte span, an in-frame span (fanning into a reassembled PDU fails), concrete byte evidence (`RawBytes.Length` matches the field length), and recorded bytes agreeing with the actual frame bytes (catches masked/offset-drifted values). Three additional shapes are editable: a **bit-level sub-field** (e.g. DSCP) is rewritten in place by read-modify-write against the live frame — a field with one contiguous bit mask of up to 8 bytes is accepted, an unmasked or non-contiguous-mask field is refused; an **untyped opaque leaf** tshark leaves without a field type falls back to a raw-hex `Bytes` editor once it is 9 bytes or longer, so unknown IEs become editable; and a field **with children** — an IE container or an undecoded `IE not decoded yet` marker whose byte span is derivable — is edited as one whole hex blob (a container or marker with no derivable span stays read-only). Blocked fields show the reason (`Not editable: …`) in the status area and refuse to open an editor. A normal tree edit keeps the field's byte length: a value that would change it is refused and reported as *N bytes different*. Changing a field's length is a deliberate **opt-in** — tick the field's *allow length change* toggle, then enter the new value as **hex** (a decimal or IP string cannot express a length change); the spliced frame is still re-parsed and verified by tshark before it commits, every later field's offset is shifted to stay aligned, and the opt-in resets each time the editor opens so the default is always same-length.
+- **Verify-Before-Commit (VBC)** — Applies to tree field edits. A proposed tree edit is not written straight into the packet: the candidate frame is saved to a temp PCAP (with surrounding context frames when available), **re-parsed via tshark**, and the field's new hex value must land at the expected `(PDML name, byte offset)` position. Offset drift, wrong values, or length mismatches abort the commit with a reason and leave the packet byte-identical. Hex-pane edits take a separate path — they pass the same edit fence, apply the REPLACE run directly, then trigger the same single-packet reparse to refresh the tree display.
 - **Container Auto-Relink** — After a committed field edit, the edited packet is re-parsed once in the background (single-packet PDML re-parse) and the tree's container/layer header texts are patched back in place, so e.g. editing a PFCP SEID immediately refreshes the surrounding `F-SEID : SEID: 0x…, IPv4 …` display without rebuilding the tree. Matches fields by PDML name + byte offset, and falls back to the effective (min-descendant) offset for anonymous IE containers.
 - **Hex-Native Field Editing** — Fields Wireshark renders in hexadecimal (PFCP SEID/TEID, address ranges, etc.) are auto-detected from the PDML showname (`0x…` prefix) and edited as hex by default, round-tripping big-endian bytes exactly as tshark displays them.
 - **Address/Port Re-extraction** — After byte edits, IP addresses and port numbers are automatically re-parsed from the modified bytes and reflected in the packet list columns.
@@ -55,13 +56,15 @@ so no real operator capture is involved and reproducing them does not require co
   3. **UDP socket** — transport-layer fallback (no privileges required)
   Sending is driven by a configurable **interval (ms)** and **loop count**. An **Auto-fix** toggle repairs IPv4/IPv6 and TCP/UDP checksums before injection, and rewrites the source address to the selected interface's own.
 - **Toolbar UI** — Start/Pause/Stop send controls with a network adapter dropdown, send interval and loop count inputs, an Auto-fix toggle, live sent/failed counters, and a status bar.
-- **Display Filter** — A tshark display filter applied to the packet list. The filter is evaluated by tshark at load time, so the grid only ever holds matching packets and every row keeps the frame number its bytes came from. Reachable from the View menu and the panel header; Enter in the box applies it.
+- **Display Filter** — A tshark display filter applied to the packet list. The filter is evaluated by tshark at load time, so the grid only ever holds matching packets and every row keeps the frame number its bytes came from. In the packet-list panel header, Enter (or **Apply**) applies it. As you type, the expression is validated live against tshark — a green border means it parses, a red border flags a syntax error and shows the reason in the tooltip — and a dropdown autocompletes field and protocol names from tshark's full field catalog (Up/Down to move, Tab/Enter to accept, Esc to dismiss).
 - **Find** — Search the packet list columns and the selected packet's protocol tree, forward or backward. A tree hit expands and reveals the matching node rather than rebuilding the tree.
-- **Statistics Panel** — Runs `conv,*`, `endpoints,ip`, `io,phs` (protocol hierarchy), `io,stat` and `expert` taps, honouring the display filter where the tap accepts one. Toggle from the View menu. tshark pads its own output for humans, so it is shown verbatim instead of being re-laid-out.
+- **Statistics Panel** — Runs `conv,*`, `endpoints,ip`, `io,phs` (protocol hierarchy), `io,stat` and `expert` taps, honouring the display filter where the tap accepts one, and accepts any other tshark `-z` invocation typed into the panel. The follow-stream box covers TCP and UDP conversations. Shown from the View menu; like every panel it is a dockable pane. tshark pads its own output for humans, so it is shown verbatim instead of being re-laid-out.
 - **PCAPNG Write-Back** — A capture opened as `.pcapng` is saved as PCAPNG, keeping the interface description, snaplen and timestamp resolution. Previously any `.pcapng` was silently rewritten as little-endian/microsecond classic PCAP on save, dropping every interface description and block comment. Export-as follows the extension you choose.
 - **Headless CLI** — `validate`, `edit`, `send` and `stats` run without a GUI, for CI and batch use. Edits go through the same Verify-Before-Commit transaction as the GUI. Exit codes 0/1/2. See [`docs/pfcheck-cli.md`](docs/pfcheck-cli.md).
 - **Send History** — Per-packet send results are retained for the run instead of only the most recent one being visible, and can be exported as CSV from the packet-list context menu.
-- **Layout Persistence** — Window geometry, splitter positions, and panel visibility are saved to `%APPDATA%/ProtocolForge/layout.json` and restored on next launch.
+- **Dockable Layout** — The packet list, protocol tree, hex editor and statistics are panes of a visual-studio-style dock (Dock 12.1): drag a pane header to re-dock it, group panes as tabs, float them in their own window, or close and re-open them from the View menu. The arrangement persists in `%APPDATA%/ProtocolForge/docklayout.json`.
+- **Layout Persistence** — Window geometry and panel visibility are saved to `%APPDATA%/ProtocolForge/layout.json` (the dock arrangement goes to `docklayout.json`, above) and restored on next launch.
+- **Offline User Manual** — A single self-contained bilingual (简体中文 / English, switchable in-page) HTML user manual ships with the app and opens via **Help → 用户手册**. All 15 screenshots are embedded as base64 data URIs, so it works fully offline; it covers every feature (Statistics deliberately excluded). The shipped file `ProtocolForge/Manual/UserManual.html` is generated from the source in `docs/manual/` — regenerate from there rather than hand-editing.
 
 ---
 
@@ -92,7 +95,7 @@ so no real operator capture is involved and reproducing them does not require co
 
 - **MVVM with Manual DI** — No external IoC container. Services are instantiated in `App.axaml.cs` in dependency order. ViewModels receive their dependencies via constructor injection.
 - **Zero Native Dependencies** — Pure C#, no bundled native libraries. The single exception is an *optional* L2 path: on Windows the app probes the user-installed Npcap (`wpcap.dll`) via P/Invoke, and on macOS it probes `/dev/bpfN` — either path delivers full L2 injection when present, and sending silently degrades to pure-managed sockets otherwise. Only external requirement is **tshark** (from Wireshark) for protocol parsing.
-- **Cross-Platform** — Targets net8.0, runs on Windows, Linux, and macOS. Socket strategies adapt per OS.
+- **Cross-Platform** — Targets net10.0, runs on Windows, Linux, and macOS. Socket strategies adapt per OS.
 - **Minimal Coupling** — Services are standalone; ViewModels communicate via events (`PacketSelected`, `FieldSelected`, `FieldEdited`, `LayerSelected`, `HexEdited`, `FieldFoundAtOffset`).
 
 ---
@@ -103,15 +106,16 @@ so no real operator capture is involved and reproducing them does not require co
 ProtocolForge/
 ├── App.axaml.cs              # Application entry — manual DI composition
 ├── Program.cs                 # Avalonia bootstrap
-├── ProtocolForge.csproj       # .NET 8, Avalonia 12.0.5, CommunityToolkit.Mvvm 8.4.2, DataGrid 12.0.1
+├── ProtocolForge.csproj       # .NET 10, Avalonia 12.1.3, Dock 12.1.0.7, SukiUI 7.0.1, CommunityToolkit.Mvvm 8.4.2, DataGrid 12.1.2
 │
 ├── Assets/Lang/               # Localization dictionaries — en-US.json + zh-CN.json (embedded as resources)
-│   ├── en-US.json            # English UI strings (203 keys)
-│   └── zh-CN.json            # 简体中文 UI strings (203 keys, identical key set)
+│   ├── en-US.json            # English UI strings (234 keys)
+│   └── zh-CN.json            # 简体中文 UI strings (234 keys, identical key set)
 │
 ├── Models/                    # Domain objects
 │   ├── Packet.cs              # Single packet: raw data, modifications, address/port, layers
-│   ├── PacketDocument.cs      # PCAP document: packet collection, dirty tracking
+│   ├── PacketDocument.cs      # PCAP document: dirty tracking + export
+│   ├── PacketCollection.cs    # Observable packet collection bound to the packet-list DataGrid
 │   ├── HexByte.cs             # Byte in hex viewer: value, selection, highlight, edited marker, pending-edit state
 │   ├── ProtocolField.cs       # Protocol Information Element: offset, length, raw bytes, children, PDML name/hex pref for re-link
 │   ├── ProtocolLayer.cs       # Protocol layer container for fields
@@ -121,13 +125,18 @@ ProtocolForge/
 ├── Services/                  # Business logic
 │   ├── TsharkService.cs       # Streamed `-T fields` list loading + per-packet on-demand jsonraw/json/pdml tree build + single-packet pdml reparse + tshark detection/version gate
 │   ├── EditTransactionService.cs # Verify-Before-Commit: candidate frame → tshark reparse → (name, offset) hex verification → commit or abort
+│   ├── EditHistoryService.cs  # Undo/redo over committed edits — whole-frame snapshots, capped at 200, backs Ctrl+Z / Ctrl+Y
 │   ├── TsharkSettingsService.cs # Persists the user-chosen tshark path and UI language (settings.json) across sessions
 │   ├── LocalizationService.cs # Runtime localization core: Resolve(key, args), SetCurrent(AppLanguage), LanguageChanged event, DynamicResource publishing
+│   ├── EnumCatalog.cs         # Session-scoped enum interpretations harvested from PDML for the value dropdown
 │   ├── PcapIngestService.cs   # Raw PCAP byte reader (handles endianness, µs/ns timestamps)
 │   ├── PcapExportService.cs   # PCAP writer — overwrite save, export-as, and single-packet reparse temp files
+│   ├── PcapngWriter.cs        # PCAPNG writer (SHB/IDB/EPB, single section) for .pcapng write-back
 │   ├── ProtocolEditorService.cs # Edit fence (CheckTreeEditFence), field-level edits, offset lookup, hex ↔ byte conversion (0x-prefixed hex)
-│   ├── LayoutService.cs       # Window layout persistence (JSON in %APPDATA%)
+│   ├── LayoutService.cs       # Layout persistence (JSON in %APPDATA%): window geometry + visibility (layout.json), dock arrangement (docklayout.json)
+│   ├── SessionStateService.cs # Recent-files list + last-opened path (session.json, capped at 10)
 │   ├── NetworkInterfaceService.cs  # Cross-platform network adapter scanner
+│   ├── PacketContextProvider.cs # Lazy per-capture providers (SDP / IP-fragment / TCP-reassembly) that supply preceding frames for a faithful single-packet reparse
 │   ├── PacketSendService.cs   # Raw packet injection with rung ladder fallback (L2 → IP → UDP)
 │   ├── PacketPrepareService.cs # Pre-send preparation: checksum/length repair, source address injection
 │   ├── IL2SendRung.cs         # Contract for native L2 senders (Npcap on Windows, BPF on macOS)
@@ -141,29 +150,29 @@ ProtocolForge/
 │   ├── ProtocolTreeViewModel.cs # Protocol layer/field tree, field click → hex highlight, inline value editing (Enter/Esc/click-away), VBC commit, tree reveal for hex selection
 │   ├── HexEditorViewModel.cs  # Hex rendering + REPLACE-only inline hex editing, selection/highlight, edited-byte marking, reverse-sync events
 │   ├── ToolBarViewModel.cs    # Start/Pause/Stop send commands, interval/loops, interface dropdown
+│   ├── Panes.cs               # The four dockable panes (packet list / protocol tree / hex / statistics)
+│   ├── DockLayoutFactory.cs   # Default dock layout + pane ids, InitLayout host wiring
 │   └── ViewModelBase.cs       # Common ObservableObject base class
 │
 ├── Views/                     # Avalonia XAML + code-behind
-│   ├── MainWindow.axaml       # Full window layout: menu, toolbar, packet list, splitter, tree, hex
-│   ├── MainWindow.axaml.cs    # File dialogs, layout restore/save, menu handlers
+│   ├── MainWindow.axaml       # Full window layout: menu, toolbar, and the dock host (DockControl)
+│   ├── MainWindow.axaml.cs    # File dialogs, window-geometry restore/save, menu handlers
 │   └── Controls/
+│       ├── PacketListPaneView.axaml(.cs) # Dock pane: filter box + packet DataGrid + context menu
+│       ├── ProtocolTreePaneView.axaml(.cs) # Dock pane: protocol tree
+│       ├── HexEditorPaneView.axaml(.cs) # Dock pane: hex viewer + offsets/offset-range labels
+│       ├── StatisticsPaneView.axaml(.cs) # Dock pane: statistics tap picker + output
 │       ├── HexEditor.axaml.cs # Custom hex viewer: 16-byte rows, click/keyboard navigation, visual state
 │       ├── HexEditor.axaml    # Minimal XAML — everything built in code-behind
 │       ├── ProtocolTreeView.axaml  # TreeView with field data templates
 │       ├── ProtocolTreeView.axaml.cs # Click/double-click/context-menu handlers for selection and inline editing
 │       └── DoubleClickAutoFit.cs  # Double-click column divider → auto-fit column width (attached behavior)
-│
-├── Converters/                # XAML value converters
-│   ├── HexByteColorConverter.cs    # Multi-converters for byte backgrounds (selected/highlighted/modified)
-│   └── BoolToStringConverter.cs    # Pause/Resume button text
-│
-└── ViewLocator.cs             # Convention-based View → ViewModel resolution
 ```
 
 A standalone verification harness lives in `tests/pf-verify/` (an independent console
 project referencing `ProtocolForge`). It exercises the runtime service layer against the
 sample capture (point `PF_CAPTURE` at one to use your own traffic; when it is unset the harness generates a synthetic 4413-frame capture into the temp directory and deletes it after, so only `G17-13` skips) — edit-fence verdicts on a fixed frame, Verify-Before-Commit
-legal/illegal scenarios (commit, offset-drift abort, length-change rejection, byte-identity
+legal/illegal scenarios (commit, offset-drift abort, default length-change rejection, opt-in splice acceptance, byte-identity
 guarantees), the tshark version gate (real env + fake old/current binaries via `TSHARK_PATH`),
 read-only loading, hex-edit code-surface checks, and localization dictionary checks (GROUP 11). Run with
 `dotnet run --project tests/pf-verify`; every assertion passes with tshark 3.6.2+ installed.
@@ -219,11 +228,11 @@ Address and port extraction runs inside the on-demand tree build: `ExtractAddres
 
 ### Post-Edit Refresh (Single-Packet Reparse)
 
-Tree and hex edits both flow through `EditTransactionService` (Verify-Before-Commit):
+Tree field edits flow through `EditTransactionService` (Verify-Before-Commit). Hex-pane edits skip the pre-commit verification (they are fence-checked and applied directly), but reuse the same `ReparseSinglePacketAsync` call to refresh the tree afterwards:
 
 1. `PcapExportService.SavePacketAsync()` writes the single modified packet to a temp PCAP (with surrounding context frames when the packet needs SDP/IP-fragment context for correct dissection)
 2. `TsharkService.ReparseSinglePacketAsync()` runs tshark `-T pdml` on that temp file and collects a `(field name, byte offset) → showname` + raw value lookup table
-3. Before committing, the reparse must show the **new value landing at the expected position** — offset drift, a value mismatch, or a length change aborts the transaction and the packet stays byte-identical
+3. Before committing, the reparse must show the **new value landing at the expected position** — in the default same-length path, offset drift, a value mismatch, or a length change aborts the transaction and the packet stays byte-identical. A length change is committed only through the separate opt-in splice path (field *allow length change*, hex value), which is verified the same way
 4. On success, `ProtocolTreeViewModel.RefreshFieldDisplays()` walks the existing tree in place, patching each field's Name/DisplayValue from the fresh PDML text
 
 This keeps the tree stable (selection, expansion state preserved) while the displayed texts catch up to edited bytes. Anonymous IE containers — PFCP/NGAP IEs emitted by tshark as `<field name="" show="…">`, whose rendered text like `F-SEID : SEID: 0x…, IPv4 …` changes with their children's bytes — are matched by offset only (empty name key), so a SEID edit propagates into the surrounding container display without touching the tree structure.
@@ -268,9 +277,9 @@ The native L2 rung is never bundled or silently installed: on Windows the app on
 
 ### Prerequisites
 
-> **End users**: download a **self-contained** release — the .NET 8 runtime is bundled, so you install **nothing** but Wireshark (below). No separate .NET install needed.
+> **End users**: download a **self-contained** release — the .NET 10 runtime is bundled, so you install **nothing** but Wireshark (below). No separate .NET install needed.
 - **Wireshark / tshark (≥ 2.6.0)** — Protocol parsing requires tshark 2.6.0 or later on PATH (or via `TSHARK_PATH`). Older tshark versions open the app in read-only mode. Download from [wireshark.org](https://www.wireshark.org/download.html).
-- **.NET 8 SDK** (8.0.421 or later, **builders/contributors only**) — required to compile from source; not needed to run a self-contained build.
+- **.NET 10 SDK** (10.0.100 or later, pinned by `global.json`, **builders/contributors only**) — required to compile from source (the target framework is net10.0); not needed to run a self-contained build.
   - Linux: `sudo apt install tshark`
   - macOS: `brew install wireshark`
   - Windows 10/11 x64: install Wireshark; keep the Npcap option enabled (selected by default). The app does not bundle Npcap.
@@ -287,7 +296,7 @@ dotnet run --project ProtocolForge/ProtocolForge.csproj
 # Open a PCAP file from the command line
 dotnet run --project ProtocolForge/ProtocolForge.csproj -- path/to/capture.pcap
 
-# Run the verification harness (requires tshark >= 2.6.0)
+# Run the verification harness (requires tshark >= 3.6.2)
 dotnet run --project tests/pf-verify/PfVerify.csproj
 ```
 
@@ -299,7 +308,7 @@ dotnet run --project tests/pf-verify/PfVerify.csproj
 4. Edit packet content in either panel:
    - **Protocol tree**: right-click an editable field (or double-click it) and type a new value — decimal, IP/MAC, string, or `0x…` hex; press Enter to apply, Esc to cancel. Fields that fail the edit fence show `Not editable: …` and refuse to open.
    - **Hex viewer**: click a byte offset, then type hex digits (0-9/A-F/NumPad) to start a replace run; the pending value previews in yellow, Enter commits the whole run at once, Esc cancels.
-   Both routes run the Verify-Before-Commit reparse — committed edits that don't land are rejected. Modified bytes are marked in orange in the hex viewer.
+   Tree edits run the Verify-Before-Commit reparse — edits whose new value does not land are rejected; hex runs are fence-checked and applied directly, then a follow-up reparse refreshes the tree. Modified bytes are marked in orange in the hex viewer.
 5. Save modifications with **File → Save PCAP** (Ctrl+S) or **Export PCAP As** (Ctrl+Shift+S)
 6. Check the packets you want to send (per-packet checkboxes, or the packet list's right-click context menu), select a network adapter, and set interval/loop count. Click **Start** to send directly through the selected physical adapter. Auto-fix is off by default and only changes the frame preparation behavior.
 
@@ -340,7 +349,7 @@ OBFUSCATED_DLL=/path/to/ProtocolForge.dll ./packaging/linux/publish-linux.sh
 OBFUSCATED_DLL=/path/to/ProtocolForge.dll ./packaging/windows/publish-windows.sh
 ```
 
-Obfuscate only this project's assembly, and preserve public type/member names — XAML bindings, `ViewLocator` reflection, and JSON persistence all resolve members by name at runtime and will fail to bind if they are renamed. Pointing `OBFUSCATED_DLL` at a missing file fails the build rather than silently shipping a clean assembly. CI does not set it, so published artifacts stay unobfuscated.
+Obfuscate only this project's assembly, and preserve public type/member names — XAML bindings and JSON persistence resolve members by name at runtime and will fail to bind if they are renamed. Pointing `OBFUSCATED_DLL` at a missing file fails the build rather than silently shipping a clean assembly. CI does not set it, so published artifacts stay unobfuscated.
 
 Real captures remain local-only. Use generated fixtures for CI, tests, screenshots, and marketing material; sanitize any real capture before it is used outside the workstation.
 
@@ -354,7 +363,7 @@ ProtocolForge doesn't ship protocol parsers — it relies entirely on tshark. To
 
 1. Ensure tshark has a dissector for it (most 3GPP protocols are supported in recent Wireshark)
 2. The three-pass jsonraw parser automatically handles any protocol tshark outputs
-3. To customize highlighting: add a color entry in `HexEditorViewModel.GetHighlightColor()` for the protocol name
+3. Highlighting needs no code: the protocol name is hashed to a stable hue, so a new protocol gets its own color automatically
 
 ### Adding a New Service
 
@@ -392,13 +401,19 @@ Runtime diagnostics are written to `trace.log` under the local application data 
 
 | Package | Version | Purpose |
 |---------|---------|---------|
-| Avalonia | 12.0.5 | Cross-platform UI framework |
-| Avalonia.Desktop | 12.0.5 | Desktop backend |
-| Avalonia.Themes.Fluent | 12.0.5 | Fluent design theme |
-| Avalonia.Fonts.Inter | 12.0.5 | Inter font |
-| Avalonia.Controls.DataGrid | 12.0.1 | Packet list grid: sorting + double-click column auto-fit |
-| AvaloniaUI.DiagnosticsSupport | 2.2.1 | Dev-only diagnostics integration (Debug builds) |
+| Avalonia | 12.1.3 | Cross-platform UI framework |
+| Avalonia.Desktop | 12.1.3 | Desktop backend |
+| Avalonia.Themes.Fluent | 12.1.3 | Fluent design theme |
+| Avalonia.Fonts.Inter | 12.1.3 | Inter font |
+| Avalonia.Controls.DataGrid | 12.1.2 | Packet list grid: sorting + double-click column auto-fit |
+| AvaloniaUI.DiagnosticsSupport | 2.2.3 | Dev-only diagnostics integration (Debug builds) |
 | CommunityToolkit.Mvvm | 8.4.2 | MVVM source generators (ObservableProperty, RelayCommand) |
+| Dock.Avalonia | 12.1.0.7 | Visual-Studio-style dockable layout host |
+| Dock.Avalonia.Themes.Fluent | 12.1.0.7 | Base Dock chrome theme (loaded before SukiUI.Dock) |
+| Dock.Model.Mvvm | 12.1.0.7 | Dock model types (MVVM) |
+| Dock.Serializer.SystemTextJson | 12.1.0.7 | Dock layout persistence (docklayout.json) |
+| SukiUI | 7.0.1 | Cross-control theming (window, menu, DataGrid, TreeView, Dock) |
+| SukiUI.Dock | 7.0.1 | SukiUI-styled chrome for the Dock panes |
 
 External runtime dependency: **tshark ≥ 2.6.0** (part of Wireshark) for protocol parsing.
 

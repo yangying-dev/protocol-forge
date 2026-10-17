@@ -1,23 +1,41 @@
-<Window xmlns="https://github.com/avaloniaui"
+<suki:SukiWindow xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:ProtocolForge.ViewModels"
         xmlns:models="using:ProtocolForge.Models"
         xmlns:sys="using:System"
         xmlns:svc="using:ProtocolForge.Services"
         xmlns:controls="using:ProtocolForge.Views.Controls"
+        xmlns:suki="clr-namespace:SukiUI.Controls;assembly=SukiUI"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d" d:DesignWidth="1400" d:DesignHeight="900"
         x:Class="ProtocolForge.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
+        Classes="main-window"
         Icon="/Assets/protocol-forge.ico"
         Title="{DynamicResource L10n.App.Title}"
+        TitleFontSize="12"
+        IsMenuVisible="False"
         MinWidth="900" MinHeight="600">
 
+    <!-- 标题栏图标:SukiWindow 模板的 PART_Logo 只渲染 LogoContent(SukiWindow.axaml:139-144),
+         迁移到 SukiUI 后 App 从未设置它,标题栏左侧的协议图标丢失(旧版原生标题栏显示 .ico)。
+         protocol-forge.png 是从 .ico 的 256×256 帧提取的 RGBA PNG;16px 与 12px 标题行高相称,
+         内容盒 20px(38−18 模板内边距)内上下各留 2px。 -->
+    <suki:SukiWindow.LogoContent>
+        <Image Source="/Assets/protocol-forge.png" Width="16" Height="16" />
+    </suki:SukiWindow.LogoContent>
+
+    <!-- SukiUI 7.0.1 的 SukiWindow 模板未包含 VisualLayerManager(标准 Window 模板内嵌),窗口树
+         因此没有 LightDismissOverlayLayer,所有浮层(ContextMenu/Flyout/ComboBox 下拉/ToolTip)
+         都无法「点击外部关闭」(实机报告:packet 列表右键菜单点哪儿都不消失、空列表也弹)。这里在
+         内容外层补一个 VisualLayerManager 恢复轻量关闭层;EnableAdornerLayer=False 以免额外引入
+         AdornerLayer 改变既有行为(停靠指示已由 App.axaml.cs 的 UseFloatingDockAdorner 走浮动层)。 -->
+    <VisualLayerManager EnableAdornerLayer="False">
     <Grid Name="RootGrid" RowDefinitions="Auto,Auto,Auto,*,Auto">
         <!-- ════════════════ Menu Bar ════════════════ -->
-        <Menu Grid.Row="0">
-            <MenuItem Header="{DynamicResource L10n.Mnu.File}">
+        <Menu Grid.Row="0" Classes="main-menu">
+            <MenuItem Classes="main-menu-item" Header="{DynamicResource L10n.Mnu.File}">
                 <MenuItem Header="{DynamicResource L10n.Mnu.Open}" Click="OnOpenPcapClicked" InputGesture="Ctrl+O" />
                 <MenuItem Header="{DynamicResource L10n.Mnu.Save}" Click="OnSavePcapClicked" InputGesture="Ctrl+S" />
                 <MenuItem Header="{DynamicResource L10n.Mnu.Export}" Click="OnExportPcapClicked" InputGesture="Ctrl+Shift+S" />
@@ -31,29 +49,34 @@
                 <Separator />
                 <MenuItem Header="{DynamicResource L10n.Mnu.TsharkPath}" Click="OnPickTsharkClicked" />
                 <Separator />
+                <MenuItem Header="{DynamicResource L10n.Mnu.OpenSupportData}" Click="OnOpenLogDirClicked" />
+                <Separator />
                 <MenuItem Header="{DynamicResource L10n.Mnu.Exit}" Click="OnExitClicked" />
             </MenuItem>
-            <MenuItem Header="{DynamicResource L10n.Mnu.View}">
-                <MenuItem Header="{DynamicResource L10n.Mnu.PacketList}" IsChecked="{Binding ShowPacketList}"
+            <MenuItem Classes="main-menu-item" Header="{DynamicResource L10n.Mnu.View}">
+                <MenuItem Header="{DynamicResource L10n.Mnu.PacketList}" IsChecked="{Binding ShowPacketList, Mode=OneWay}"
                           Command="{Binding TogglePacketListCommand}" ToggleType="CheckBox" />
-                <MenuItem Header="{DynamicResource L10n.Mnu.ProtocolTree}" IsChecked="{Binding ShowProtocolTree}"
+                <MenuItem Header="{DynamicResource L10n.Mnu.ProtocolTree}" IsChecked="{Binding ShowProtocolTree, Mode=OneWay}"
                           Command="{Binding ToggleProtocolTreeCommand}" ToggleType="CheckBox" />
-                <MenuItem Header="{DynamicResource L10n.Mnu.HexEditor}" IsChecked="{Binding ShowHexEditor}"
+                <MenuItem Header="{DynamicResource L10n.Mnu.HexEditor}" IsChecked="{Binding ShowHexEditor, Mode=OneWay}"
                           Command="{Binding ToggleHexEditorCommand}" ToggleType="CheckBox" />
-                <MenuItem Header="{DynamicResource L10n.Panel.Statistics}" IsChecked="{Binding ShowStatistics}"
-                          ToggleType="CheckBox" />
                 <Separator />
                 <MenuItem Header="{DynamicResource L10n.Mnu.ResetLayout}" Click="OnResetLayoutClicked" />
             </MenuItem>
-            <MenuItem Header="{DynamicResource L10n.Find.Label}">
-                <MenuItem Header="{DynamicResource L10n.Find.Label}" InputGesture="Ctrl+F" Click="OnFocusFindBox" />
+            <MenuItem Classes="main-menu-item" Header="{DynamicResource L10n.Mnu.Tools}">
+                <MenuItem x:Name="MenuLanguage" Header="{DynamicResource L10n.Lang.Menu}">
+                    <MenuItem x:Name="MenuLangZhCn" Header="{DynamicResource L10n.Lang.ZhCn}" Click="OnMenuLangZhCnClicked" ToggleType="CheckBox"/>
+                    <MenuItem x:Name="MenuLangEnUs" Header="{DynamicResource L10n.Lang.EnUs}" Click="OnMenuLangEnUsClicked" ToggleType="CheckBox"/>
+                </MenuItem>
+                <Separator />
+                <MenuItem x:Name="MenuTheme" Header="{DynamicResource L10n.Theme.Menu}">
+                    <MenuItem Header="{DynamicResource L10n.Theme.System}" Tag="Default" Click="OnMenuThemeBaseClicked" ToggleType="CheckBox"/>
+                    <MenuItem Header="{DynamicResource L10n.Theme.Light}" Tag="Light" Click="OnMenuThemeBaseClicked" ToggleType="CheckBox"/>
+                    <MenuItem Header="{DynamicResource L10n.Theme.Dark}" Tag="Dark" Click="OnMenuThemeBaseClicked" ToggleType="CheckBox"/>
+                </MenuItem>
             </MenuItem>
-            <MenuItem Header="{DynamicResource L10n.Lang.Menu}">
-                <MenuItem x:Name="MenuLangZhCn" Header="{DynamicResource L10n.Lang.ZhCn}" Click="OnMenuLangZhCnClicked" ToggleType="CheckBox"/>
-                <MenuItem x:Name="MenuLangEnUs" Header="{DynamicResource L10n.Lang.EnUs}" Click="OnMenuLangEnUsClicked" ToggleType="CheckBox"/>
-            </MenuItem>
-            <MenuItem Header="{DynamicResource L10n.Mnu.Help}">
-                <MenuItem Header="{DynamicResource L10n.Mnu.OpenSupportData}" Click="OnOpenLogDirClicked" />
+            <MenuItem Classes="main-menu-item" Header="{DynamicResource L10n.Mnu.Help}">
+                <MenuItem Header="{DynamicResource L10n.Mnu.UserManual}" Click="OnUserManualClicked" />
                 <Separator />
                 <MenuItem Header="{DynamicResource L10n.Mnu.About}" Click="OnAboutClicked" />
             </MenuItem>
@@ -61,56 +84,58 @@
 
         <!-- ════════════════ Toolbar ════════════════ -->
         <Border Grid.Row="1" Name="ToolBarPanel"
-                Background="#F0F0F0" Padding="8,4" BorderBrush="#CCC" BorderThickness="0,0,0,1">
+                Background="{DynamicResource SukiStrongBackground}" Padding="6,0" BorderBrush="{DynamicResource SukiBorderBrush}" BorderThickness="0,0,0,1">
             <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto">
-                <!-- Start Button -->
-                <Button Grid.Column="0" Name="StartSendBtn"
+                <!-- Start Button:配色/前景走 SukiUI 语义 class(Success=主题绿,亮暗自适应、含 hover/pressed)。
+                     不再硬编码 #4CAF50;保留紧凑定高 Padding/Height/FontSize(SukiUI 基础按钮 Padding=20,8 会在 26px 下定高裁字)。 -->
+                <Button Grid.Column="0" Name="StartSendBtn" Classes="Success"
                         Command="{Binding ToolBar.StartSendCommand}"
                         IsEnabled="{Binding ToolBar.CanSend}"
-                        Padding="10,4" Margin="2,0"
-                        Background="#4CAF50" Foreground="White"
-                        FontWeight="Bold" FontSize="13"
-                        BorderThickness="0" CornerRadius="4">
+                        Padding="10,3" Margin="2,0" Height="26" VerticalAlignment="Center"
+                        FontSize="13">
                     <StackPanel Orientation="Horizontal" Spacing="4">
-                        <TextBlock Text="▶" FontSize="11" />
+                        <PathIcon Data="{StaticResource Icon.Play}" Width="12" Height="12" />
                         <TextBlock Text="{DynamicResource L10n.Btn.Start}" />
                     </StackPanel>
                 </Button>
 
-                <!-- Pause/Resume Button -->
-                <Button Grid.Column="1" Name="PauseSendBtn"
+                <!-- Pause/Resume Button:按钮在「暂停↔继续」间切换,图标随之切换(发送中=⏸,已暂停=▶)。 -->
+                <Button Grid.Column="1" Name="PauseSendBtn" Classes="Warning"
                         Command="{Binding ToolBar.TogglePauseSendCommand}"
                         IsEnabled="{Binding ToolBar.IsSending}"
-                        Padding="10,4" Margin="2,0"
-                        Background="#FF9800" Foreground="White"
-                        FontWeight="Bold" FontSize="13"
-                        BorderThickness="0" CornerRadius="4">
+                        Padding="10,3" Margin="2,0" Height="26" VerticalAlignment="Center"
+                        FontSize="13">
                     <StackPanel Orientation="Horizontal" Spacing="4">
-                        <TextBlock Text="{Binding ToolBar.PauseButtonText}" FontSize="12" />
+                        <PathIcon Data="{StaticResource Icon.Pause}" Width="12" Height="12"
+                                  IsVisible="{Binding !ToolBar.IsPaused}" />
+                        <PathIcon Data="{StaticResource Icon.Play}" Width="12" Height="12"
+                                  IsVisible="{Binding ToolBar.IsPaused}" />
+                        <TextBlock Text="{Binding ToolBar.PauseButtonText}" />
                     </StackPanel>
                 </Button>
 
                 <!-- Stop Button -->
-                <Button Grid.Column="2" Name="StopSendBtn"
+                <Button Grid.Column="2" Name="StopSendBtn" Classes="Danger"
                         Command="{Binding ToolBar.StopSendCommand}"
                         IsEnabled="{Binding ToolBar.IsSending}"
-                        Padding="10,4" Margin="2,0"
-                        Background="#F44336" Foreground="White"
-                        FontWeight="Bold" FontSize="13"
-                        BorderThickness="0" CornerRadius="4">
+                        Padding="10,3" Margin="2,0" Height="26" VerticalAlignment="Center"
+                        FontSize="13">
                     <StackPanel Orientation="Horizontal" Spacing="4">
-                        <TextBlock Text="■" FontSize="11" />
+                        <PathIcon Data="{StaticResource Icon.Stop}" Width="12" Height="12" />
                         <TextBlock Text="{DynamicResource L10n.Btn.Stop}" />
                     </StackPanel>
                 </Button>
 
                 <!-- Auto-fix toggle -->
                 <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-                    <ComboBox Name="VlanModeCombo" Width="92" Height="28" FontSize="12"
+                    <ComboBox Name="VlanModeCombo" Width="136" Classes="toolbar-combo" FontSize="12"
                               ItemsSource="{Binding ToolBar.VlanModes}"
-                              SelectedItem="{Binding ToolBar.VlanMode}"
+                              SelectedItem="{Binding ToolBar.SelectedVlanOption}"
+                              DisplayMemberBinding="{Binding Label}"
                               ToolTip.Tip="{DynamicResource L10n.Tip.Vlan}" />
-                    <TextBox Name="VlanIdBox" Width="58" Height="28" FontSize="12"
+                    <!-- 同 PacketListPaneView:TextBox 主题自带 Padding="10,8",定高下会裁字,故去纵向内边距 -->
+                    <TextBox Name="VlanIdBox" Width="58" Height="26" MinHeight="26"
+                             Padding="4,0" FontSize="12"
                              Text="{Binding ToolBar.VlanId, Mode=TwoWay}"
                              IsVisible="{Binding ToolBar.IsVlanIdVisible}"
                              ToolTip.Tip="{DynamicResource L10n.Btn.VlanId}" />
@@ -119,6 +144,7 @@
                           Content="{DynamicResource L10n.Btn.MultiNic}"
                           IsChecked="{Binding ToolBar.MultiNicSend}"
                           VerticalAlignment="Center"
+                          FontSize="12"
                           ToolTip.Tip="{DynamicResource L10n.Tip.MultiNic}" />
                 <CheckBox Grid.Column="5" Name="AutoFixCheckBox"
                           Content="{DynamicResource L10n.Btn.AutoFix}"
@@ -132,7 +158,7 @@
                     <TextBlock Text="{DynamicResource L10n.Btn.Interval}" FontSize="12" VerticalAlignment="Center" Margin="0,0,4,0" />
                     <NumericUpDown Value="{Binding ToolBar.SendIntervalMs}"
                                    Minimum="0" Maximum="60000" Increment="50"
-                                   FormatString="0" Width="140" Height="28" />
+                                   FormatString="0" Width="140" Height="26" />
                 </StackPanel>
 
                 <!-- Loop count -->
@@ -141,7 +167,7 @@
                     <TextBlock Text="{DynamicResource L10n.Btn.Loops}" FontSize="12" VerticalAlignment="Center" Margin="0,0,4,0" />
                     <NumericUpDown Value="{Binding ToolBar.LoopCount}"
                                    Minimum="1" Maximum="9999" Increment="1"
-                                   FormatString="0" Width="120" Height="28" />
+                                   FormatString="0" Width="120" Height="26" />
                 </StackPanel>
 
                 <!-- Sent/Failed Status -->
@@ -157,15 +183,15 @@
                 </StackPanel>
 
                 <!-- Network Adapter Dropdown -->
-                <ComboBox Grid.Column="9" Name="NetworkAdapterCombo"
+                <ComboBox Grid.Column="9" Name="NetworkAdapterCombo" Classes="toolbar-combo"
                           ItemsSource="{Binding ToolBar.AvailableInterfaces}"
                           SelectedItem="{Binding ToolBar.SelectedInterface}"
                           DisplayMemberBinding="{Binding DisplayName}"
-                          Height="28" MinWidth="180"
+                          FontSize="12" MinWidth="180"
                           HorizontalAlignment="Stretch"
                           VerticalAlignment="Center"
                           PlaceholderText="{DynamicResource L10n.Btn.PlaceholderAdapter}" />
-                <Button Grid.Column="10" Margin="4,0,0,0" Height="28" Padding="8,0"
+                <Button Grid.Column="10" Margin="4,0,0,0" Height="26" Padding="8,0"
                         FontSize="12" VerticalAlignment="Center"
                         Content="{DynamicResource L10n.Btn.RescanAdapters}"
                         ToolTip.Tip="{DynamicResource L10n.Btn.TipRescanAdapters}"
@@ -174,316 +200,35 @@
         </Border>
 
         <!-- ════════════════ Tshark Warning Banner ════════════════ -->
-        <Border Grid.Row="2" Background="#FFF3CD" BorderBrush="#F0B429"
-                BorderThickness="0,0,0,1" Padding="10,6"
+        <Border Grid.Row="2" Background="{DynamicResource SukiWarningColor}" BorderBrush="{DynamicResource SukiWarningDarkColor}"
+                BorderThickness="0,0,0,1" Padding="8,4"
                 IsVisible="{Binding IsReadOnly}">
             <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                 <TextBlock Text="⚠" FontSize="14" VerticalAlignment="Center" />
                 <TextBlock Text="{Binding TsharkWarning}"
                            FontSize="12" FontWeight="SemiBold"
-                           Foreground="#7A5C00"
+                           Foreground="{DynamicResource SukiWarningForeground}"
                            TextWrapping="Wrap"
                            VerticalAlignment="Center" />
                 <TextBlock Text="{DynamicResource L10n.Banner.Text}"
-                           FontSize="12" Foreground="#7A5C00"
+                           FontSize="12" Foreground="{DynamicResource SukiWarningForeground}"
                            TextWrapping="Wrap"
                            VerticalAlignment="Center"
                            Margin="6,0,0,0" />
             </StackPanel>
         </Border>
 
-        <!-- ════════════════ Main Content ════════════════ -->
-        <!-- Wireshark-style layout:
-             Top: Packet List (full width)
-             Bottom-Left: Protocol Tree
-             Bottom-Right: Hex Editor
-        -->
-        <Grid Grid.Row="3" Name="ContentGrid"
-              RowDefinitions="2*,Auto,3*">
-
-            <!-- ═══ Top: Packet List (Wireshark-style) ═══ -->
-            <Border Grid.Row="0" Name="PacketListPanel"
-                    BorderBrush="#CCC" BorderThickness="0,0,0,0"
-                    IsVisible="{Binding ShowPacketList}">
-                <Grid RowDefinitions="Auto,*">
-                    <!-- Top bar: packet count + file name -->
-                    <Border Grid.Row="0" Background="#F0F0F0" Padding="10,4,10,3"
-                            BorderBrush="#CCC" BorderThickness="0,0,0,1">
-                        <Grid ColumnDefinitions="Auto,*,Auto,Auto">
-                            <TextBlock Grid.Column="0"
-                                       Text="{Binding PacketsDisplay}"
-                                       FontWeight="SemiBold" FontSize="12" />
-                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4"
-                                        VerticalAlignment="Center">
-                                <TextBox Name="FilterBox" Width="240" FontSize="12"
-                                         FontFamily="Consolas, monospace"
-                                         VerticalContentAlignment="Center"
-                                         Text="{Binding FilterText, Mode=TwoWay}"
-                                         PlaceholderText="{DynamicResource L10n.Filter.Placeholder}"
-                                         ToolTip.Tip="{DynamicResource L10n.Filter.Label}"
-                                         KeyDown="OnFilterKeyDown" />
-                                <TextBox Name="FindBox" Width="180" FontSize="12"
-                                         FontFamily="Consolas, monospace"
-                                         VerticalContentAlignment="Center"
-                                         Text="{Binding FindText, Mode=TwoWay}"
-                                         PlaceholderText="{DynamicResource L10n.Find.Placeholder}"
-                                         ToolTip.Tip="{DynamicResource L10n.Find.Label}"
-                                         KeyDown="OnFindKeyDown" />
-                                <Button Content="↓" FontSize="12" Padding="6,2"
-                                        Command="{Binding FindNextCommand}"
-                                        ToolTip.Tip="{DynamicResource L10n.Find.Label}" />
-                                <Button Content="↑" FontSize="12" Padding="6,2"
-                                        Command="{Binding FindPreviousCommand}"
-                                        ToolTip.Tip="{DynamicResource L10n.Find.Label}" />
-                                <Button Content="{DynamicResource L10n.Filter.Apply}"
-                                        FontSize="12" Padding="8,2"
-                                        Command="{Binding ApplyFilterCommand}" />
-                                <Button Content="{DynamicResource L10n.Filter.Clear}"
-                                        FontSize="12" Padding="8,2"
-                                        Command="{Binding ClearFilterCommand}" />
-                            </StackPanel>
-                            <TextBlock Grid.Column="3" FontSize="12" Foreground="#888"
-                                       Margin="10,0,0,0" VerticalAlignment="Center"
-                                       Text="{Binding FileName}" />
-                        </Grid>
-                    </Border>
-
-                    <!-- Packet list rows -->
-                    <DataGrid Grid.Row="1" Name="PacketListView"
-                              ItemsSource="{Binding PacketList.Packets}"
-                              SelectedItem="{Binding PacketList.SelectedPacket}"
-                              IsReadOnly="True"
-                              AutoGenerateColumns="False"
-                              CanUserResizeColumns="True"
-                              CanUserSortColumns="True"
-                              controls:DoubleClickAutoFit.IsEnabled="True"
-                              GridLinesVisibility="Horizontal"
-                              HorizontalGridLinesBrush="#E0E0E0"
-                              Background="White"
-                              BorderThickness="0">
-                        <DataGrid.ContextMenu>
-                            <ContextMenu>
-                                <MenuItem Header="{DynamicResource L10n.Ctx.SelectAll}" Click="OnSelectAllSendClick" />
-                                <MenuItem Header="{DynamicResource L10n.Ctx.InvertSelection}" Click="OnInvertSendSelectionClick" />
-                                <MenuItem Header="{DynamicResource L10n.Ctx.ClearSelection}" Click="OnClearSendSelectionClick" />
-                                <Separator />
-                                <MenuItem Header="{DynamicResource L10n.Ctx.SendThisPacket}" Click="OnSendThisPacketClick"
-                                          ToolTip.Tip="{DynamicResource L10n.Tip.SendRow}" />
-                                <Separator />
-                                <MenuItem Header="{DynamicResource L10n.Ctx.ExportSendHistory}" Click="OnExportSendHistoryClick"
-                                          IsEnabled="{Binding ToolBar.SendHistory.Count}" />
-                                <MenuItem Header="{DynamicResource L10n.Ctx.ClearSendHistory}" Click="OnClearSendHistoryClick"
-                                          IsEnabled="{Binding ToolBar.SendHistory.Count}" />
-                            </ContextMenu>
-                        </DataGrid.ContextMenu>
-                        <DataGrid.Columns>
-                            <!-- No. with Send checkbox -->
-                            <DataGridTemplateColumn Header="{DynamicResource L10n.Grid.No}" SortMemberPath="PacketNumber" Width="Auto" MinWidth="50">
-                                <DataGridTemplateColumn.Header>
-                                    <StackPanel Orientation="Horizontal" Spacing="4"
-                                                Margin="4,0">
-                                        <CheckBox Name="SelectAllSendCheckBox"
-                                                  IsThreeState="True"
-                                                  IsChecked="True"
-                                                  VerticalAlignment="Center"
-                                                  IsCheckedChanged="OnSelectAllSendToggle"
-                                                  ToolTip.Tip="{DynamicResource L10n.Tip.SelectAllSend}" />
-                                        <TextBlock Text="{DynamicResource L10n.Grid.No}" FontSize="12" VerticalAlignment="Center" />
-                                    </StackPanel>
-                                </DataGridTemplateColumn.Header>
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate x:DataType="models:Packet">
-                                        <StackPanel Orientation="Horizontal" Spacing="6"
-                                                    VerticalAlignment="Center" Margin="4,0">
-                                            <CheckBox IsChecked="{Binding SendSelected}"
-                                                      VerticalAlignment="Center"
-                                                      ToolTip.Tip="{DynamicResource L10n.Tip.IncludePacket}" />
-                                            <TextBlock Text="{Binding PacketNumber}" VerticalAlignment="Center" />
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
-                            <!-- Time -->
-                            <DataGridTemplateColumn Header="{DynamicResource L10n.Grid.Time}" SortMemberPath="TimestampDisplay" Width="Auto" MinWidth="230">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate x:DataType="models:Packet">
-                                        <TextBlock Text="{Binding TimestampDisplay}" VerticalAlignment="Center" />
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
-                            <!-- Source (read-only) -->
-                            <DataGridTemplateColumn Header="{DynamicResource L10n.Grid.Source}" SortMemberPath="SourceAddress" Width="Auto" MinWidth="120">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate x:DataType="models:Packet">
-                                        <TextBlock Text="{Binding SourceAddress}" VerticalAlignment="Center" />
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
-                            <!-- Destination (read-only) -->
-                            <DataGridTemplateColumn Header="{DynamicResource L10n.Grid.Destination}" SortMemberPath="DestinationAddress" Width="Auto" MinWidth="120">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate x:DataType="models:Packet">
-                                        <TextBlock Text="{Binding DestinationAddress}" VerticalAlignment="Center" />
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
-                            <!-- Protocol -->
-                            <DataGridTemplateColumn Header="{DynamicResource L10n.Grid.Protocol}" SortMemberPath="ProtocolName" Width="Auto">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate x:DataType="models:Packet">
-                                        <TextBlock Text="{Binding ProtocolName}" VerticalAlignment="Center" />
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
-                            <!-- Length -->
-                            <DataGridTemplateColumn Header="{DynamicResource L10n.Grid.Length}" SortMemberPath="Length" Width="Auto">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate x:DataType="models:Packet">
-                                        <TextBlock Text="{Binding Length}" VerticalAlignment="Center" />
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
-                            <!-- Info -->
-                            <DataGridTemplateColumn Header="{DynamicResource L10n.Grid.Info}" SortMemberPath="Summary" Width="*">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate x:DataType="models:Packet">
-                                        <TextBlock Text="{Binding Summary}" VerticalAlignment="Center" />
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
-                        </DataGrid.Columns>
-                    </DataGrid>
-                </Grid>
-            </Border>
-
-            <!-- ═══ Horizontal GridSplitter ═══ -->
-            <GridSplitter Grid.Row="1" Name="TopSplitter"
-                          Background="#CCC" Height="4"
-                          VerticalAlignment="Stretch"
-                          ResizeDirection="Rows"
-                          ResizeBehavior="PreviousAndNext"
-                          ShowsPreview="False" />
-
-            <!-- ═══ Bottom: Protocol Tree + Hex Editor ═══ -->
-            <Grid Grid.Row="2" Name="BottomGrid"
-                  ColumnDefinitions="*,4,*">
-
-                <!-- Protocol Tree -->
-                <Border Grid.Column="0" Name="ProtocolTreePanel"
-                        BorderBrush="#CCC" BorderThickness="0,0,0,0"
-                        IsVisible="{Binding ShowProtocolTree}">
-                    <Grid RowDefinitions="Auto,*">
-                        <Border Grid.Row="0" Background="#F0F0F0" Padding="10,6"
-                                BorderBrush="#CCC" BorderThickness="0,0,0,1">
-                            <TextBlock Text="{DynamicResource L10n.Panel.ProtocolTree}" FontWeight="SemiBold" FontSize="13" />
-                        </Border>
-                        <controls:ProtocolTreeView Grid.Row="1"
-                                                    DataContext="{Binding ProtocolTree}" />
-                    </Grid>
-                </Border>
-
-                <!-- Vertical GridSplitter -->
-                <GridSplitter Grid.Column="1" Name="BottomSplitter"
-                              Background="#CCC" Width="4"
-                              VerticalAlignment="Stretch"
-                              ResizeDirection="Columns"
-                              ResizeBehavior="PreviousAndNext" />
-
-                <!-- Hex Editor -->
-                <Border Grid.Column="2" Name="HexEditorPanel"
-                        BorderBrush="#CCC" BorderThickness="0,0,0,0"
-                        IsVisible="{Binding ShowHexEditor}">
-                    <Grid RowDefinitions="Auto,*">
-                        <Border Grid.Row="0" Background="#F0F0F0" Padding="10,6"
-                                BorderBrush="#CCC" BorderThickness="0,0,0,1">
-                            <TextBlock Text="{DynamicResource L10n.Panel.HexEditor}" FontWeight="SemiBold" FontSize="13" />
-                        </Border>
-                        <controls:HexEditor Grid.Row="1"
-                                             DataContext="{Binding HexEditor}" />
-                    </Grid>
-                </Border>
-            </Grid>
-
-            <!-- ═══ Bottom: Statistics (tshark -z taps) ═══ -->
-            <GridSplitter Grid.Row="1" Name="StatsSplitter"
-                          Background="#CCC" Height="4"
-                          HorizontalAlignment="Stretch"
-                          ResizeDirection="Rows"
-                          ResizeBehavior="PreviousAndNext"
-                          IsVisible="{Binding ShowStatistics}" />
-
-            <Border Grid.Row="2" Name="StatisticsPanel"
-                    BorderBrush="#CCC" BorderThickness="0,0,0,0"
-                    IsVisible="{Binding ShowStatistics}">
-                <Grid RowDefinitions="Auto,*">
-                    <Border Grid.Row="0" Background="#F0F0F0" Padding="10,4"
-                            BorderBrush="#CCC" BorderThickness="0,0,0,1">
-                        <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto">
-                            <TextBlock Grid.Column="0" FontWeight="SemiBold" FontSize="13"
-                                       VerticalAlignment="Center"
-                                       Text="{DynamicResource L10n.Panel.Statistics}" />
-                            <ComboBox Grid.Column="1" Margin="10,0" Height="24"
-                                      FontSize="12" HorizontalAlignment="Left"
-                                      MinWidth="200"
-                                      ItemsSource="{Binding StatisticsTaps}"
-                                      SelectedItem="{Binding SelectedStatisticsTap}"
-                                      SelectionChanged="OnStatisticsTapChanged" />
-                            <ComboBox Grid.Column="2" Margin="10,0,4,0" Height="24"
-                                      FontSize="12" MinWidth="170"
-                                      ItemsSource="{Binding TcpStreams}"
-                                      SelectedItem="{Binding SelectedTcpStream}"
-                                      ToolTip.Tip="{DynamicResource L10n.Stats.FollowStream}"
-                                      PlaceholderText="{DynamicResource L10n.Stats.FollowStream}">
-                                <ComboBox.ItemTemplate>
-                                    <DataTemplate DataType="svc:StreamIndex" x:DataType="svc:StreamIndex">
-                                        <TextBlock FontSize="12">
-                                            <Run Text="{Binding StreamId}" />
-                                            <Run Text=" (" /><Run Text="{Binding Frames.Count}" /><Run Text=")" />
-                                        </TextBlock>
-                                    </DataTemplate>
-                                </ComboBox.ItemTemplate>
-                            </ComboBox>
-                            <Button Grid.Column="3" Margin="4,0" Padding="8,2" FontSize="12"
-                                    Content="{DynamicResource L10n.Rv.Show}"
-                                    ToolTip.Tip="{DynamicResource L10n.Rv.Title}"
-                                    Command="{Binding ShowReassembledBytesCommand}" />
-                            <Button Grid.Column="4" Margin="4,0" Padding="8,2" FontSize="12"
-                                    Content="{DynamicResource L10n.Stats.Refresh}"
-                                    Click="OnRefreshStatisticsClick" />
-                            <TextBlock Grid.Column="5" Margin="8,0" FontSize="11" Foreground="#888"
-                                       VerticalAlignment="Center"
-                                       Text="{Binding StatisticsStatus}" />
-                        </Grid>
-                    </Border>
-                    <ListBox Grid.Row="1" Name="ReassembledList"
-                             ItemsSource="{Binding ReassembledLines}"
-                             IsVisible="{Binding ShowReassembled}"
-                             Background="#FAFAFA" BorderThickness="0"
-                             FontFamily="Consolas, monospace" FontSize="11">
-                        <ListBox.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <StackPanel />
-                            </ItemsPanelTemplate>
-                        </ListBox.ItemsPanel>
-                    </ListBox>
-                    <ListBox Grid.Row="1" Name="StatisticsList"
-                             ItemsSource="{Binding StatisticsLines}"
-                             IsVisible="{Binding !ShowReassembled}"
-                             Background="White" BorderThickness="0"
-                             FontFamily="Consolas, monospace" FontSize="11">
-                        <ListBox.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <StackPanel />
-                            </ItemsPanelTemplate>
-                        </ListBox.ItemsPanel>
-                    </ListBox>
-                </Grid>
-            </Border>
-        </Grid>
+        <!-- ════════════════ Main Content (Dock) ════════════════ -->
+        <!-- 停靠指示层走 Dock 库自带的浮动指示窗(App.axaml.cs 已设 UseFloatingDockAdorner):
+             SukiUI 7.0.1 的窗口模板删除了 VisualLayerManager,窗口树中缺少 AdornerLayer
+             宿主,常规吸附器路径(AdornerLayer.GetAdornerLayer → Children.Add)静默失效。 -->
+        <DockControl Grid.Row="3" Name="MainDockControl"
+                     Layout="{Binding Layout}"
+                     Factory="{Binding Factory}" />
 
         <!-- ════════════════ Status Bar ════════════════ -->
-        <Border Grid.Row="4" Background="#F5F5F5" Padding="10,5,12,5"
-                BorderBrush="#CCC" BorderThickness="0,1,0,0">
+        <Border Grid.Row="4" Background="{DynamicResource SukiStrongBackground}" Padding="8,4"
+                BorderBrush="{DynamicResource SukiBorderBrush}" BorderThickness="0,1,0,0">
             <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6"
                             VerticalAlignment="Center">
@@ -494,13 +239,14 @@
                                  IsVisible="{Binding IsLoading}" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="18">
-                    <TextBlock FontSize="12" Foreground="#757575"
+                    <TextBlock FontSize="12" Foreground="{DynamicResource SukiDisabledText}"
                                Text="{Binding FileDisplay}" />
-                    <TextBlock FontSize="12" Foreground="#757575"
+                    <TextBlock FontSize="12" Foreground="{DynamicResource SukiDisabledText}"
                                IsVisible="{Binding HasUnsavedChanges}"
                                Text="{Binding ModifiedDisplay}" />
                 </StackPanel>
             </Grid>
         </Border>
     </Grid>
-</Window>
+    </VisualLayerManager>
+</suki:SukiWindow>

@@ -68,8 +68,9 @@ public sealed class PacketSendService
         bool autoFixFrames = true,
         VlanMode vlanMode = VlanMode.Leave,
         ushort vlanId = 0,
+        int linkLayerType = PacketPrepareService.LinkTypeUnknown,
         CancellationToken ct = default) =>
-        StartSendAsync(packets, [interfaceInfo], loopCount, intervalMs, autoFixFrames, vlanMode, vlanId, ct);
+        StartSendAsync(packets, [interfaceInfo], loopCount, intervalMs, autoFixFrames, vlanMode, vlanId, linkLayerType, ct);
 
     /// <summary>
     /// Starts sending packets from the list sequentially, fanning each packet out to
@@ -90,6 +91,7 @@ public sealed class PacketSendService
         bool autoFixFrames = true,
         VlanMode vlanMode = VlanMode.Leave,
         ushort vlanId = 0,
+        int linkLayerType = PacketPrepareService.LinkTypeUnknown,
         CancellationToken ct = default)
     {
         if (interfaceInfos.Count == 0)
@@ -127,7 +129,7 @@ public sealed class PacketSendService
             if (!targets.Any(t => t.CanSend))
                 return;
 
-            WarnWhenVlanCannotBeSent(targets, packets, vlanMode, vlanId);
+            WarnWhenVlanCannotBeSent(targets, packets, vlanMode, vlanId, linkLayerType);
             WarnWhenEgressCannotBePinned(targets);
 
             int total = packets.Count;
@@ -150,7 +152,7 @@ public sealed class PacketSendService
 
                     var packet = packets[i];
                     foreach (var target in targets)
-                        await SendPacketAsync(target, packet, i, autoFixFrames, vlanMode, vlanId);
+                        await SendPacketAsync(target, packet, i, autoFixFrames, vlanMode, vlanId, linkLayerType);
 
                     if (intervalMs > 0)
                     {
@@ -189,12 +191,12 @@ public sealed class PacketSendService
     /// discarded, which would otherwise look like the setting simply did nothing.
     /// </summary>
     private void WarnWhenVlanCannotBeSent(
-        List<SendTarget> targets, IReadOnlyList<Packet> packets, VlanMode vlanMode, ushort vlanId)
+        List<SendTarget> targets, IReadOnlyList<Packet> packets, VlanMode vlanMode, ushort vlanId, int linkLayerType)
     {
         if (vlanMode == VlanMode.Leave)
             return;
 
-        int affected = CountVlanAffected(packets, vlanMode, vlanId);
+        int affected = CountVlanAffected(packets, vlanMode, vlanId, linkLayerType);
         if (affected == 0)
             return; // nothing to tag anyway — e.g. bare IP datagrams only
 
@@ -352,13 +354,21 @@ public sealed class PacketSendService
     /// alarm; this is what keeps the warning tied to real taggable frames.
     /// </summary>
     public static int CountVlanAffected(IReadOnlyList<Packet> packets, VlanMode mode, ushort vid) =>
-        packets.Count(p => IsVlanAffected(p.EffectiveData, mode, vid));
+        CountVlanAffected(packets, mode, vid, PacketPrepareService.LinkTypeUnknown);
 
-    private static bool IsVlanAffected(byte[] frame, VlanMode mode, ushort vid) => mode switch
+    /// <summary>
+    /// Link-layer-aware form of <see cref="CountVlanAffected(IReadOnlyList{Packet}, VlanMode, ushort)"/>:
+    /// an Ethernet DLT makes any 14-byte-or-longer frame taggable, while a RAW DLT never is.
+    /// </summary>
+    public static int CountVlanAffected(
+        IReadOnlyList<Packet> packets, VlanMode mode, ushort vid, int linkLayerType) =>
+        packets.Count(p => IsVlanAffected(p.EffectiveData, mode, vid, linkLayerType));
+
+    private static bool IsVlanAffected(byte[] frame, VlanMode mode, ushort vid, int linkLayerType) => mode switch
     {
-        VlanMode.Insert => PacketPrepareService.HasEthernetHeader(frame)
+        VlanMode.Insert => PacketPrepareService.HasEthernetHeader(frame, linkLayerType)
                           && !PacketPrepareService.HasVlanTag(frame),
-        VlanMode.Replace => PacketPrepareService.HasEthernetHeader(frame)
+        VlanMode.Replace => PacketPrepareService.HasEthernetHeader(frame, linkLayerType)
                             && PacketPrepareService.GetVlanId(frame) != vid,
         VlanMode.Remove => PacketPrepareService.HasVlanTag(frame),
         _ => false,
@@ -568,7 +578,8 @@ public sealed class PacketSendService
         int index,
         bool autoFixFrames,
         VlanMode vlanMode,
-        ushort vlanId)
+        ushort vlanId,
+        int linkLayerType)
     {
         var sockets = target.Sockets;
         var interfaceInfo = target.Interface;
@@ -582,9 +593,9 @@ public sealed class PacketSendService
             // VLAN changes the frame, so the checksums the adapter is about to validate
             // are computed from the tagged bytes, not from the bytes as captured.
             data = autoFixFrames
-                ? PacketPrepareService.PrepareFrame(data, interfaceInfo)
+                ? PacketPrepareService.PrepareFrame(data, interfaceInfo, linkLayerType)
                 : data;
-            ipOffset = PacketPrepareService.FindIpOffset(data);
+            ipOffset = PacketPrepareService.FindIpOffset(data, linkLayerType);
         }
         catch (Exception ex)
         {
@@ -701,8 +712,11 @@ public sealed class PacketSendService
     private static async Task<(PacketSendResult? Result, string? Error)> TrySendIpDatagramAsync(
         Socket socket, byte[] data, int ipOffset, int index)
     {
+        if (ipOffset >= data.Length)
+            return (null, LocalizationService.Resolve("Send.FrameTooShort"));
+
         byte[] ipData = ipOffset > 0 ? data[ipOffset..] : data;
-        if (ipOffset >= 0 && (data[ipOffset] >> 4) == 4)
+        if (ipOffset >= 0 && data.Length >= ipOffset + 20 && (data[ipOffset] >> 4) == 4)
         {
             var dest = new IPEndPoint(new IPAddress(data[(ipOffset + 16)..(ipOffset + 20)]), 0);
             await socket.SendToAsync(ipData, SocketFlags.None, dest);

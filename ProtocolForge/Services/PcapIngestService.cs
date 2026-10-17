@@ -263,7 +263,7 @@ public sealed class PcapIngestService
         {
             var (_, _, resolExp, resolPow2) = interfaces[(int)ifaceId];
             if (resolPow2)
-                return (long)Math.Round((double)raw * Math.Pow(2, resolExp) / 1_000_000.0);
+                return (long)Math.Round((double)raw * 1_000_000.0 / Math.Pow(2, resolExp));
             if (resolExp <= 6)
                 return (long)Math.Round((double)raw * Math.Pow(10, 6 - resolExp));
             return (long)(raw / Pow10((ulong)(resolExp - 6)));

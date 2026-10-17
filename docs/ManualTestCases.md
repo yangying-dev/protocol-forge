@@ -38,7 +38,7 @@
 
 ```bash
 dotnet build            # 必须 0 警告 / 0 错误
-dotnet run --project tests/pf-verify   # 回归基线：ALL GROUPS PASS（378 断言）
+dotnet run --project tests/pf-verify   # 回归基线：ALL GROUPS PASS（414 断言）
 ```
 
 > 手工测试前先跑一次 harness，确认基线绿再动手。
@@ -242,8 +242,8 @@ python3 docs/make-synthetic-capture.py /tmp/pf-manual.pcap
   记录：☐ 通过　☐ 失败
 
 #### MT-E5 编辑围栏拒绝（不可编辑字段）
-- **步骤**：找无字节证据或计算类字段（如某些聚合/别名字段、位级子字段）双击。
-- **预期**：不弹编辑器；**状态栏显示 `Not editable: …` 及原因**（六检查：字段类型/字节跨距/字节对齐/帧内/字节证据/字节一致性）。
+- **步骤**：找无字节证据或计算类字段（如某些聚合/别名字段、无掩码的位级子字段）双击。
+- **预期**：不弹编辑器；**状态栏显示 `Not editable: …` 及原因**（字节级五检查：字段类型/字节跨距/帧内/字节证据/字节一致性；位级字段另有位掩码齐全性检查）。
   记录：☐ 通过　☐ 失败
 
 #### MT-E6 VBC 合法提交与联动刷新
@@ -553,8 +553,8 @@ python3 docs/make-synthetic-capture.py /tmp/pf-manual.pcap
 | 项 | 期望 |
 |---|---|
 | `dotnet build` | 0 警告 / 0 错误 |
-| `dotnet run --project tests/pf-verify` | **ALL GROUPS PASS**（378 断言 / 0 FAIL / 1 SKIP = G17-13） |
-| `dotnet run --project tests/pf-verify -- --ui` | 9 PASS（无头 GUI 渲染） |
+| `dotnet run --project tests/pf-verify` | **ALL GROUPS PASS**（414 断言 / 0 FAIL / 1 SKIP = G17-13） |
+| `dotnet run --project tests/pf-verify -- --ui` | 17 PASS（无头 GUI 渲染） |
 
 ---
 

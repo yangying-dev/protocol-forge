@@ -9,6 +9,7 @@ namespace ProtocolForge.Services;
 public sealed class LayoutService
 {
     private readonly string _configPath;
+    private readonly string _dockConfigPath;
 
     public LayoutService()
     {
@@ -17,6 +18,7 @@ public sealed class LayoutService
             "ProtocolForge");
         Directory.CreateDirectory(baseDir);
         _configPath = Path.Combine(baseDir, "layout.json");
+        _dockConfigPath = Path.Combine(baseDir, "docklayout.json");
     }
 
     public LayoutState Load()
@@ -41,6 +43,27 @@ public sealed class LayoutService
             File.WriteAllText(_configPath, json);
         }
         catch { /* silently fail — layout save is non-critical */ }
+    }
+
+    /// <summary>上次保存的 Dock 停靠布局 JSON;损坏或从未保存过返回 null(调用方回退默认布局)。</summary>
+    public string? LoadDockLayout()
+    {
+        try
+        {
+            if (File.Exists(_dockConfigPath))
+                return File.ReadAllText(_dockConfigPath);
+        }
+        catch { /* corrupt config — fall back to the default layout */ }
+        return null;
+    }
+
+    public void SaveDockLayout(string json)
+    {
+        try
+        {
+            File.WriteAllText(_dockConfigPath, json);
+        }
+        catch { /* silently fail — dock layout save is non-critical */ }
     }
 }
 

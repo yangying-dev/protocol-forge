@@ -50,7 +50,7 @@ CI runs the build with warnings as errors, so **`dotnet build ProtocolForge.sln 
 - **CommunityToolkit.Mvvm source generators.** `[ObservableProperty]` on a private field generates the public bindable property. `[RelayCommand]` and `[AsyncRelayCommand]` generate commands. Do not hand-write `INotifyPropertyChanged` plumbing.
 - **Views use code-behind.** Avalonia XAML plus a `.axaml.cs` for event handling. `HexEditor.axaml` is intentionally minimal because the hex view is built in code-behind; that is not an oversight either.
 - **Events between ViewModels, not references.** `PacketSelected`, `FieldSelected`, `FieldEdited`, `HexEdited`, `FieldFoundAtOffset` and friends. A ViewModel must not hold a reference to another ViewModel.
-- **`ViewLocator` maps `FooViewModel` to `FooView` by convention.** Renaming a ViewModel or its View silently breaks resolution, because the lookup is by name at runtime. This is also why obfuscating the assembly requires preserving public type and member names.
+- **Views are constructed directly; there is no `ViewLocator`.** A `ViewLocator` and the two value converters were removed before public release because nothing referenced them. Because XAML bindings and JSON persistence still resolve members by name at runtime, obfuscating the assembly requires preserving public type and member names.
 
 ### Platform and filesystem
 
@@ -65,7 +65,7 @@ CI runs the build with warnings as errors, so **`dotnet build ProtocolForge.sln 
 
 Two rules are load-bearing. Breaking either is a correctness regression, not a style issue.
 
-- **Hex editing is REPLACE-only.** Each edit run is built from full hex-digit pairs, so packet length never changes and every offset outside the edited span stays valid. Length-changing edits are rejected by design.
+- **Hex-pane editing is REPLACE-only.** Each edit run is built from full hex-digit pairs, so the hex pane never changes packet length and every offset outside the edited span stays valid. Tree field edits are same-length by default too: a value that would change the field's length is refused unless the field's `AllowLengthChange` opt-in is set (hex value only, default off, reset each time the editor opens), in which case the frame is spliced through `EditTransactionService.CommitLengthChangingEditAsync` after the same reparse verification. "Never changes length" is therefore the default, not an invariant you may assume everywhere.
 - **Nothing bypasses the edit fence.** Field edits must pass `CheckTreeEditFence` and go through `EditTransactionService`, which reparses with tshark and verifies the new value lands at the expected `(PDML name, byte offset)` before committing. Verify-Before-Commit is the reason this tool can be trusted to edit a capture; do not write a path that writes bytes directly.
 
 ### Text and encoding
@@ -101,19 +101,19 @@ dotnet run --project tests/pf-verify/PfVerify.csproj -- --only 12   # print one 
 
 `--only <group#>` and `--group <title-text>` are an **output-only** filter: every group still executes, FAIL lines always print, and the footer/exit code still judge the whole run, so a filtered run can never look green when something failed. Group banners and diagnostic lines inside a group must be emitted through the harness's `Banner(n, title)` / `Detail(text)` helpers, or they slip past the filter.
 
-It contains roughly 378 assertions grouped into numbered groups (G1 through G54, some numbers unused) and covers the tshark version gate, the edit-fence verdicts, Verify-Before-Commit commit / offset-drift abort / length-change rejection, read-only loading, hex-edit code surfaces, the send-ladder descent order, localization dictionary consistency, and (in the separate `--ui` mode) a headless render of the real main window. It also writes `report.txt` next to the built binary.
+It contains roughly 414 assertions grouped into numbered groups (G1 through G54, some numbers unused) and covers the tshark version gate, the edit-fence verdicts, Verify-Before-Commit commit / offset-drift abort / default length-change rejection and opt-in splice acceptance, read-only loading, hex-edit code surfaces, the send-ladder descent order, localization dictionary consistency, and (in the separate `--ui` mode) a headless render of the real main window. It also writes `report.txt` next to the built binary.
 
 ### SKIP is not PASS
 
 Read this before you treat a green run as full coverage.
 
-**Six groups SKIP when no capture fixture is present, and the harness still exits 0.** Each skipped group is named with its real reason, and the footer refuses to let a partial run pass as a full one:
+**Only `G17-13` skips on a bare run, and the harness still exits 0.** With `PF_CAPTURE` unset the harness generates a synthetic 4413-frame fixture for the capture-dependent groups, so the lone remaining skip is the large local pcapng. The skip is named with its real reason, and the footer refuses to let a partial run pass as a full one:
 
 ```text
-ALL GROUPS PASS — 6 GROUP(S) SKIPPED, so this is NOT full coverage: x5 capture fixture absent — set PF_CAPTURE to a local .pcap; x1 large-capture.pcapng absent — large capture is local-only
+ALL GROUPS PASS — 1 GROUP(S) SKIPPED, so this is NOT full coverage: x1 PF_CAPTURE_LARGE unset — the large local capture is not committed
 ```
 
-That exit code is 0 by design, so a capture-less checkout still reports usefully. But the string `ALL GROUPS PASS` is not the whole line, and the exit code alone does not mean the capture-dependent groups ran. **Read the footer, and read the SKIP lines.** On a fresh clone with no `PF_CAPTURE`, most of the edit-fence and Verify-Before-Commit coverage is not being exercised at all.
+That exit code is 0 by design, so a capture-less checkout still reports usefully. But the string `ALL GROUPS PASS` is not the whole line, and the exit code alone does not mean the capture-dependent groups ran. **Read the footer, and read the SKIP lines.** On a fresh clone with no `PF_CAPTURE`, the capture-dependent groups run against the generated synthetic fixture, so the only gap left is `G17-13`.
 
 ### One group that `PF_CAPTURE` cannot satisfy
 
@@ -143,7 +143,7 @@ To exercise those groups against real operator traffic instead, set `PF_CAPTURE`
 PF_CAPTURE=/absolute/or/repo-relative/path/to/capture.pcap dotnet run --project tests/pf-verify/PfVerify.csproj
 ```
 
-Points the harness at a local capture. Both absolute and repo-relative values work. There is no fallback path: unset means the capture-dependent groups skip. Nothing is ever read from a built-in default location, so there is no chance of a capture name leaking into the source tree.
+Points the harness at a local capture. Both absolute and repo-relative values work. When unset, the harness generates a synthetic 4413-frame capture into the temp directory and deletes it afterwards; the capture-dependent groups run against that, and only `G17-13` still skips. Nothing is ever read from a built-in default location, so there is no chance of a capture name leaking into the source tree.
 
 ### `PF_CAPTURE_LARGE`
 
@@ -177,16 +177,12 @@ Because `G17-13` is never satisfied by `PF_CAPTURE`, a strict run cannot reach a
 
 Conventional style is not enforced by tooling; this is house style, and it is quite distinctive:
 
-- **Messages are in English.**
+- **Messages are in Chinese.**
 - The subject names the file(s) touched and gives a line delta, then a colon and a short description.
 
-For example: `TsharkService.cs +187: version detection, gate, streamed list load and on-demand tree build`
+For example: `TsharkService.cs +187：版本检测/门禁/流式列表加载与按需建树`
 
 Follow it. It makes `git log` readable in a way that a conventional-commits subject line does not for this codebase.
-
-Note on history: the pre-open-source fork recorded its commits in Chinese, so older entries in
-the shared ancestry are still Chinese. This repository's own history is English, and new
-commits follow the English form above.
 
 ## Pull requests
 
@@ -258,7 +254,7 @@ CI 以警告即错误方式构建，所以**「`dotnet build ProtocolForge.sln -
 - **使用 CommunityToolkit.Mvvm 源生成器。** 私有字段上加 `[ObservableProperty]` 生成可绑定属性，`[RelayCommand]` / `[AsyncRelayCommand]` 生成命令。不要手写 `INotifyPropertyChanged` 样板。
 - **视图使用代码后置。** Avalonia XAML 加 `.axaml.cs` 处理事件。`HexEditor.axaml` 刻意保持极简，因为十六进制视图在代码后置中构建；这同样不是疏漏。
 - **ViewModel 之间用事件，不用引用。** `PacketSelected`、`FieldSelected`、`FieldEdited`、`HexEdited`、`FieldFoundAtOffset` 等。ViewModel 不得持有另一个 ViewModel 的引用。
-- **`ViewLocator` 按命名约定把 `FooViewModel` 映射到 `FooView`。** 重命名 ViewModel 或其 View 会静默破坏解析，因为查找是运行时按名称进行的。这也是混淆程序集时必须保留公开类型与成员名称的原因。
+- **视图直接构造，没有 `ViewLocator`。** `ViewLocator` 与两个值转换器因无人引用已在公开发布前删除。由于 XAML 绑定与 JSON 持久化仍在运行时按名称解析成员，混淆程序集时必须保留公开类型与成员名称。
 
 ### 平台与文件系统
 
@@ -273,7 +269,7 @@ CI 以警告即错误方式构建，所以**「`dotnet build ProtocolForge.sln -
 
 以下两条规则是承重的。任何一条被破坏都是正确性回归，而非风格问题。
 
-- **十六进制编辑仅支持 REPLACE。** 每次编辑串都由完整的十六进制数字对构成，因此报文长度永不改变，编辑跨度之外的每个偏移量都保持有效。改变长度的编辑按设计被拒绝。
+- **十六进制面板编辑仅支持 REPLACE。** 每次编辑串都由完整的十六进制数字对构成，因此 hex 面板不改变报文长度，编辑跨度之外的每个偏移量都保持有效。树字段编辑默认同样是等长的：会导致字段长度变化的值会被拒绝，除非开启了该字段的 `AllowLengthChange` 选择加入（仅限十六进制值，默认关闭，每次打开编辑器即重置），此时报文会经 `EditTransactionService.CommitLengthChangingEditAsync` 拼接，并经过与等长编辑相同的重解析校验。因此「长度永不改变」是**默认行为**，而非可以到处假定的不变式。
 - **任何路径都不得绕过编辑围栏。** 字段编辑必须通过 `CheckTreeEditFence` 并经由 `EditTransactionService`，后者会用 tshark 重新解析，验证新值确实落在预期的 `(PDML name, byte offset)` 位置后才提交。Verify-Before-Commit 是这个工具可以被信任用来修改抓包的原因；不要写出直接写字节的路径。
 
 ### 文本与编码
@@ -309,19 +305,19 @@ dotnet run --project tests/pf-verify/PfVerify.csproj -- --only 12   # 迭代时�
 
 `--only <组号>` 与 `--group <标题子串>` 是**只过滤输出**的开关：所有组照常执行、FAIL 行无条件打印、结尾行与退出码始终按全量判定，所以过滤后的运行不可能在有失败时「看起来是绿的」。组横幅与组内诊断行必须走 harness 的 `Banner(n, title)` / `Detail(text)` 辅助函数，否则会绕过过滤漏出来。
 
-其中有约 378 条断言，按编号分组（G1 到 G54，部分编号未使用），覆盖 tshark 版本门禁、编辑围栏裁决、Verify-Before-Commit 的提交 / 偏移漂移中止 / 长度变化拒绝、只读加载、十六进制编辑代码面、发送阶梯的下降顺序、本地化字典一致性，以及独立 `--ui` 模式下对真实主窗口的无头渲染。同时会在构建产物旁写出 `report.txt`。
+其中有约 414 条断言，按编号分组（G1 到 G54，部分编号未使用），覆盖 tshark 版本门禁、编辑围栏裁决、Verify-Before-Commit 的提交 / 偏移漂移中止 / 长度变化拒绝、只读加载、十六进制编辑代码面、发送阶梯的下降顺序、本地化字典一致性，以及独立 `--ui` 模式下对真实主窗口的无头渲染。同时会在构建产物旁写出 `report.txt`。
 
 ### SKIP 不是 PASS
 
 在把一次绿色运行当作完整覆盖之前，请先读完这一节。
 
-**没有抓包夹具时，六个组会 SKIP，而验证工具仍然以 0 退出。** 每个被跳过的组都会带上真实原因被点名，结尾行也不会让一次部分覆盖的运行冒充完整覆盖：
+**裸跑时只有 `G17-13` 会 SKIP，验证工具仍以 0 退出。** 未设置 `PF_CAPTURE` 时，工具会为依赖抓包的分组生成一份 4413 帧合成抓包，因此唯一剩下的跳过就是那份本地大型 pcapng。每个被跳过的组都会带上真实原因被点名，结尾行也不会让一次部分覆盖的运行冒充完整覆盖：
 
 ```text
-ALL GROUPS PASS — 6 GROUP(S) SKIPPED, so this is NOT full coverage: x5 capture fixture absent — set PF_CAPTURE to a local .pcap; x1 large-capture.pcapng absent — large capture is local-only
+ALL GROUPS PASS — 1 GROUP(S) SKIPPED, so this is NOT full coverage: x1 PF_CAPTURE_LARGE unset — the large local capture is not committed
 ```
 
-退出码为 0 是刻意设计的，这样没有抓包的检出依然能给出有用结果。但 `ALL GROUPS PASS` 不是整行的全部内容，单看退出码也不能说明依赖抓包的组真的跑了。**请读完结尾行，也请读 SKIP 行。** 在没有设置 `PF_CAPTURE` 的全新克隆上，编辑围栏与 Verify-Before-Commit 的大部分覆盖根本没有被执行。
+退出码为 0 是刻意设计的，这样没有抓包的检出依然能给出有用结果。但 `ALL GROUPS PASS` 不是整行的全部内容，单看退出码也不能说明依赖抓包的组真的跑了。**请读完结尾行，也请读 SKIP 行。** 在没有设置 `PF_CAPTURE` 的全新克隆上，依赖抓包的分组会跑在生成的合成抓包上，唯一的缺口只剩 `G17-13`。
 
 ### `PF_CAPTURE` 无法满足的一个组
 
@@ -331,7 +327,7 @@ ALL GROUPS PASS — 6 GROUP(S) SKIPPED, so this is NOT full coverage: x5 capture
 
 这一点很容易误导，在把 `PF_CAPTURE` 指向你自己生成的文件之前请先读它。
 
-`G1`、`G16`、`G19` 是针对某一个特定抓包编写的：它们断言文件至少有 **4413 个包**，然后按编号取 **第 4413 帧**。把 `PF_CAPTURE` 指向任何更小的抓包，这三个组会从「跳过」变成「**5931败**」：
+`G1`、`G16`、`G19` 是针对某一个特定抓包编写的：它们断言文件至少有 **4413 个包**，然后按编号取 **第 4413 帧**。把 `PF_CAPTURE` 指向任何更小的抓包，这三个组会从「跳过」变成「**失败**」：
 
 ```text
 FAIL G1 load pcap has >=4413 packets: count=6
@@ -383,15 +379,12 @@ PF_STRICT_CAPTURE=1 PF_CAPTURE=/path/to/local.pcap dotnet run --project tests/pf
 
 工具层面并不强制某种约定式提交规范；这是本仓库的既定风格，而且相当有辨识度：
 
-- **信息用英文书写。**
+- **信息用中文书写。**
 - 主题行写出涉及的文件名与行数增量，然后是冒号和一句简短说明。
 
-例如：`TsharkService.cs +187: version detection, gate, streamed list load and on-demand tree build`
+例如：`TsharkService.cs +187：版本检测/门禁/流式列表加载与按需建树`
 
 请沿用这种写法。对本代码库而言，它能让 `git log` 以约定式提交主题行做不到的方式保持可读。
-
-关于历史：开源前的分叉仓库用中文记录提交，因此共享祖先上的旧条目仍是中文；本仓库自身的
-历史为英文，新提交一律按上面的英文写法。
 
 ## Pull Request
 

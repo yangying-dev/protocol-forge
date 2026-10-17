@@ -100,6 +100,33 @@ public sealed class TsharkSettingsService
         catch { /* silently fail — settings save is non-critical */ }
     }
 
+    public string? LoadThemeVariant()
+    {
+        try
+        {
+            if (File.Exists(_configPath))
+            {
+                var json = File.ReadAllText(_configPath);
+                var settings = JsonSerializer.Deserialize<TsharkSettings>(json);
+                if (settings != null && !string.IsNullOrWhiteSpace(settings.ThemeVariant))
+                    return settings.ThemeVariant;
+            }
+        }
+        catch { /* corrupt config — use defaults */ }
+        return null;
+    }
+
+    public void SaveThemeVariant(string? variant)
+    {
+        try
+        {
+            var settings = LoadAll();
+            settings.ThemeVariant = variant;
+            SaveAll(settings);
+        }
+        catch { /* silently fail — settings save is non-critical */ }
+    }
+
     private TsharkSettings LoadAll()
     {
         try
@@ -127,5 +154,6 @@ public sealed class TsharkSettingsService
         public string? TsharkPath { get; set; }
         public string? TlsKeylogPath { get; set; }
         public string? Language { get; set; }
+        public string? ThemeVariant { get; set; }
     }
 }

@@ -22,7 +22,7 @@ artifacts/linux-x64/
 
 需要：
 
-- .NET 8 SDK；
+- .NET 10 SDK；
 - `tshark`（运行时依赖，不打包进程序）；
 - ImageMagick `convert` 或 `magick`；
 - `appimagetool`；

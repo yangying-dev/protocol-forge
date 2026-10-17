@@ -25,6 +25,9 @@ public sealed partial class PacketListViewModel : ObservableObject
     [ObservableProperty]
     private bool _isEnabled;
 
+    /// <summary>Link-layer type (DLT) of the loaded capture, forwarded to the send path.</summary>
+    public int LinkLayerType { get; private set; } = 1;
+
     /// <summary>True when every packet is marked for sending, false when none, null when mixed.</summary>
     [ObservableProperty]
     private bool? _allSelectedForSend = false;
@@ -53,6 +56,7 @@ public sealed partial class PacketListViewModel : ObservableObject
         Packets = document.Packets;
         SelectedPacket = document.SelectedPacket;
         IsEnabled = document.IsLoaded;
+        LinkLayerType = document.LinkLayerType;
 
         if (document.SelectedPacket != null)
             SelectedIndex = document.SelectedPacket.Index;

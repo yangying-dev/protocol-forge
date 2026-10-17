@@ -1,0 +1,247 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ProtocolForge.ViewModels"
+             xmlns:models="using:ProtocolForge.Models"
+             xmlns:controls="using:ProtocolForge.Views.Controls"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="400"
+             x:Class="ProtocolForge.Views.Controls.PacketListPaneView"
+             x:DataType="vm:MainWindowViewModel">
+    <Grid RowDefinitions="Auto,*">
+        <!-- 顶部工具条:报文数 + 过滤器组 + 查找组(整组左对齐,行高/内边距对齐主工具栏;
+             文件名已由主窗口状态栏呈现,此处不再重复) -->
+        <Border Grid.Row="0" Background="{DynamicResource SukiStrongBackground}" Padding="6,0"
+                BorderBrush="{DynamicResource SukiBorderBrush}" BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="4">
+                <TextBlock Grid.Column="0"
+                           Text="{Binding PacketsDisplay}"
+                           FontWeight="SemiBold" FontSize="12"
+                           VerticalAlignment="Center" Margin="2,0,8,0" />
+                <Panel Grid.Column="1">
+                    <!-- SukiUI 的 TextBox 主题自带 Padding="10,8"(上下共 16px)与 MinHeight="36";
+                         在 Height="26" 下内容区只剩约 10px,文字被裁掉一半。这里固定 26 并去掉纵向
+                         内边距,使 12px 文本完整居中。宽度弹性占满剩余空间,最小为查询框的两倍。 -->
+                    <Grid>
+                        <TextBox Name="FilterBox" MinWidth="320" Height="26" MinHeight="26"
+                                 Padding="6,0,26,0" FontSize="12"
+                                 FontFamily="Consolas, monospace"
+                                 VerticalContentAlignment="Center"
+                                 HorizontalAlignment="Stretch"
+                                 Text="{Binding FilterText, Mode=TwoWay}"
+                                 Classes.filter-valid="{Binding IsFilterValid}"
+                                 Classes.filter-invalid="{Binding IsFilterInvalid}"
+                                 PlaceholderText="{DynamicResource L10n.Filter.Placeholder}"
+                                 ToolTip.Tip="{Binding FilterToolTip}"
+                                 KeyDown="OnFilterKeyDown"
+                                 TextChanged="OnFilterTextChanged" />
+                        <Button Content="▾" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                Width="22" Height="22" Margin="0,0,2,0" Padding="0" FontSize="12"
+                                Background="Transparent" BorderThickness="0"
+                                IsEnabled="{Binding HasRecentFilters}"
+                                ToolTip.Tip="{DynamicResource L10n.Filter.History}"
+                                Click="OnFilterHistoryClick" />
+                    </Grid>
+                    <Popup PlacementTarget="{Binding #FilterBox}"
+                           Placement="BottomEdgeAlignedLeft"
+                           IsLightDismissEnabled="True"
+                           IsOpen="{Binding IsFilterSuggestionOpen, Mode=TwoWay}">
+                        <Border Background="{DynamicResource SukiCardBackground}"
+                                BorderBrush="{DynamicResource SukiBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                MaxHeight="240"
+                                MinWidth="200">
+                            <ListBox ItemsSource="{Binding FilterSuggestions}"
+                                     SelectedIndex="{Binding SelectedFilterSuggestionIndex, Mode=TwoWay}"
+                                     FontFamily="Consolas, monospace"
+                                     FontSize="12"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     Tapped="OnFilterSuggestionTapped" />
+                        </Border>
+                    </Popup>
+                    <Popup PlacementTarget="{Binding #FilterBox}"
+                           Placement="BottomEdgeAlignedLeft"
+                           IsLightDismissEnabled="True"
+                           IsOpen="{Binding IsFilterHistoryOpen, Mode=TwoWay}">
+                        <Border Background="{DynamicResource SukiCardBackground}"
+                                BorderBrush="{DynamicResource SukiBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                MaxHeight="240"
+                                MinWidth="200">
+                            <ListBox ItemsSource="{Binding RecentFilters}"
+                                     FontFamily="Consolas, monospace"
+                                     FontSize="12"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     Tapped="OnFilterHistoryTapped" />
+                        </Border>
+                    </Popup>
+                </Panel>
+                <Button Grid.Column="2" Content="{DynamicResource L10n.Filter.Apply}"
+                        FontSize="12" Padding="8,0" Height="26" VerticalAlignment="Center"
+                        Command="{Binding ApplyFilterCommand}" />
+                <Button Grid.Column="3" Content="{DynamicResource L10n.Filter.Clear}"
+                        FontSize="12" Padding="8,0" Height="26" VerticalAlignment="Center"
+                        Command="{Binding ClearFilterCommand}" />
+                <Grid Grid.Column="4" Margin="8,0,0,0">
+                    <TextBox Name="FindBox" Width="360" Height="26" MinHeight="26"
+                             Padding="6,0,26,0" FontSize="12"
+                             FontFamily="Consolas, monospace"
+                             VerticalContentAlignment="Center"
+                             Text="{Binding FindText, Mode=TwoWay}"
+                             PlaceholderText="{DynamicResource L10n.Find.Placeholder}"
+                             KeyDown="OnFindKeyDown" />
+                    <Button Content="▾" HorizontalAlignment="Right" VerticalAlignment="Center"
+                            Width="22" Height="22" Margin="0,0,2,0" Padding="0" FontSize="12"
+                            Background="Transparent" BorderThickness="0"
+                            IsEnabled="{Binding HasRecentFinds}"
+                            ToolTip.Tip="{DynamicResource L10n.Find.History}"
+                            Click="OnFindHistoryClick" />
+                    <Popup PlacementTarget="{Binding #FindBox}"
+                           Placement="BottomEdgeAlignedLeft"
+                           IsLightDismissEnabled="True"
+                           IsOpen="{Binding IsFindHistoryOpen, Mode=TwoWay}">
+                        <Border Background="{DynamicResource SukiCardBackground}"
+                                BorderBrush="{DynamicResource SukiBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                MaxHeight="240"
+                                MinWidth="200">
+                            <ListBox ItemsSource="{Binding RecentFinds}"
+                                     FontFamily="Consolas, monospace"
+                                     FontSize="12"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     Tapped="OnFindHistoryTapped" />
+                        </Border>
+                    </Popup>
+                </Grid>
+                <Button Grid.Column="5" Content="↑" FontSize="12" Padding="8,0" Height="26"
+                        VerticalAlignment="Center"
+                        Command="{Binding FindPreviousCommand}"
+                        ToolTip.Tip="{DynamicResource L10n.Find.Previous}" />
+                <Button Grid.Column="6" Content="↓" FontSize="12" Padding="8,0" Height="26"
+                        VerticalAlignment="Center"
+                        Command="{Binding FindNextCommand}"
+                        ToolTip.Tip="{DynamicResource L10n.Find.Next}" />
+            </Grid>
+        </Border>
+
+        <!-- Packet list rows -->
+        <DataGrid Grid.Row="1" Name="PacketListView"
+                  ItemsSource="{Binding PacketList.Packets}"
+                  SelectedItem="{Binding PacketList.SelectedPacket}"
+                  IsReadOnly="True"
+                  AutoGenerateColumns="False"
+                  CanUserResizeColumns="True"
+                  CanUserSortColumns="True"
+                  controls:DoubleClickAutoFit.IsEnabled="True"
+                  ColumnHeaderHeight="26"
+                  RowHeight="22"
+                  GridLinesVisibility="Horizontal"
+                  HorizontalGridLinesBrush="{DynamicResource SukiBorderBrush}"
+                  Background="{DynamicResource SukiCardBackground}"
+                  BorderThickness="0">
+            <DataGrid.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="{DynamicResource L10n.Ctx.SelectAll}" Click="OnSelectAllSendClick" />
+                    <MenuItem Header="{DynamicResource L10n.Ctx.InvertSelection}" Click="OnInvertSendSelectionClick" />
+                    <MenuItem Header="{DynamicResource L10n.Ctx.ClearSelection}" Click="OnClearSendSelectionClick" />
+                    <Separator />
+                    <MenuItem Header="{DynamicResource L10n.Ctx.SendThisPacket}" Click="OnSendThisPacketClick"
+                              ToolTip.Tip="{DynamicResource L10n.Tip.SendRow}" />
+                    <Separator />
+                    <MenuItem Header="{DynamicResource L10n.Ctx.ExportSendHistory}" Click="OnExportSendHistoryClick"
+                              IsEnabled="{Binding ToolBar.SendHistory.Count}" />
+                    <MenuItem Header="{DynamicResource L10n.Ctx.ClearSendHistory}" Click="OnClearSendHistoryClick"
+                              IsEnabled="{Binding ToolBar.SendHistory.Count}" />
+                </ContextMenu>
+            </DataGrid.ContextMenu>
+            <DataGrid.Columns>
+                <!-- No. with Send checkbox -->
+                <DataGridTemplateColumn Header="{DynamicResource L10n.Grid.No}" SortMemberPath="PacketNumber" Width="Auto" MinWidth="50">
+                    <DataGridTemplateColumn.Header>
+                        <StackPanel Orientation="Horizontal" Spacing="4"
+                                    Margin="4,0">
+                            <CheckBox Name="SelectAllSendCheckBox"
+                                      IsThreeState="True"
+                                      IsChecked="True"
+                                      VerticalAlignment="Center"
+                                      IsCheckedChanged="OnSelectAllSendToggle"
+                                      ToolTip.Tip="{DynamicResource L10n.Tip.SelectAllSend}" />
+                            <TextBlock Text="{DynamicResource L10n.Grid.No}" FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </DataGridTemplateColumn.Header>
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="models:Packet">
+                            <StackPanel Orientation="Horizontal" Spacing="6"
+                                        VerticalAlignment="Center" Margin="4,0">
+                                <CheckBox IsChecked="{Binding SendSelected}"
+                                          VerticalAlignment="Center"
+                                          ToolTip.Tip="{DynamicResource L10n.Tip.IncludePacket}" />
+                                <TextBlock Text="{Binding PacketNumber}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <!-- Time -->
+                <DataGridTemplateColumn Header="{DynamicResource L10n.Grid.Time}" SortMemberPath="TimestampDisplay" Width="Auto" MinWidth="230">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="models:Packet">
+                            <TextBlock Text="{Binding TimestampDisplay}" VerticalAlignment="Center" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <!-- Source (read-only) -->
+                <DataGridTemplateColumn Header="{DynamicResource L10n.Grid.Source}" SortMemberPath="SourceAddress" Width="Auto" MinWidth="120">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="models:Packet">
+                            <TextBlock Text="{Binding SourceAddress}" VerticalAlignment="Center" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <!-- Destination (read-only) -->
+                <DataGridTemplateColumn Header="{DynamicResource L10n.Grid.Destination}" SortMemberPath="DestinationAddress" Width="Auto" MinWidth="120">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="models:Packet">
+                            <TextBlock Text="{Binding DestinationAddress}" VerticalAlignment="Center" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <!-- Protocol -->
+                <!-- 协议/长度原本无 MinWidth:窗口变窄、星号「信息」列缩到其下限(200)后,剩余
+                     缺口会全部压到这两个"能缩"的列上,列头文字被挤到截断(长度→"长..")。
+                     补一个下限兜底,窗口过窄时改为整表出横向滚动条,而不是裁掉列头。 -->
+                <DataGridTemplateColumn Header="{DynamicResource L10n.Grid.Protocol}" SortMemberPath="ProtocolName" Width="Auto" MinWidth="60">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="models:Packet">
+                            <TextBlock Text="{Binding ProtocolName}" VerticalAlignment="Center" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <!-- Length -->
+                <DataGridTemplateColumn Header="{DynamicResource L10n.Grid.Length}" SortMemberPath="Length" Width="Auto" MinWidth="60">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="models:Packet">
+                            <TextBlock Text="{Binding Length}" VerticalAlignment="Center" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <!-- Info -->
+                <!-- 「信息」列保留星号宽度(宽窗口下继续填满),但补一个 MinWidth:星号列缩到该下限后
+                     不再继续缩,故窗口窄到列总宽超过视口时才出现横向滚动条。默认星号列可一直缩到
+                     最小宽,列总宽恒等于视口宽 → 横向滚动条永不出现。 -->
+                <DataGridTemplateColumn Header="{DynamicResource L10n.Grid.Info}" SortMemberPath="Summary" Width="*" MinWidth="200">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="models:Packet">
+                            <TextBlock Text="{Binding Summary}" VerticalAlignment="Center" ToolTip.Tip="{Binding Summary}" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+    </Grid>
+</UserControl>

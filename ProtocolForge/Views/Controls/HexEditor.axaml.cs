@@ -19,12 +19,12 @@ namespace ProtocolForge.Views.Controls;
 public partial class HexEditor : UserControl
 {
     private const int BytesPerRow = 16;
-    private const double CellWidth = 30;
-    private const double CellHeight = 24;
-    private const double CellMargin = 1;
-    private const double AsciiCellWidth = 11;
-    private const double RowLabelWidth = 60;
-    private const double ByteGroupGap = 14;
+    private const double CellWidth = 22;
+    private const double CellHeight = 21;
+    private const double CellMargin = 0;
+    private const double AsciiCellWidth = 10;
+    private const double RowLabelWidth = 46;
+    private const double ByteGroupGap = 10;
 
     private static readonly FontFamily MonospaceFont = new("Cascadia Code, JetBrains Mono, Consolas, 'Courier New', monospace");
 
@@ -32,6 +32,12 @@ public partial class HexEditor : UserControl
     private readonly List<HexRow> _rows = [];
     private ScrollViewer? _scrollViewer;
     private bool _rebuildQueued;
+
+    private IBrush _surfaceBrush = Brushes.White;
+    private IBrush _offsetTextBrush = new SolidColorBrush(Color.FromArgb(255, 100, 100, 100));
+    private IBrush _asciiTextBrush = Brushes.Black;
+    private IBrush _altRowBrush = new SolidColorBrush(Color.FromArgb(10, 0, 0, 0));
+    private IBrush _mutedTextBrush = Brushes.Gray;
 
     private struct HexRow
     {
@@ -47,7 +53,53 @@ public partial class HexEditor : UserControl
     public HexEditor()
     {
         InitializeComponent();
+        ActualThemeVariantChanged += (_, _) => ApplyTheme();
     }
+
+    private void ApplyTheme()
+    {
+        UpdateThemeBrushes();
+        if (_viewModel == null) return;
+
+        if (_viewModel.Bytes.Count == 0)
+        {
+            RebuildRows();
+            return;
+        }
+
+        if (_scrollViewer != null)
+            _scrollViewer.Background = _surfaceBrush;
+
+        foreach (var row in _rows)
+        {
+            row.Label.Foreground = _offsetTextBrush;
+            row.Container.Background = (row.BaseOffset / BytesPerRow) % 2 == 1
+                ? _altRowBrush
+                : Brushes.Transparent;
+        }
+        RefreshVisualState();
+    }
+
+    private void UpdateThemeBrushes()
+    {
+        _surfaceBrush = ThemeBrush("SukiCardBackground", _surfaceBrush);
+        _offsetTextBrush = ThemeBrush("SukiMuteText", _offsetTextBrush);
+        _asciiTextBrush = ThemeBrush("SukiText", _asciiTextBrush);
+        _altRowBrush = ThemeBrush("SukiPrimaryColor3", _altRowBrush);
+        _mutedTextBrush = ThemeBrush("SukiMuteText", _mutedTextBrush);
+    }
+
+    // SukiUI publishes its palette as Color values (not brushes), so accept either
+    // form and wrap a bare Color in a brush.
+    private IBrush ThemeBrush(string key, IBrush fallback) =>
+        this.TryFindResource(key, ActualThemeVariant, out var value)
+            ? value switch
+            {
+                IBrush brush => brush,
+                Color color => new SolidColorBrush(color),
+                _ => fallback,
+            }
+            : fallback;
 
     protected override void OnDataContextChanged(EventArgs e)
     {
@@ -151,6 +203,7 @@ public partial class HexEditor : UserControl
     private void RebuildRows()
     {
         TraceLog.Write($"RebuildRows ENTER (bytes={_viewModel?.Bytes.Count} scrollWasNull={_scrollViewer == null})");
+        UpdateThemeBrushes();
         var grid = HexContentGrid;
         grid.Children.Clear();
         _rows.Clear();
@@ -163,7 +216,7 @@ public partial class HexEditor : UserControl
             {
                 Text = LocalizationService.Resolve("Hex.NoPacketSelected"),
                 FontSize = 14,
-                Foreground = Brushes.Gray,
+                Foreground = _mutedTextBrush,
                 Margin = new Thickness(16, 12),
             });
             return;
@@ -175,7 +228,7 @@ public partial class HexEditor : UserControl
 
         var outerScroll = new ScrollViewer
         {
-            Background = Brushes.White,
+            Background = _surfaceBrush,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
         };
@@ -204,11 +257,11 @@ public partial class HexEditor : UserControl
             // Offset label
             var label = new TextBlock
             {
-                Text = $"{baseOffset:X8}",
+                Text = $"{baseOffset:X4}",
                 FontFamily = MonospaceFont,
-                FontSize = 12,
+                FontSize = 15,
                 Width = RowLabelWidth,
-                Foreground = new SolidColorBrush(Color.FromArgb(255, 100, 100, 100)),
+                Foreground = _offsetTextBrush,
                 VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
                 Margin = new Thickness(0, 0, 6, 0),
             };
@@ -244,7 +297,7 @@ public partial class HexEditor : UserControl
                 {
                     Text = GetHexCellText(hexByte),
                     FontFamily = MonospaceFont,
-                    FontSize = 13,
+                    FontSize = 15,
                     HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
                     VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
                 };
@@ -255,7 +308,7 @@ public partial class HexEditor : UserControl
                     Width = CellWidth,
                     Height = CellHeight,
                     Margin = new Thickness(CellMargin),
-                    CornerRadius = new CornerRadius(3),
+                    CornerRadius = new CornerRadius(0),
                     Background = GetByteBackground(hexByte),
                     Cursor = new Cursor(StandardCursorType.Hand),
                     Focusable = true,
@@ -283,7 +336,7 @@ public partial class HexEditor : UserControl
             }
 
             // Gap between hex and ASCII
-            rowPanel.Children.Add(new Border { Width = 16 });
+            rowPanel.Children.Add(new Border { Width = 10 });
 
             // ASCII cells
             var asciiCells = new Border[countInRow];
@@ -299,7 +352,7 @@ public partial class HexEditor : UserControl
                 {
                     Text = GetAsciiCellText(hexByte),
                     FontFamily = MonospaceFont,
-                    FontSize = 13,
+                    FontSize = 15,
                     HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
                     VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
                 };
@@ -310,7 +363,7 @@ public partial class HexEditor : UserControl
                     Width = AsciiCellWidth,
                     Height = CellHeight,
                     Margin = new Thickness(CellMargin),
-                    CornerRadius = new CornerRadius(2),
+                    CornerRadius = new CornerRadius(0),
                     Background = Brushes.Transparent,
                     Cursor = new Cursor(StandardCursorType.Hand),
                     Focusable = true,
@@ -339,7 +392,7 @@ public partial class HexEditor : UserControl
 
             // Highlight alternating row backgrounds for readability
             if (row % 2 == 1)
-                rowContainer.Background = new SolidColorBrush(Color.FromArgb(10, 0, 0, 0));
+                rowContainer.Background = _altRowBrush;
 
             rowContainer.Child = rowPanel;
             outerStack.Children.Add(rowContainer);
@@ -517,7 +570,7 @@ public partial class HexEditor : UserControl
                     row.HexCells[i].Background = GetByteBackground(hexByte);
                     row.HexTexts[i].Text = GetHexCellText(hexByte);
                     row.AsciiTexts[i].Text = GetAsciiCellText(hexByte);
-                    row.AsciiTexts[i].Foreground = hexByte.IsEditPending ? Brushes.Gray : Brushes.Black;
+                    row.AsciiTexts[i].Foreground = hexByte.IsEditPending ? _mutedTextBrush : _asciiTextBrush;
                 }
             }
         }

@@ -1,0 +1,1309 @@
+<!DOCTYPE html>
+<html lang="en-US" data-lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ProtocolForge — 用户手册 / User Manual</title>
+<meta name="description" content="ProtocolForge desktop app user manual — bilingual (简体中文 / English), offline, single file.">
+<style>
+/* ============================================================
+   Design tokens — single source of truth for the whole manual.
+   Every colour, space, radius and shadow below is referenced
+   only through these variables.
+   ============================================================ */
+:root{
+  --accent:#2563eb;
+  --accent-dark:#1d4ed8;
+  --accent-soft:#eff6ff;
+  --accent-border:#bfdbfe;
+
+  --bg:#ffffff;
+  --bg-canvas:#f6f8fb;
+  --bg-muted:#f8fafc;
+  --bg-code:#f1f5f9;
+  --bg-kbd:#ffffff;
+
+  --text:#0f172a;
+  --text-soft:#334155;
+  --text-muted:#64748b;
+
+  --border:#e2e8f0;
+  --border-strong:#cbd5e1;
+
+  --ok:#15803d;
+  --ok-soft:#dcfce7;
+  --warn:#b45309;
+  --warn-soft:#fef3c7;
+  --danger:#b91c1c;
+  --danger-soft:#fee2e2;
+
+  --radius-sm:6px;
+  --radius:10px;
+  --radius-lg:14px;
+
+  --shadow-sm:0 1px 2px rgba(15,23,42,.06);
+  --shadow:0 2px 8px rgba(15,23,42,.08);
+  --shadow-lg:0 12px 32px rgba(15,23,42,.12);
+
+  --space-1:4px;
+  --space-2:8px;
+  --space-3:12px;
+  --space-4:16px;
+  --space-5:24px;
+  --space-6:32px;
+  --space-7:48px;
+  --space-8:64px;
+
+  --font-sans:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Hiragino Sans GB","Noto Sans CJK SC",Roboto,Helvetica,Arial,sans-serif;
+  --font-mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+
+  --content-width:900px;
+  --toc-width:250px;
+}
+
+/* Language blocks: Chinese hidden by default; the html[data-lang="zh"]
+   switch reveals .lang-zh and hides .lang-en. `display:revert` restores
+   each element's natural display (block / list-item / table-cell / inline). */
+.lang-zh{display:none}
+html[data-lang="zh"] .lang-en{display:none}
+html[data-lang="zh"] .lang-zh{display:revert}
+
+*,*::before,*::after{box-sizing:border-box}
+
+html{scroll-behavior:smooth}
+
+body{
+  margin:0;
+  font-family:var(--font-sans);
+  font-size:16px;
+  line-height:1.7;
+  color:var(--text);
+  background:var(--bg-canvas);
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+
+/* ---------- Header ---------- */
+.site-header{
+  background:linear-gradient(135deg,#1e3a8a 0%,var(--accent) 55%,#3b82f6 100%);
+  color:#fff;
+  border-bottom:1px solid rgba(255,255,255,.15);
+}
+.site-header__inner{
+  max-width:calc(var(--content-width) + var(--toc-width) + var(--space-7));
+  margin:0 auto;
+  padding:var(--space-6) var(--space-5) var(--space-5);
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:var(--space-5);
+  flex-wrap:wrap;
+}
+.site-title{margin:0;font-size:1.9rem;line-height:1.2;letter-spacing:-.01em}
+.site-subtitle{margin:var(--space-2) 0 0;font-size:.95rem;opacity:.9;max-width:56ch}
+
+.lang-toggle{
+  position:sticky;
+  top:var(--space-4);
+  flex:0 0 auto;
+  font:inherit;
+  font-size:.9rem;
+  font-weight:600;
+  letter-spacing:.02em;
+  color:var(--accent-dark);
+  background:#fff;
+  border:1px solid rgba(255,255,255,.7);
+  border-radius:999px;
+  padding:var(--space-2) var(--space-4);
+  cursor:pointer;
+  box-shadow:var(--shadow);
+  transition:transform .12s ease,box-shadow .12s ease,background .12s ease;
+}
+.lang-toggle:hover{background:var(--accent-soft);box-shadow:var(--shadow-lg)}
+.lang-toggle:active{transform:translateY(1px)}
+.lang-toggle:focus-visible{outline:3px solid var(--accent-border);outline-offset:2px}
+
+/* ---------- Layout ---------- */
+.layout{
+  max-width:calc(var(--content-width) + var(--toc-width) + var(--space-7));
+  margin:0 auto;
+  padding:var(--space-6) var(--space-5) var(--space-7);
+  display:grid;
+  grid-template-columns:var(--toc-width) minmax(0,1fr);
+  gap:var(--space-7);
+  align-items:start;
+}
+
+/* ---------- Table of contents ---------- */
+.toc{
+  position:sticky;
+  top:var(--space-5);
+  align-self:start;
+  max-height:calc(100vh - var(--space-7));
+  overflow-y:auto;
+  background:var(--bg);
+  border:1px solid var(--border);
+  border-radius:var(--radius-lg);
+  padding:var(--space-4) var(--space-4) var(--space-5);
+  box-shadow:var(--shadow-sm);
+}
+.toc h2{
+  margin:0 0 var(--space-3);
+  font-size:.78rem;
+  text-transform:uppercase;
+  letter-spacing:.09em;
+  color:var(--text-muted);
+}
+.toc ol{list-style:none;margin:0;padding:0;counter-reset:toc}
+.toc li{margin:0}
+.toc a{
+  counter-increment:toc;
+  display:block;
+  padding:var(--space-1) var(--space-2);
+  border-radius:var(--radius-sm);
+  color:var(--text-soft);
+  text-decoration:none;
+  font-size:.86rem;
+  line-height:1.45;
+  border-left:2px solid transparent;
+}
+.toc a::before{content:counter(toc) ". ";color:var(--text-muted)}
+.toc a:hover{background:var(--accent-soft);color:var(--accent-dark);border-left-color:var(--accent)}
+
+/* ---------- Content ---------- */
+.content{max-width:var(--content-width);min-width:0}
+.content h2{
+  margin:var(--space-7) 0 var(--space-3);
+  font-size:1.55rem;
+  line-height:1.25;
+  letter-spacing:-.01em;
+  padding-bottom:var(--space-2);
+  border-bottom:2px solid var(--accent-soft);
+}
+.content h2:first-child{margin-top:0}
+.content h3{margin:var(--space-5) 0 var(--space-2);font-size:1.12rem;line-height:1.35}
+.content h4{margin:var(--space-4) 0 var(--space-1);font-size:.98rem;color:var(--text-soft)}
+.content p{margin:var(--space-3) 0}
+.content ul,.content ol{margin:var(--space-3) 0;padding-left:1.5em}
+.content li{margin:var(--space-1) 0}
+.content a{color:var(--accent-dark);text-decoration:underline;text-underline-offset:2px}
+.content a:hover{color:var(--accent)}
+.lead{font-size:1.05rem;color:var(--text-soft)}
+
+code,kbd,pre,.mono{font-family:var(--font-mono)}
+code{
+  background:var(--bg-code);
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  padding:.1em .38em;
+  font-size:.86em;
+  color:#0b3a75;
+  white-space:nowrap;
+}
+pre{
+  margin:var(--space-4) 0;
+  padding:var(--space-4);
+  background:#0f172a;
+  color:#e2e8f0;
+  border-radius:var(--radius);
+  overflow-x:auto;
+  font-size:.84rem;
+  line-height:1.6;
+  box-shadow:var(--shadow-sm);
+}
+pre code{background:none;border:none;padding:0;color:inherit;white-space:pre}
+kbd{
+  display:inline-block;
+  background:var(--bg-kbd);
+  border:1px solid var(--border-strong);
+  border-bottom-width:2px;
+  border-radius:var(--radius-sm);
+  padding:.05em .45em;
+  font-size:.82em;
+  color:var(--text);
+  box-shadow:var(--shadow-sm);
+  white-space:nowrap;
+}
+
+/* ---------- Tables ---------- */
+.table-wrap{overflow-x:auto;margin:var(--space-4) 0}
+table{
+  width:100%;
+  border-collapse:collapse;
+  font-size:.9rem;
+  background:var(--bg);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  overflow:hidden;
+}
+thead th{
+  text-align:left;
+  background:var(--bg-muted);
+  color:var(--text-soft);
+  font-weight:600;
+  padding:var(--space-2) var(--space-3);
+  border-bottom:1px solid var(--border-strong);
+  white-space:nowrap;
+}
+tbody td{padding:var(--space-2) var(--space-3);border-bottom:1px solid var(--border);vertical-align:top}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:nth-child(even){background:var(--bg-muted)}
+td code{white-space:nowrap}
+
+/* ---------- Callouts ---------- */
+.callout{
+  margin:var(--space-4) 0;
+  padding:var(--space-3) var(--space-4);
+  border-radius:var(--radius);
+  border:1px solid var(--border);
+  border-left:4px solid var(--accent);
+  background:var(--accent-soft);
+  color:var(--text-soft);
+  font-size:.92rem;
+}
+.callout--warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout--danger{border-left-color:var(--danger);background:var(--danger-soft)}
+.callout__title{display:block;font-weight:700;color:var(--text);margin-bottom:var(--space-1)}
+.callout p{margin:var(--space-1) 0}
+
+.badge{
+  display:inline-block;
+  font-size:.72rem;
+  font-weight:700;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  padding:.12em .5em;
+  border-radius:999px;
+  background:var(--accent-soft);
+  color:var(--accent-dark);
+  border:1px solid var(--accent-border);
+  vertical-align:middle;
+}
+.badge--ok{background:var(--ok-soft);color:var(--ok);border-color:#bbf7d0}
+.badge--warn{background:var(--warn-soft);color:var(--warn);border-color:#fde68a}
+.badge--danger{background:var(--danger-soft);color:var(--danger);border-color:#fecaca}
+
+/* ---------- Figures ---------- */
+figure{
+  margin:var(--space-5) 0;
+  border:1px solid var(--border);
+  border-radius:var(--radius-lg);
+  overflow:hidden;
+  background:var(--bg);
+  box-shadow:var(--shadow);
+}
+figure img{display:block;width:100%;height:auto;background:var(--bg-muted)}
+figcaption{
+  padding:var(--space-2) var(--space-4) var(--space-3);
+  font-size:.85rem;
+  color:var(--text-muted);
+  border-top:1px solid var(--border);
+}
+figcaption::before{
+  content:"图 / Figure";
+  display:block;
+  font-size:.7rem;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  font-weight:700;
+  color:var(--accent);
+  margin-bottom:2px;
+}
+figure.pending img{min-height:180px}
+
+/* ---------- FAQ ---------- */
+.faq dt{font-weight:700;margin:var(--space-4) 0 var(--space-1);color:var(--text)}
+.faq dt::before{content:"Q ";color:var(--accent);font-weight:800}
+.faq dd{margin:0 0 var(--space-3);padding-left:var(--space-4);border-left:2px solid var(--border);color:var(--text-soft)}
+
+/* ---------- Footer ---------- */
+.site-footer{
+  margin-top:var(--space-8);
+  padding-top:var(--space-4);
+  border-top:1px solid var(--border);
+  font-size:.85rem;
+  color:var(--text-muted);
+  display:flex;
+  flex-wrap:wrap;
+  gap:var(--space-2) var(--space-4);
+  justify-content:space-between;
+}
+.site-footer .version{font-weight:600;color:var(--text-soft)}
+
+/* ---------- Responsive ---------- */
+@media (max-width:960px){
+  .layout{grid-template-columns:1fr;gap:var(--space-5)}
+  .toc{position:static;max-height:none;order:-1}
+  .site-header__inner,.layout{padding-left:var(--space-4);padding-right:var(--space-4)}
+  .content h2{font-size:1.35rem}
+}
+
+/* ---------- Print ---------- */
+@media print{
+  body{background:#fff;font-size:11pt;color:#000}
+  .lang-toggle,.toc,.site-header{background:#fff;color:#000}
+  .lang-toggle,.toc{display:none !important}
+  .site-header{
+    color:#000;
+    border-bottom:2px solid #000;
+    padding:0 0 12pt;
+  }
+  .site-header__inner{padding:0}
+  .site-subtitle{opacity:1;color:#333}
+  .layout{display:block;max-width:none;padding:0}
+  .content{max-width:none}
+  figure,pre,table,.callout{page-break-inside:avoid;break-inside:avoid;box-shadow:none}
+  .content h2{page-break-after:avoid;break-after:avoid}
+  a{color:#000;text-decoration:none}
+  a[href^="#"]::after{content:""}
+}
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header__inner">
+    <div>
+      <h1 class="site-title"><span class="lang-en">ProtocolForge User Manual</span><span class="lang-zh">ProtocolForge 用户手册</span></h1>
+      <p class="site-subtitle">
+        <span class="lang-en">Inspect, edit and replay 3GPP protocol packets (PFCP, NGAP, GTP-U, NAS, S1AP, Diameter and more) from PCAP / PCAPNG captures.</span>
+        <span class="lang-zh">用于浏览、编辑与重放 PCAP / PCAPNG 抓包中的 3GPP 协议报文（PFCP、NGAP、GTP-U、NAS、S1AP、Diameter 等）。</span>
+      </p>
+    </div>
+    <button id="langToggle" class="lang-toggle" type="button" aria-label="切换到中文">中文</button>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- ==================== Table of contents ==================== -->
+  <nav class="toc" aria-label="Contents / 目录">
+    <h2><span class="lang-en">Contents</span><span class="lang-zh">目录</span></h2>
+    <ol>
+      <li><a href="#getting-started"><span class="lang-en">Getting Started</span><span class="lang-zh">快速开始</span></a></li>
+      <li><a href="#overview"><span class="lang-en">Overview &amp; Prerequisites</span><span class="lang-zh">概述与前置条件</span></a></li>
+      <li><a href="#menus"><span class="lang-en">Menu Bar</span><span class="lang-zh">菜单栏</span></a></li>
+      <li><a href="#ingest"><span class="lang-en">Opening &amp; Ingesting Captures</span><span class="lang-zh">打开与解析抓包</span></a></li>
+      <li><a href="#tshark"><span class="lang-en">tshark Integration &amp; Read-Only Mode</span><span class="lang-zh">tshark 集成与只读模式</span></a></li>
+      <li><a href="#appearance"><span class="lang-en">Language &amp; Theme</span><span class="lang-zh">语言与主题</span></a></li>
+      <li><a href="#packet-list"><span class="lang-en">Packet List</span><span class="lang-zh">数据包列表</span></a></li>
+      <li><a href="#filter"><span class="lang-en">Display Filter</span><span class="lang-zh">显示过滤器</span></a></li>
+      <li><a href="#tree"><span class="lang-en">Protocol Tree &amp; Field Editing</span><span class="lang-zh">协议树与字段编辑</span></a></li>
+      <li><a href="#vbc"><span class="lang-en">Verify-Before-Commit &amp; Auto-Relink</span><span class="lang-zh">提交前校验与容器自动回链</span></a></li>
+      <li><a href="#hex"><span class="lang-en">Hex Viewer &amp; Hex Editing</span><span class="lang-zh">十六进制视图与编辑</span></a></li>
+      <li><a href="#sync"><span class="lang-en">Tree ↔ Hex Sync &amp; Re-extraction</span><span class="lang-zh">树与十六进制联动及地址重提取</span></a></li>
+      <li><a href="#undo"><span class="lang-en">Undo / Redo</span><span class="lang-zh">撤销 / 重做</span></a></li>
+      <li><a href="#export"><span class="lang-en">Saving &amp; Exporting</span><span class="lang-zh">保存与导出</span></a></li>
+      <li><a href="#send-selection"><span class="lang-en">Selecting Packets &amp; Send History</span><span class="lang-zh">选择报文与发送历史</span></a></li>
+      <li><a href="#injection"><span class="lang-en">Packet Injection</span><span class="lang-zh">报文注入</span></a></li>
+      <li><a href="#layout"><span class="lang-en">Dockable Layout</span><span class="lang-zh">可停靠布局</span></a></li>
+      <li><a href="#find"><span class="lang-en">Find</span><span class="lang-zh">查找</span></a></li>
+      <li><a href="#shortcuts"><span class="lang-en">Keyboard Shortcuts</span><span class="lang-zh">键盘快捷键</span></a></li>
+      <li><a href="#cli"><span class="lang-en">Appendix A — Headless CLI</span><span class="lang-zh">附录 A — 命令行工具</span></a></li>
+      <li><a href="#appendix"><span class="lang-en">Appendix B — Protocols &amp; Logs</span><span class="lang-zh">附录 B — 协议与日志</span></a></li>
+      <li><a href="#faq"><span class="lang-en">Troubleshooting / FAQ</span><span class="lang-zh">故障排查 / 常见问题</span></a></li>
+    </ol>
+  </nav>
+
+  <!-- ==================== Content ==================== -->
+  <main class="content">
+
+    <!-- ============ 1. Getting Started (MUST be first content section) ============ -->
+    <section id="getting-started">
+      <h2><span class="lang-en">1. Getting Started</span><span class="lang-zh">1. 快速开始</span></h2>
+      <p class="lead">
+        <span class="lang-en">This section walks you through the full workflow in six steps: open a capture, inspect a packet, edit it, save your changes, and send packets back onto the wire.</span>
+        <span class="lang-zh">本节用六个步骤带你走完整个工作流：打开抓包、查看报文、编辑内容、保存改动，并把报文重新发到网络上。</span>
+      </p>
+
+      <figure>
+        <img src="images/01-main-window-zh.png" alt="主界面（中文） / Main window (Chinese)">
+        <figcaption><span class="lang-en">The main window: packet list on the left, protocol tree and hex viewer on the right.</span><span class="lang-zh">主界面：左侧为数据包列表，右侧为协议树与十六进制视图。</span></figcaption>
+      </figure>
+
+      <ol>
+        <li>
+          <span class="lang-en"><strong>Open a capture.</strong> Choose <em>File → Open PCAP</em> (<kbd>Ctrl</kbd>+<kbd>O</kbd>) and pick a <code>.pcap</code> or <code>.pcapng</code> file. If you launched the app with a file path on the command line, the capture is already open.</span>
+          <span class="lang-zh"><strong>打开抓包。</strong> 选择 <em>文件 → 打开 PCAP</em>（<kbd>Ctrl</kbd>+<kbd>O</kbd>），选中一个 <code>.pcap</code> 或 <code>.pcapng</code> 文件。若启动时在命令行传入了文件路径，则抓包已自动打开。</span>
+        </li>
+        <li>
+          <span class="lang-en"><strong>Select a packet.</strong> Click any row in the packet list. The protocol tree and hex viewer populate for that packet.</span>
+          <span class="lang-zh"><strong>选中报文。</strong> 点击数据包列表中的任意一行，协议树与十六进制视图会为该报文加载内容。</span>
+        </li>
+        <li>
+          <span class="lang-en"><strong>Inspect.</strong> Click a field in the tree to highlight its bytes in the hex viewer; click bytes in the hex viewer to reveal the owning field in the tree.</span>
+          <span class="lang-zh"><strong>查看。</strong> 在协议树中点击某字段，可在十六进制视图中高亮其字节；在十六进制视图中点击字节，可在协议树中定位其所属字段。</span>
+        </li>
+        <li>
+          <span class="lang-en"><strong>Edit.</strong> Right-click (or double-click) an editable field in the tree and type a new value, or click a byte in the hex viewer and type hex digits. Press <kbd>Enter</kbd> to apply, <kbd>Esc</kbd> to cancel.</span>
+          <span class="lang-zh"><strong>编辑。</strong> 在协议树中右键（或双击）可编辑字段并输入新值，或在十六进制视图中点击字节后输入十六进制数字。按 <kbd>Enter</kbd> 应用，按 <kbd>Esc</kbd> 取消。</span>
+        </li>
+        <li>
+          <span class="lang-en"><strong>Save or export.</strong> Use <em>File → Save PCAP</em> (<kbd>Ctrl</kbd>+<kbd>S</kbd>) to overwrite, or <em>Export PCAP As</em> (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>) to write a new file. The format follows the extension you choose.</span>
+          <span class="lang-zh"><strong>保存或导出。</strong> 使用 <em>文件 → 保存 PCAP</em>（<kbd>Ctrl</kbd>+<kbd>S</kbd>）覆盖保存，或用 <em>导出 PCAP 为…</em>（<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>）另存新文件。格式跟随所选扩展名。</span>
+        </li>
+        <li>
+          <span class="lang-en"><strong>Send.</strong> Tick the packets you want, choose a network adapter, set the interval and loop count, then click <em>Start</em>. See <a href="#injection">Packet Injection</a>.</span>
+          <span class="lang-zh"><strong>发送。</strong> 勾选要发送的报文，选择网卡，设置间隔与循环次数，然后点击 <em>开始</em>。详见 <a href="#injection">报文注入</a>。</span>
+        </li>
+      </ol>
+
+      <figure>
+        <img src="images/02-main-window-en.png" alt="主界面（英文） / Main window (English)">
+        <figcaption><span class="lang-en">The same window with the UI switched to English — every panel follows the language instantly.</span><span class="lang-zh">切换到英文界面后的同一窗口——所有面板会即时跟随语言切换。</span></figcaption>
+      </figure>
+
+      <div class="callout">
+        <span class="callout__title"><span class="lang-en">Read-only safety net</span><span class="lang-zh">只读安全兜底</span></span>
+        <span class="lang-en">If tshark is missing or older than 2.6.0, the app still opens your capture but runs in <strong>read-only mode</strong>: editing, export and sending are disabled until a valid tshark is configured. See <a href="#tshark">tshark Integration &amp; Read-Only Mode</a>.</span>
+        <span class="lang-zh">若 tshark 缺失或版本低于 2.6.0，程序仍可打开抓包，但会进入<strong>只读模式</strong>：在配置有效的 tshark 之前，编辑、导出与发送均被禁用。详见 <a href="#tshark">tshark 集成与只读模式</a>。</span>
+      </div>
+    </section>
+
+    <!-- ============ 2. Overview ============ -->
+    <section id="overview">
+      <h2><span class="lang-en">2. Overview &amp; Prerequisites</span><span class="lang-zh">2. 概述与前置条件</span></h2>
+      <p>
+        <span class="lang-en">ProtocolForge is a cross-platform desktop workbench for 3GPP packet analysis. It runs on Windows, Linux and macOS and combines tshark's dissection engine with a native packet editor and raw-socket injection. The app itself ships no protocol parsers — it delegates all dissection to tshark and layers its own byte-accurate editing and sending on top.</span>
+        <span class="lang-zh">ProtocolForge 是一款跨平台的 3GPP 报文分析工作台，可在 Windows、Linux 与 macOS 上运行，将 tshark 的解析引擎与原生报文编辑器、原始套接字注入组合在一起。程序本身不内置任何协议解析器——所有解析都交给 tshark，自身在其之上提供字节级精确的编辑与发送能力。</span>
+      </p>
+
+      <h3><span class="lang-en">Prerequisites</span><span class="lang-zh">前置条件</span></h3>
+      <ul>
+        <li>
+          <span class="lang-en"><strong>Wireshark / tshark (≥ 2.6.0)</strong> — the only runtime dependency. tshark must be on your <code>PATH</code>, or you can point the app at it explicitly (<code>TSHARK_PATH</code> or <em>File → Tshark Path…</em>). Older versions open the app read-only.</span>
+          <span class="lang-zh"><strong>Wireshark / tshark（≥ 2.6.0）</strong>——唯一的运行时依赖。tshark 需位于 <code>PATH</code> 中，也可手动指定（<code>TSHARK_PATH</code> 或 <em>文件 → Tshark 路径…</em>）。版本过低时会以只读模式打开。</span>
+        </li>
+        <li>
+          <span class="lang-en"><strong>Self-contained builds bundle .NET</strong> — end users who install a self-contained release install <em>nothing</em> but Wireshark. No separate .NET runtime is required.</span>
+          <span class="lang-zh"><strong>自包含构建已内置 .NET</strong>——使用自包含发布版的最终用户除了 Wireshark 之外<em>无需</em>安装任何东西，不需要单独的 .NET 运行时。</span>
+        </li>
+        <li>
+          <span class="lang-en"><strong>.NET 10 SDK</strong> (builders/contributors only) — needed only to compile the app from source.</span>
+          <span class="lang-zh"><strong>.NET 10 SDK</strong>（仅构建者/贡献者需要）——仅在从源码编译时才需要。</span>
+        </li>
+      </ul>
+
+      <h3><span class="lang-en">Installing tshark</span><span class="lang-zh">安装 tshark</span></h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th><span class="lang-en">Platform</span><span class="lang-zh">平台</span></th>
+              <th><span class="lang-en">How to install</span><span class="lang-zh">安装方式</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="lang-en">Windows 10/11 x64</span><span class="lang-zh">Windows 10/11 x64</span></td>
+              <td><span class="lang-en">Install Wireshark from wireshark.org. Keep the <strong>Npcap</strong> option enabled (selected by default) to unlock full Ethernet-frame injection. ProtocolForge does not bundle or install Npcap for you.</span><span class="lang-zh">从 wireshark.org 安装 Wireshark。保留 <strong>Npcap</strong> 选项（默认已勾选），以启用完整的以太网帧注入。ProtocolForge 不会打包或替你安装 Npcap。</span></td>
+            </tr>
+            <tr>
+              <td>Linux</td>
+              <td><code>sudo apt install tshark</code></td>
+            </tr>
+            <tr>
+              <td>macOS</td>
+              <td><code>brew install wireshark</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout">
+        <span class="callout__title"><span class="lang-en">Licence</span><span class="lang-zh">许可证</span></span>
+        <span class="lang-en">ProtocolForge is free and open source under <strong>Apache-2.0</strong>. Everything shipped is free and unlimited — there is no feature gate, no send quota and no telemetry.</span>
+        <span class="lang-zh">ProtocolForge 基于 <strong>Apache-2.0</strong> 免费开源。当前所有功能均免费且不限量——没有功能门槛、没有发送配额，也没有任何遥测。</span>
+      </div>
+    </section>
+
+    <!-- ============ 3. Menu bar ============ -->
+    <section id="menus">
+      <h2><span class="lang-en">3. Menu Bar</span><span class="lang-zh">3. 菜单栏</span></h2>
+      <p>
+        <span class="lang-en">The menu bar sits at the top of the window. The tables below list every entry and what it does.</span>
+        <span class="lang-zh">菜单栏位于窗口顶部。下表列出所有条目及其作用。</span>
+      </p>
+
+      <figure>
+        <img src="images/09-file-menu.png" alt="文件菜单 / File menu">
+        <figcaption><span class="lang-en">The File menu.</span><span class="lang-zh">文件菜单。</span></figcaption>
+      </figure>
+
+      <h3><span class="lang-en">File</span><span class="lang-zh">文件</span></h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th><span class="lang-en">Item</span><span class="lang-zh">菜单项</span></th>
+              <th><span class="lang-en">Shortcut</span><span class="lang-zh">快捷键</span></th>
+              <th><span class="lang-en">Description</span><span class="lang-zh">说明</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><span class="lang-en">Open PCAP…</span><span class="lang-zh">打开 PCAP…</span></td><td><kbd>Ctrl</kbd>+<kbd>O</kbd></td><td><span class="lang-en">Open a <code>.pcap</code> or <code>.pcapng</code> capture.</span><span class="lang-zh">打开 <code>.pcap</code> 或 <code>.pcapng</code> 抓包。</span></td></tr>
+            <tr><td><span class="lang-en">Save PCAP</span><span class="lang-zh">保存 PCAP</span></td><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td><span class="lang-en">Overwrite the current file with all modifications applied.</span><span class="lang-zh">将当前文件覆盖保存，应用所有改动。</span></td></tr>
+            <tr><td><span class="lang-en">Export PCAP As…</span><span class="lang-zh">导出 PCAP 为…</span></td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd></td><td><span class="lang-en">Write to a new file; the format follows the extension (<code>.pcap</code> or <code>.pcapng</code>).</span><span class="lang-zh">另存为新文件；格式跟随扩展名（<code>.pcap</code> 或 <code>.pcapng</code>）。</span></td></tr>
+            <tr><td><span class="lang-en">Reset Modifications</span><span class="lang-zh">重置修改</span></td><td>—</td><td><span class="lang-en">Discard all edits and return every packet to its original bytes.</span><span class="lang-zh">丢弃所有编辑，将所有报文恢复为原始字节。</span></td></tr>
+            <tr><td><span class="lang-en">Undo</span><span class="lang-zh">撤销</span></td><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td><span class="lang-en">Revert the most recent committed edit.</span><span class="lang-zh">撤销最近一次已提交的编辑。</span></td></tr>
+            <tr><td><span class="lang-en">Redo</span><span class="lang-zh">重做</span></td><td><kbd>Ctrl</kbd>+<kbd>Y</kbd></td><td><span class="lang-en">Re-apply an edit that was undone.</span><span class="lang-zh">重做被撤销的编辑。</span></td></tr>
+            <tr><td><span class="lang-en">Tshark Path…</span><span class="lang-zh">Tshark 路径…</span></td><td>—</td><td><span class="lang-en">Choose the tshark executable and re-run the version gate.</span><span class="lang-zh">选择 tshark 可执行文件，并重新执行版本门禁。</span></td></tr>
+            <tr><td><span class="lang-en">Open Support Data Folder</span><span class="lang-zh">打开支持数据目录</span></td><td>—</td><td><span class="lang-en">Opens the folder that holds logs, layout and session files.</span><span class="lang-zh">打开存放日志、布局与会话文件的文件夹。</span></td></tr>
+            <tr><td><span class="lang-en">Exit</span><span class="lang-zh">退出</span></td><td>—</td><td><span class="lang-en">Close the app; you are warned if there are unsaved changes.</span><span class="lang-zh">关闭程序；若有未保存改动会弹出提醒。</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3><span class="lang-en">View</span><span class="lang-zh">视图</span></h3>
+      <p>
+        <span class="lang-en">Toggles the visibility of the dockable panes (packet list, protocol tree, hex editor) and reopens any pane you have closed. See <a href="#layout">Dockable Layout</a>.</span>
+        <span class="lang-zh">用于切换各可停靠面板（数据包列表、协议树、十六进制视图）的显示，并重新打开已关闭的面板。详见 <a href="#layout">可停靠布局</a>。</span>
+      </p>
+
+      <h3><span class="lang-en">Language</span><span class="lang-zh">语言</span></h3>
+      <p>
+        <span class="lang-en">Switches the interface between <strong>简体中文</strong> and <strong>English</strong> instantly; the choice is remembered. See <a href="#appearance">Language &amp; Theme</a>.</span>
+        <span class="lang-zh">在<strong>简体中文</strong>与 <strong>English</strong> 之间即时切换界面语言，并记住所选语言。详见 <a href="#appearance">语言与主题</a>。</span>
+      </p>
+
+      <h3><span class="lang-en">Theme</span><span class="lang-zh">主题</span></h3>
+      <p>
+        <span class="lang-en">Picks the appearance: <strong>System</strong>, <strong>Light</strong> or <strong>Dark</strong>. The choice is persisted.</span>
+        <span class="lang-zh">选择外观：<strong>跟随系统</strong>、<strong>浅色</strong>或<strong>深色</strong>。所选主题会被持久化保存。</span>
+      </p>
+
+      <figure>
+        <img src="images/15-help-menu.png" alt="帮助菜单 / Help menu">
+        <figcaption><span class="lang-en">The Help menu, including <em>User Manual</em>.</span><span class="lang-zh">帮助菜单，其中包含 <em>用户手册</em>。</span></figcaption>
+      </figure>
+
+      <h3><span class="lang-en">Help</span><span class="lang-zh">帮助</span></h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th><span class="lang-en">Item</span><span class="lang-zh">菜单项</span></th>
+              <th><span class="lang-en">Description</span><span class="lang-zh">说明</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><span class="lang-en">User Manual</span><span class="lang-zh">用户手册</span></td><td><span class="lang-en">Opens this document in your default web browser.</span><span class="lang-zh">在系统默认浏览器中打开本文档。</span></td></tr>
+            <tr><td><span class="lang-en">About</span><span class="lang-zh">关于</span></td><td><span class="lang-en">Shows version, licence and third-party notices.</span><span class="lang-zh">显示版本、许可证与第三方声明。</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <figure>
+        <img src="images/12-about-dialog.png" alt="关于对话框 / About dialog">
+        <figcaption><span class="lang-en">The About dialog: version and licence information.</span><span class="lang-zh">关于对话框：版本与许可证信息。</span></figcaption>
+      </figure>
+    </section>
+
+    <!-- ============ 4. Ingest ============ -->
+    <section id="ingest">
+      <h2><span class="lang-en">4. Opening &amp; Ingesting Captures</span><span class="lang-zh">4. 打开与解析抓包</span></h2>
+      <p>
+        <span class="lang-en">ProtocolForge reads captures with a native C# parser, so the raw bytes of even very large files load quickly without invoking tshark. Supported input is <strong>classic PCAP</strong> and <strong>PCAPNG</strong>.</span>
+        <span class="lang-zh">ProtocolForge 使用原生 C# 解析器读取抓包，因此即使文件很大，其原始字节也能快速载入，无需调用 tshark。支持的输入格式为<strong>经典 PCAP</strong>与 <strong>PCAPNG</strong>。</span>
+      </p>
+      <ul>
+        <li>
+          <span class="lang-en"><strong>Timestamps</strong> — both microsecond (µs) and nanosecond (ns) resolution are understood.</span>
+          <span class="lang-zh"><strong>时间戳</strong>——同时支持微秒（µs）与纳秒（ns）精度。</span>
+        </li>
+        <li>
+          <span class="lang-en"><strong>Endianness</strong> — little-endian and big-endian classic PCAP files both parse correctly.</span>
+          <span class="lang-zh"><strong>字节序</strong>——小端与大端的经典 PCAP 文件均可正确解析。</span>
+        </li>
+        <li>
+          <span class="lang-en"><strong>PCAPNG structure</strong> — section blocks, interface description blocks and enhanced packet blocks are handled, with per-interface timestamp resolution.</span>
+          <span class="lang-zh"><strong>PCAPNG 结构</strong>——处理节块（SHB）、接口描述块（IDB）与增强报文块（EPB），并按接口分别应用时间戳精度。</span>
+        </li>
+      </ul>
+      <p>
+        <span class="lang-en">Loading happens in two stages. First the raw bytes are ingested natively; then a single streamed tshark pass fills the packet list. This keeps the UI responsive and lets you start working before the list finishes filling. See <a href="#tshark">tshark Integration</a> for details.</span>
+        <span class="lang-zh">载入分为两个阶段：先由原生解析器读入原始字节，再由一次流式 tshark 处理填充数据包列表。这样界面始终保持响应，你可以在列表尚未填充完毕时就开始工作。详见 <a href="#tshark">tshark 集成</a>。</span>
+      </p>
+      <div class="callout">
+        <span class="callout__title"><span class="lang-en">Large captures</span><span class="lang-zh">超大型抓包</span></span>
+        <span class="lang-en">Capture files can hold more than 180,000 packets. The list loads progressively, and the protocol tree is built per packet on demand (about 0.4&nbsp;s per packet), never for the whole file at once.</span>
+        <span class="lang-zh">抓包文件可能包含超过 18 万个报文。列表采用渐进式加载，协议树按报文按需构建（约每包 0.4 秒），绝不会一次性解析整个文件。</span>
+      </div>
+    </section>
+
+    <!-- ============ 5. tshark ============ -->
+    <section id="tshark">
+      <h2><span class="lang-en">5. tshark Integration &amp; Read-Only Mode</span><span class="lang-zh">5. tshark 集成与只读模式</span></h2>
+      <p>
+        <span class="lang-en">tshark does all protocol dissection. The app uses it in two modes: one streamed <code>-T fields</code> pass fills the packet list with Source / Destination / Protocol / Info columns, and the protocol detail tree is parsed per-packet on demand with byte-offset accuracy. Because dissectors are never bundled, any protocol Wireshark knows is supported automatically.</span>
+        <span class="lang-zh">所有协议解析都由 tshark 完成。程序以两种方式使用它：一次流式 <code>-T fields</code> 处理填充数据包列表的“源/目的/协议/信息”列；协议详情树则按报文按需解析，并保持字节偏移精确。由于不内置任何解析器，Wireshark 所支持的任何协议都可自动使用。</span>
+      </p>
+
+      <h3><span class="lang-en">The version gate</span><span class="lang-zh">版本门禁</span></h3>
+      <p>
+        <span class="lang-en">On startup and whenever the tshark path changes, ProtocolForge runs <code>tshark -v</code> and compares the reported version against the minimum <strong>2.6.0</strong>. If the check fails, editing features are locked; if it passes, full editing is unlocked.</span>
+        <span class="lang-zh">启动时以及每次更改 tshark 路径后，ProtocolForge 都会执行 <code>tshark -v</code>，并将报告的版本与最低要求 <strong>2.6.0</strong> 比对。若校验失败，编辑功能将被锁定；若通过，则解锁完整编辑能力。</span>
+      </p>
+
+      <figure>
+        <img src="images/13-readonly-banner.png" alt="只读模式横幅 / Read-only mode banner">
+        <figcaption><span class="lang-en">A banner announces read-only mode when tshark is missing or too old.</span><span class="lang-zh">当 tshark 缺失或版本过低时，横幅会提示进入只读模式。</span></figcaption>
+      </figure>
+
+      <h3><span class="lang-en">What read-only mode disables</span><span class="lang-zh">只读模式下被禁用的功能</span></h3>
+      <ul>
+        <li><span class="lang-en">Tree field editing and inline hex editing.</span><span class="lang-zh">协议树字段编辑与十六进制内联编辑。</span></li>
+        <li><span class="lang-en">PCAP export (save / export-as).</span><span class="lang-zh">PCAP 导出（保存/另存）。</span></li>
+        <li><span class="lang-en">Packet injection (send).</span><span class="lang-zh">报文注入（发送）。</span></li>
+      </ul>
+      <p>
+        <span class="lang-en">The capture still loads: raw packet bytes are shown and the packet list populates, though protocol columns show <code>N/A</code> until a valid tshark is available.</span>
+        <span class="lang-zh">抓包仍会载入：原始报文字节可以显示，数据包列表也会填充，但在具备有效 tshark 之前，协议相关列会显示 <code>N/A</code>。</span>
+      </p>
+
+      <h3><span class="lang-en">Lifting the gate</span><span class="lang-zh">解除门禁</span></h3>
+      <p>
+        <span class="lang-en">Choose <em>File → Tshark Path…</em> and select a valid tshark executable. The app re-detects it and lifts the gate as soon as a passing version is found. The chosen path is persisted across sessions and can be overridden by the <code>TSHARK_PATH</code> environment variable.</span>
+        <span class="lang-zh">选择 <em>文件 → Tshark 路径…</em> 并指定一个有效的 tshark 可执行文件。程序会重新检测，一旦找到符合条件的版本便立即解除门禁。所选路径会跨会话持久化，并可被 <code>TSHARK_PATH</code> 环境变量覆盖。</span>
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th><span class="lang-en">Variable</span><span class="lang-zh">环境变量</span></th><th><span class="lang-en">Purpose</span><span class="lang-zh">用途</span></th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>TSHARK_PATH</code></td><td><span class="lang-en">Override the tshark location; auto-detection falls back to <code>PATH</code> and common install paths.</span><span class="lang-zh">覆盖 tshark 位置；自动检测会回退到 <code>PATH</code> 及常见安装路径。</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ============ 6. Language & Theme ============ -->
+    <section id="appearance">
+      <h2><span class="lang-en">6. Language &amp; Theme</span><span class="lang-zh">6. 语言与主题</span></h2>
+
+      <h3><span class="lang-en">Bilingual interface</span><span class="lang-zh">双语界面</span></h3>
+      <p>
+        <span class="lang-en">The entire interface is localized in Simplified Chinese and English. Switch instantly from the <strong>语言 / Language</strong> menu (located between View and Help) — no restart, no re-open. Your choice is persisted, and on first run the system locale is auto-detected.</span>
+        <span class="lang-zh">整个界面提供简体中文与英文两种语言。通过 <strong>语言 / Language</strong> 菜单（位于“视图”与“帮助”之间）即时切换——无需重启，也无需重新打开抓包。所选语言会被保存，首次运行时系统会自动检测系统区域设置。</span>
+      </p>
+      <figure>
+        <img src="images/11-language-menu.png" alt="语言菜单 / Language menu">
+        <figcaption><span class="lang-en">The Language menu switches the whole UI at runtime.</span><span class="lang-zh">语言菜单可在运行时切换整个界面。</span></figcaption>
+      </figure>
+
+      <h3><span class="lang-en">Theming</span><span class="lang-zh">主题</span></h3>
+      <p>
+        <span class="lang-en">One runtime theming system drives the window chrome, menus and every dock pane. Pick the base from the <strong>Theme</strong> menu:</span>
+        <span class="lang-zh">统一的运行时主题系统驱动窗口边框、菜单及所有停靠面板。可从<strong>主题</strong>菜单选择基础外观：</span>
+      </p>
+      <ul>
+        <li><span class="lang-en"><strong>System</strong> — follow the operating system light/dark setting.</span><span class="lang-zh"><strong>跟随系统</strong>——跟随操作系统的浅色/深色设置。</span></li>
+        <li><span class="lang-en"><strong>Light</strong> — always light.</span><span class="lang-zh"><strong>浅色</strong>——始终为浅色。</span></li>
+        <li><span class="lang-en"><strong>Dark</strong> — always dark.</span><span class="lang-zh"><strong>深色</strong>——始终为深色。</span></li>
+      </ul>
+      <p>
+        <span class="lang-en">The accent colour is fixed at <strong>Blue</strong>, and switching is instant with no restart. The choice is persisted.</span>
+        <span class="lang-zh">强调色固定为<strong>蓝色</strong>，切换即时生效、无需重启，且所选主题会被持久化保存。</span>
+      </p>
+      <figure>
+        <img src="images/14-dark-theme.png" alt="深色主题 / Dark theme">
+        <figcaption><span class="lang-en">Dark theme applied across the chrome and every pane.</span><span class="lang-zh">深色主题应用于窗口边框与所有面板。</span></figcaption>
+      </figure>
+    </section>
+
+    <!-- ============ 7. Packet list ============ -->
+    <section id="packet-list">
+      <h2><span class="lang-en">7. Packet List</span><span class="lang-zh">7. 数据包列表</span></h2>
+      <p>
+        <span class="lang-en">The packet list is a sortable grid. Each row corresponds to one frame and shows its number, source, destination, protocol and a summary Info column. Rows are aligned to the frame numbers tshark reports, accommodating skipped or malformed frames.</span>
+        <span class="lang-zh">数据包列表是一个可排序的表格。每一行对应一个帧，显示其编号、源、目的、协议以及概要“信息”列。各行与 tshark 报告的帧号对齐，可容忍被跳过或格式异常的帧。</span>
+      </p>
+      <ul>
+        <li>
+          <span class="lang-en"><strong>Sorting</strong> — click any column header to cycle between ascending and descending order.</span>
+          <span class="lang-zh"><strong>排序</strong>——点击任意列标题，在升序与降序之间循环切换。</span>
+        </li>
+        <li>
+          <span class="lang-en"><strong>Auto-fit a column</strong> — double-click the divider between two column headers to size that column to its content. All columns support this.</span>
+          <span class="lang-zh"><strong>自动列宽</strong>——双击两个列标题之间的分隔线，即可让该列宽度自适应内容。所有列均支持。</span>
+        </li>
+        <li>
+          <span class="lang-en"><strong>Selection</strong> — click a row to load its protocol tree and hex bytes in the other panes.</span>
+          <span class="lang-zh"><strong>选择</strong>——点击某行，即在其他面板中加载其协议树与十六进制字节。</span>
+        </li>
+      </ul>
+    </section>
+
+    <!-- ============ 8. Display filter ============ -->
+    <section id="filter">
+      <h2><span class="lang-en">8. Display Filter</span><span class="lang-zh">8. 显示过滤器</span></h2>
+      <p>
+        <span class="lang-en">The packet-list header has a filter box that accepts a standard tshark display filter (for example <code>pfcp</code>, <code>ip.addr == 10.0.0.1</code> or <code>gtpv2</code>). The filter is evaluated by tshark, so the grid only ever holds matching packets, and each row keeps the frame number its bytes came from.</span>
+        <span class="lang-zh">数据包列表的头部有一个过滤框，接受标准的 tshark 显示过滤器（例如 <code>pfcp</code>、<code>ip.addr == 10.0.0.1</code> 或 <code>gtpv2</code>）。过滤器由 tshark 求值，因此表格中只保留匹配的报文，且每一行都保留其字节来源的帧号。</span>
+      </p>
+
+      <figure>
+        <img src="images/03-packet-list-filter.png" alt="数据包列表与有效过滤器 / Packet list with a valid filter">
+        <figcaption><span class="lang-en">A valid filter applied — the border is green and only matching packets are shown.</span><span class="lang-zh">已应用的有效过滤器——边框为绿色，仅显示匹配的报文。</span></figcaption>
+      </figure>
+
+      <h3><span class="lang-en">Live validation</span><span class="lang-zh">实时校验</span></h3>
+      <ul>
+        <li><span class="lang-en"><strong>Green border</strong> — the expression parses successfully.</span><span class="lang-zh"><strong>绿色边框</strong>——表达式解析成功。</span></li>
+        <li><span class="lang-en"><strong>Red border</strong> — a syntax error; hover the box to see the reason in a tooltip.</span><span class="lang-zh"><strong>红色边框</strong>——语法错误；将鼠标悬停在输入框上，可在提示中查看原因。</span></li>
+      </ul>
+
+      <figure>
+        <img src="images/04-filter-invalid.png" alt="过滤器语法错误 / Invalid filter syntax">
+        <figcaption><span class="lang-en">An invalid filter turns the border red and explains the error in the tooltip.</span><span class="lang-zh">无效过滤器会将边框变为红色，并在提示中说明错误。</span></figcaption>
+      </figure>
+
+      <h3><span class="lang-en">Autocomplete and applying</span><span class="lang-zh">自动补全与应用</span></h3>
+      <p>
+        <span class="lang-en">As you type, a dropdown autocompletes field and protocol names from tshark's full field catalogue:</span>
+        <span class="lang-zh">输入时，下拉列表会根据 tshark 的完整字段目录自动补全字段名与协议名：</span>
+      </p>
+      <ul>
+        <li><kbd>↑</kbd> / <kbd>↓</kbd> <span class="lang-en">— move through suggestions.</span><span class="lang-zh">——在候选项中上下移动。</span></li>
+        <li><kbd>Tab</kbd> / <kbd>Enter</kbd> <span class="lang-en">— accept the highlighted suggestion.</span><span class="lang-zh">——接受高亮的候选项。</span></li>
+        <li><kbd>Esc</kbd> <span class="lang-en">— dismiss the dropdown.</span><span class="lang-zh">——关闭下拉列表。</span></li>
+      </ul>
+      <p>
+        <span class="lang-en">Press <kbd>Enter</kbd> in the box (or click <strong>Apply</strong>) to apply the filter.</span>
+        <span class="lang-zh">在输入框中按 <kbd>Enter</kbd>（或点击 <strong>应用</strong>）以应用过滤器。</span>
+      </p>
+
+      <h3><span class="lang-en">Recent filters</span><span class="lang-zh">最近使用的过滤器</span></h3>
+      <p>
+        <span class="lang-en">The box keeps your last 10 <em>successfully applied</em> filters. Click the <strong>▾</strong> arrow inside the box to reopen one; choosing an entry re-applies it immediately. A filter that fails to parse is never remembered, and the previous result list is left untouched.</span>
+        <span class="lang-zh">输入框会保留你最近 <em>成功应用</em> 的 10 条过滤器。点击输入框内的 <strong>▾</strong> 箭头即可重新打开其中一条；选中某条后立即重新应用。解析失败的过滤器不会被记录，之前的过滤结果也保持不变。</span>
+      </p>
+    </section>
+
+    <!-- ============ 9. Protocol tree ============ -->
+    <section id="tree">
+      <h2><span class="lang-en">9. Protocol Tree &amp; Field Editing</span><span class="lang-zh">9. 协议树与字段编辑</span></h2>
+      <p>
+        <span class="lang-en">The protocol tree shows the selected packet as a hierarchy of protocol layers and Information Elements (IEs). Click any field to highlight the bytes it occupies in the hex viewer.</span>
+        <span class="lang-zh">协议树以协议层与信息元素（IE）的层级结构展示所选报文。点击任意字段，即可在十六进制视图中高亮其占用的字节。</span>
+      </p>
+
+      <figure>
+        <img src="images/05-protocol-tree.png" alt="协议树，字段选中与十六进制联动 / Protocol tree with field selection linked to hex">
+        <figcaption><span class="lang-en">Selecting a field highlights its byte range in the hex viewer.</span><span class="lang-zh">选中字段会在十六进制视图中高亮其字节范围。</span></figcaption>
+      </figure>
+
+      <h3><span class="lang-en">Inline field editing</span><span class="lang-zh">内联字段编辑</span></h3>
+      <p>
+        <span class="lang-en">Right-click a field (or double-click it) to open an inline editor. Type the value in its natural form and press <kbd>Enter</kbd> (or click elsewhere) to apply, or <kbd>Esc</kbd> to cancel. Supported value forms:</span>
+        <span class="lang-zh">右键点击字段（或双击）即可打开内联编辑器。以该字段的自然形式输入值，按 <kbd>Enter</kbd>（或点击别处）应用，按 <kbd>Esc</kbd> 取消。支持的值形式：</span>
+      </p>
+      <ul>
+        <li><span class="lang-en"><strong>Decimal</strong> — e.g. <code>1234</code>.</span><span class="lang-zh"><strong>十进制</strong>——例如 <code>1234</code>。</span></li>
+        <li><span class="lang-en"><strong>Dotted IP</strong> — e.g. <code>10.0.0.1</code>.</span><span class="lang-zh"><strong>点分 IP</strong>——例如 <code>10.0.0.1</code>。</span></li>
+        <li><span class="lang-en"><strong>MAC address</strong> — e.g. <code>00:1a:2b:3c:4d:5e</code>.</span><span class="lang-zh"><strong>MAC 地址</strong>——例如 <code>00:1a:2b:3c:4d:5e</code>。</span></li>
+        <li><span class="lang-en"><strong>String</strong> — plain text.</span><span class="lang-zh"><strong>字符串</strong>——纯文本。</span></li>
+        <li><span class="lang-en"><strong>Hex</strong> — a <code>0x…</code>-prefixed value.</span><span class="lang-zh"><strong>十六进制</strong>——以 <code>0x…</code> 为前缀的值。</span></li>
+      </ul>
+
+      <figure>
+        <img src="images/06-tree-inline-edit.png" alt="树内联编辑 / Inline tree editing">
+        <figcaption><span class="lang-en">An inline editor open on a tree field.</span><span class="lang-zh">在协议树字段上打开的内联编辑器。</span></figcaption>
+      </figure>
+
+      <h3><span class="lang-en">Hex-native fields</span><span class="lang-zh">十六进制原生字段</span></h3>
+      <p>
+        <span class="lang-en">Fields that Wireshark renders in hexadecimal (for example PFCP SEID / TEID or address ranges) are detected from the <code>0x…</code> display prefix and edited as hex by default. They round-trip big-endian bytes exactly as tshark displays them.</span>
+        <span class="lang-zh">Wireshark 以十六进制显示的字段（例如 PFCP 的 SEID / TEID 或地址范围）会根据显示值中的 <code>0x…</code> 前缀自动识别，默认按十六进制编辑，并与 tshark 显示的大端字节完全一致地往返。</span>
+      </p>
+
+      <h3><span class="lang-en">The edit fence</span><span class="lang-zh">编辑围栏</span></h3>
+      <p>
+        <span class="lang-en">Not every field can be edited. A byte-level edit must clear five checks that must <em>all</em> hold:</span>
+        <span class="lang-zh">并非所有字段都可编辑。字节级编辑须通过五项检查，且<em>必须全部</em>满足：</span>
+      </p>
+      <ol>
+        <li><span class="lang-en">The field type is resolvable.</span><span class="lang-zh">字段类型可解析。</span></li>
+        <li><span class="lang-en">The byte span is non-negative.</span><span class="lang-zh">字节范围非负。</span></li>
+        <li><span class="lang-en">The span lies inside the frame (fanning into a reassembled PDU fails).</span><span class="lang-zh">范围位于帧内（展开到重组 PDU 的情况不通过）。</span></li>
+        <li><span class="lang-en">Concrete byte evidence exists (raw byte length matches the field length).</span><span class="lang-zh">存在确切的字节证据（原始字节长度与字段长度一致）。</span></li>
+        <li><span class="lang-en">The recorded bytes agree with the actual frame bytes (catches masked or offset-drifted values).</span><span class="lang-zh">记录的字节与实际帧字节一致（可捕获被掩码或偏移漂移的值）。</span></li>
+      </ol>
+      <p>
+        <span class="lang-en">Three further shapes are editable through dedicated paths: a <strong>bit-level sub-field</strong> (for example DSCP) is rewritten in place by read-modify-write against the live frame — a field with one contiguous bit mask of up to 8 bytes is accepted, an unmasked or non-contiguous-mask field is refused; an <strong>untyped opaque leaf</strong> (a field tshark leaves without a type) falls back to a raw-hex <code>Bytes</code> editor once it is 9 bytes or longer, so unknown IEs become editable; and a field <strong>with children</strong> — an IE container or an undecoded <code>IE not decoded yet</code> marker whose byte span is derivable — is edited as one whole hex blob (a container or marker with no derivable span stays read-only).</span>
+        <span class="lang-zh">另有三类形态可通过专用路径编辑：<strong>位级子字段</strong>（例如 DSCP）以读-改-写方式就地重写实时帧——单段连续位掩码且不超过 8 字节的字段被接受，无掩码或掩码不连续的字段被拒绝；<strong>无类型不透明叶子字段</strong>（tshark 未给出类型的字段）在达到 9 字节及以上时回退为整块十六进制（<code>Bytes</code>）编辑器，使未知 IE 可编辑；而<strong>带子节点的字段</strong>——字节跨度可推导的 IE 容器或未解码的 <code>IE not decoded yet</code> 标记——按整块十六进制编辑（无法推导跨度的容器或标记保持只读）。</span>
+      </p>
+      <p>
+        <span class="lang-en">When a field fails, the status area shows <code>Not editable: …</code> with the reason, and no editor opens.</span>
+        <span class="lang-zh">若字段未通过，状态区会显示 <code>Not editable: …</code> 并附带原因，且不会打开编辑器。</span>
+      </p>
+    </section>
+
+    <!-- ============ 10. VBC ============ -->
+    <section id="vbc">
+      <h2><span class="lang-en">10. Verify-Before-Commit &amp; Auto-Relink</span><span class="lang-zh">10. 提交前校验与容器自动回链</span></h2>
+      <p>
+        <span class="lang-en">A tree field edit is never written straight into the packet. The app uses a <strong>Verify-Before-Commit (VBC)</strong> transaction so a bad edit cannot silently corrupt your capture.</span>
+        <span class="lang-zh">协议树字段的编辑绝不会直接写入报文。程序采用<strong>提交前校验（VBC）</strong>事务，确保错误编辑不会悄无声息地破坏你的抓包。</span>
+      </p>
+      <ol>
+        <li><span class="lang-en">The candidate frame is written to a temporary PCAP (with surrounding context frames when available).</span><span class="lang-zh">将候选帧写入临时 PCAP（在可用时一并写入前后文帧）。</span></li>
+        <li><span class="lang-en">tshark re-parses that temp file.</span><span class="lang-zh">由 tshark 重新解析该临时文件。</span></li>
+        <li><span class="lang-en">The field's new hex value must land at the expected <code>(PDML name, byte offset)</code> position.</span><span class="lang-zh">字段的新十六进制值必须落在预期的 <code>(PDML 名称, 字节偏移)</code> 位置上。</span></li>
+        <li><span class="lang-en">Offset drift, a value mismatch or a length change aborts the commit with a reason — the packet stays byte-identical.</span><span class="lang-zh">若出现偏移漂移、值不匹配或长度变化，则中止提交并给出原因——报文保持逐字节不变。</span></li>
+      </ol>
+      <p>
+        <span class="lang-en">Hex-pane edits take a separate path: they pass the same edit fence, apply the replace run directly, then trigger the same single-packet reparse to refresh the tree.</span>
+        <span class="lang-zh">十六进制面板的编辑走另一条路径：同样通过编辑围栏后直接应用替换，然后触发相同的单报文重新解析以刷新协议树。</span>
+      </p>
+
+      <h3><span class="lang-en">Container auto-relink</span><span class="lang-zh">容器自动回链</span></h3>
+      <p>
+        <span class="lang-en">After a committed edit, the packet is re-parsed once in the background and the tree's container / layer header texts are patched in place. For example, editing a PFCP SEID immediately refreshes the surrounding <code>F-SEID : SEID: 0x…, IPv4 …</code> display without rebuilding the tree. Matching uses PDML name plus byte offset, falling back to the effective offset for anonymous IE containers.</span>
+        <span class="lang-zh">提交编辑后，报文会在后台重新解析一次，并就地修补协议树的容器/层标题文本。例如，编辑 PFCP 的 SEID 后，周围的 <code>F-SEID : SEID: 0x…, IPv4 …</code> 显示会立即刷新，而无需重建整棵树。匹配依据 PDML 名称加字节偏移，对匿名 IE 容器则回退到有效偏移。</span>
+      </p>
+    </section>
+
+    <!-- ============ 11. Hex ============ -->
+    <section id="hex">
+      <h2><span class="lang-en">11. Hex Viewer &amp; Hex Editing</span><span class="lang-zh">11. 十六进制视图与编辑</span></h2>
+      <p>
+        <span class="lang-en">The hex viewer is a Wireshark-style dump: 16 bytes per row with a leading offset column, a hex pane (grouped 8+8 for readability) and an ASCII pane.</span>
+        <span class="lang-zh">十六进制视图采用类似 Wireshark 的转储：每行 16 字节，最左为偏移列，中间为十六进制区（按 8+8 分组以便阅读），右侧为 ASCII 区。</span>
+      </p>
+
+      <h3><span class="lang-en">Colours and navigation</span><span class="lang-zh">颜色与导航</span></h3>
+      <ul>
+        <li><span class="lang-en"><strong>Dark blue</strong> — the currently selected bytes.</span><span class="lang-zh"><strong>深蓝色</strong>——当前选中的字节。</span></li>
+        <li><span class="lang-en"><strong>Protocol colour</strong> — the byte range of the focused protocol field.</span><span class="lang-zh"><strong>协议颜色</strong>——当前聚焦的协议字段的字节范围。</span></li>
+        <li><span class="lang-en"><strong>Orange</strong> — bytes you have modified.</span><span class="lang-zh"><strong>橙色</strong>——你已修改的字节。</span></li>
+      </ul>
+      <p>
+        <span class="lang-en">Click a cell or use the arrow keys to navigate.</span>
+        <span class="lang-zh">点击单元格或使用方向键进行导航。</span>
+      </p>
+
+      <h3><span class="lang-en">Inline hex editing (REPLACE-only)</span><span class="lang-zh">内联十六进制编辑（仅替换）</span></h3>
+      <ol>
+        <li><span class="lang-en">Click a byte and start typing hex digits (<kbd>0</kbd>–<kbd>9</kbd>, <kbd>A</kbd>–<kbd>F</kbd> or the numeric keypad).</span><span class="lang-zh">点击某个字节，开始输入十六进制数字（<kbd>0</kbd>–<kbd>9</kbd>、<kbd>A</kbd>–<kbd>F</kbd> 或数字小键盘）。</span></li>
+        <li><span class="lang-en">The pending value previews in place with a <strong>yellow</strong> background (grey ASCII).</span><span class="lang-zh">待定值会就地预览，背景为<strong>黄色</strong>（ASCII 显示为灰色）。</span></li>
+        <li><span class="lang-en">Press <kbd>Enter</kbd> to commit the whole run as a single replace; <kbd>Esc</kbd> cancels.</span><span class="lang-zh">按 <kbd>Enter</kbd> 将整段作为一次替换提交；按 <kbd>Esc</kbd> 取消。</span></li>
+      </ol>
+      <div class="callout">
+        <span class="callout__title"><span class="lang-en">Packet length never changes</span><span class="lang-zh">报文长度永不改变</span></span>
+        <span class="lang-en">Editing is <strong>REPLACE-only</strong>. Each run is built from full hex-digit pairs, so the packet keeps its length and every offset outside the edited span stays valid.</span>
+        <span class="lang-zh">编辑<strong>仅支持替换</strong>。每段替换都由完整的十六进制字节对构成，因此报文长度保持不变，被编辑范围之外的每个偏移依然有效。</span>
+      </div>
+
+      <figure>
+        <img src="images/07-hex-editor-edit.png" alt="十六进制编辑：选中/已修改/待定 / Hex editing: selection, edited and pending">
+        <figcaption><span class="lang-en">Hex editing at a glance: selection, edited (orange) and pending (yellow) bytes.</span><span class="lang-zh">十六进制编辑一览：选中、已修改（橙色）与待定（黄色）字节。</span></figcaption>
+      </figure>
+    </section>
+
+    <!-- ============ 12. Sync ============ -->
+    <section id="sync">
+      <h2><span class="lang-en">12. Tree ↔ Hex Sync &amp; Re-extraction</span><span class="lang-zh">12. 树与十六进制联动及地址重提取</span></h2>
+      <p>
+        <span class="lang-en">The two panes are linked in both directions:</span>
+        <span class="lang-zh">两个面板双向联动：</span>
+      </p>
+      <ul>
+        <li><span class="lang-en"><strong>Tree → Hex</strong> — clicking a field in the protocol tree highlights its byte range in the hex viewer.</span><span class="lang-zh"><strong>树 → 十六进制</strong>——在协议树中点击字段，会在十六进制视图中高亮其字节范围。</span></li>
+        <li><span class="lang-en"><strong>Hex → Tree</strong> — selecting or editing bytes in the hex pane resolves the owning field and scrolls to plus selects the matching node in the tree, rather than rebuilding it.</span><span class="lang-zh"><strong>十六进制 → 树</strong>——在十六进制面板中选择或编辑字节，会解析其所属字段，并滚动到协议树中对应的节点并将其选中，而不是重建整棵树。</span></li>
+      </ul>
+      <p>
+        <span class="lang-en"><strong>Address / port re-extraction:</strong> after byte edits, IP addresses and port numbers are automatically re-parsed from the modified bytes and reflected in the packet-list columns.</span>
+        <span class="lang-zh"><strong>地址/端口重提取：</strong>字节编辑之后，程序会自动从修改后的字节重新解析 IP 地址与端口号，并反映到数据包列表的列中。</span>
+      </p>
+    </section>
+
+    <!-- ============ 13. Undo ============ -->
+    <section id="undo">
+      <h2><span class="lang-en">13. Undo / Redo</span><span class="lang-zh">13. 撤销 / 重做</span></h2>
+      <p>
+        <span class="lang-en">Committed edits are tracked as whole-frame snapshots, so you can step back and forward through your changes.</span>
+        <span class="lang-zh">已提交的编辑以整帧快照的形式记录，因此你可以逐步回退与前进查看改动。</span>
+      </p>
+      <ul>
+        <li><kbd>Ctrl</kbd>+<kbd>Z</kbd> <span class="lang-en">— undo the last committed edit.</span><span class="lang-zh">——撤销最近一次提交的编辑。</span></li>
+        <li><kbd>Ctrl</kbd>+<kbd>Y</kbd> <span class="lang-en">— redo.</span><span class="lang-zh">——重做。</span></li>
+      </ul>
+      <p>
+        <span class="lang-en">History is capped, so very long editing sessions keep only the most recent changes.</span>
+        <span class="lang-zh">历史记录有容量上限，因此超长时间的编辑会话只保留最近的若干次改动。</span>
+      </p>
+    </section>
+
+    <!-- ============ 14. Export ============ -->
+    <section id="export">
+      <h2><span class="lang-en">14. Saving &amp; Exporting</span><span class="lang-zh">14. 保存与导出</span></h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th><span class="lang-en">Action</span><span class="lang-zh">操作</span></th>
+              <th><span class="lang-en">Shortcut</span><span class="lang-zh">快捷键</span></th>
+              <th><span class="lang-en">Behaviour</span><span class="lang-zh">行为</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="lang-en">Save PCAP</span><span class="lang-zh">保存 PCAP</span></td>
+              <td><kbd>Ctrl</kbd>+<kbd>S</kbd></td>
+              <td><span class="lang-en">Overwrite the current file with all modifications.</span><span class="lang-zh">用全部改动覆盖保存当前文件。</span></td>
+            </tr>
+            <tr>
+              <td><span class="lang-en">Export PCAP As</span><span class="lang-zh">导出 PCAP 为…</span></td>
+              <td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd></td>
+              <td><span class="lang-en">Write to a new path; the output format follows the extension you choose.</span><span class="lang-zh">另存到新路径；输出格式跟随所选扩展名。</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <ul>
+        <li><span class="lang-en"><strong>Format follows extension</strong> — a <code>.pcap</code> target writes classic PCAP; a <code>.pcapng</code> target writes PCAPNG.</span><span class="lang-zh"><strong>格式跟随扩展名</strong>——目标为 <code>.pcap</code> 时写出经典 PCAP；目标为 <code>.pcapng</code> 时写出 PCAPNG。</span></li>
+        <li><span class="lang-en"><strong>PCAPNG write-back</strong> — when a capture was opened as <code>.pcapng</code>, saving preserves the interface description, snaplen and timestamp resolution.</span><span class="lang-zh"><strong>PCAPNG 回写</strong>——当抓包以 <code>.pcapng</code> 打开时，保存会保留接口描述、快照长度与时间戳精度。</span></li>
+        <li><span class="lang-en"><strong>Unsaved-changes warning</strong> — closing the app or opening another file with pending edits prompts you first.</span><span class="lang-zh"><strong>未保存改动提醒</strong>——在有未保存编辑时关闭程序或打开其他文件，会先弹出提醒。</span></li>
+      </ul>
+    </section>
+
+    <!-- ============ 15. Send selection ============ -->
+    <section id="send-selection">
+      <h2><span class="lang-en">15. Selecting Packets &amp; Send History</span><span class="lang-zh">15. 选择报文与发送历史</span></h2>
+      <p>
+        <span class="lang-en">Every packet row has a checkbox, so you control exactly which frames are injected. You can also right-click the packet list for bulk actions.</span>
+        <span class="lang-zh">每个报文行都有一个复选框，让你精确控制哪些帧会被注入。你也可以右键点击数据包列表执行批量操作。</span>
+      </p>
+
+      <figure>
+        <img src="images/10-packet-context-menu.png" alt="数据包右键菜单 / Packet context menu">
+        <figcaption><span class="lang-en">The packet-list context menu: Select All, Invert, Clear and Send Selected.</span><span class="lang-zh">数据包列表右键菜单：全选、反选、清除与发送所选。</span></figcaption>
+      </figure>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th><span class="lang-en">Command</span><span class="lang-zh">命令</span></th><th><span class="lang-en">Effect</span><span class="lang-zh">作用</span></th></tr>
+          </thead>
+          <tbody>
+            <tr><td><span class="lang-en">Select All</span><span class="lang-zh">全选</span></td><td><span class="lang-en">Tick every packet.</span><span class="lang-zh">勾选全部报文。</span></td></tr>
+            <tr><td><span class="lang-en">Invert</span><span class="lang-zh">反选</span></td><td><span class="lang-en">Flip every packet's checkbox.</span><span class="lang-zh">反转每个报文的勾选状态。</span></td></tr>
+            <tr><td><span class="lang-en">Clear</span><span class="lang-zh">清除</span></td><td><span class="lang-en">Untick every packet.</span><span class="lang-zh">取消全部勾选。</span></td></tr>
+            <tr><td><span class="lang-en">Send Selected</span><span class="lang-zh">发送所选</span></td><td><span class="lang-en">Inject the ticked packets.</span><span class="lang-zh">注入已勾选的报文。</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3><span class="lang-en">Send history</span><span class="lang-zh">发送历史</span></h3>
+      <p>
+        <span class="lang-en">Per-packet send results are kept for the whole run instead of only showing the most recent one. You can export the history as CSV from the packet-list context menu.</span>
+        <span class="lang-zh">每个报文的发送结果会整场运行保留，而非只显示最近一条。你可以从数据包列表右键菜单将发送历史导出为 CSV。</span>
+      </p>
+    </section>
+
+    <!-- ============ 16. Injection ============ -->
+    <section id="injection">
+      <h2><span class="lang-en">16. Packet Injection</span><span class="lang-zh">16. 报文注入</span></h2>
+      <p>
+        <span class="lang-en">The send toolbar drives injection through a probe-and-fallthrough rung ladder. The app probes the native L2 path once per session, then tries rungs in order, descending when a rung cannot deliver.</span>
+        <span class="lang-zh">发送工具栏通过“探测并逐级回退”的发送阶梯来驱动注入。程序每会话探测一次原生二层路径，然后按顺序尝试各级，某级无法发送时自动降级。</span>
+      </p>
+
+      <figure>
+        <img src="images/08-send-toolbar.png" alt="发包工具栏 / Send toolbar">
+        <figcaption><span class="lang-en">The send toolbar: Start/Pause/Stop, adapter dropdown, interval, loop count, Auto-fix and counters.</span><span class="lang-zh">发送工具栏：开始/暂停/停止、网卡下拉、间隔、循环次数、自动修复与计数器。</span></figcaption>
+      </figure>
+
+      <h3><span class="lang-en">The rung ladder</span><span class="lang-zh">发送阶梯</span></h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th><span class="lang-en">Rung</span><span class="lang-zh">层级</span></th>
+              <th><span class="lang-en">Platform</span><span class="lang-zh">平台</span></th>
+              <th><span class="lang-en">Sends</span><span class="lang-zh">发送内容</span></th>
+              <th><span class="lang-en">Notes</span><span class="lang-zh">说明</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>0. Npcap / BPF</td>
+              <td>Windows / macOS</td>
+              <td><span class="lang-en">Complete Ethernet frames</span><span class="lang-zh">完整以太网帧</span></td>
+              <td><span class="lang-en">Optional native L2 path; silently skipped when unavailable.</span><span class="lang-zh">可选的原生二层路径；不可用时静默跳过。</span></td>
+            </tr>
+            <tr>
+              <td>1. AF_PACKET</td>
+              <td>Linux</td>
+              <td><span class="lang-en">Complete Ethernet frames</span><span class="lang-zh">完整以太网帧</span></td>
+              <td><span class="lang-en">Raw socket; needs root / CAP_NET_RAW.</span><span class="lang-zh">原始套接字；需要 root / CAP_NET_RAW。</span></td>
+            </tr>
+            <tr>
+              <td>2. IP raw socket</td>
+              <td><span class="lang-en">All platforms</span><span class="lang-zh">全平台</span></td>
+              <td><span class="lang-en">IP datagrams</span><span class="lang-zh">IP 数据报</span></td>
+              <td><span class="lang-en">Needs admin / root.</span><span class="lang-zh">需要管理员 / root 权限。</span></td>
+            </tr>
+            <tr>
+              <td>3. UDP socket</td>
+              <td><span class="lang-en">All platforms</span><span class="lang-zh">全平台</span></td>
+              <td><span class="lang-en">UDP payload only</span><span class="lang-zh">仅 UDP 载荷</span></td>
+              <td><span class="lang-en">Always works; no privileges required.</span><span class="lang-zh">始终可用；无需任何权限。</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3><span class="lang-en">Toolbar controls</span><span class="lang-zh">工具栏控件</span></h3>
+      <ul>
+        <li><span class="lang-en"><strong>Start / Pause / Stop</strong> — control the send run.</span><span class="lang-zh"><strong>开始 / 暂停 / 停止</strong>——控制发送进程。</span></li>
+        <li><span class="lang-en"><strong>Network adapter</strong> — pick the interface to send through. The source address is rewritten to the selected interface's own when Auto-fix is on.</span><span class="lang-zh"><strong>网卡</strong>——选择发送所用接口。启用自动修复时，源地址会被改写为该接口自身的地址。</span></li>
+        <li><span class="lang-en"><strong>Interval (ms)</strong> — delay between packets; 0 sends as fast as possible.</span><span class="lang-zh"><strong>间隔（毫秒）</strong>——报文之间的延迟；为 0 时尽快发送。</span></li>
+        <li><span class="lang-en"><strong>Loop count</strong> — how many times the selected packets are sent.</span><span class="lang-zh"><strong>循环次数</strong>——所选报文的发送遍数。</span></li>
+        <li><span class="lang-en"><strong>Auto-fix</strong> — repairs IPv4/IPv6 and TCP/UDP checksums before injection and rewrites the source address. Off by default.</span><span class="lang-zh"><strong>自动修复</strong>——注入前修复 IPv4/IPv6 与 TCP/UDP 校验和，并改写源地址。默认关闭。</span></li>
+        <li><span class="lang-en"><strong>Sent / failed counters and status bar</strong> — live progress and per-packet results.</span><span class="lang-zh"><strong>已发送/失败计数器与状态栏</strong>——实时进度与逐包结果。</span></li>
+      </ul>
+      <div class="callout callout--warn">
+        <span class="callout__title"><span class="lang-en">Privileges</span><span class="lang-zh">权限</span></span>
+        <span class="lang-en">Rungs 0–2 require elevated privileges (root, CAP_NET_RAW, or Npcap installed). Without them, sending automatically descends to the UDP fallback, which needs no privileges but loses the outer headers.</span>
+        <span class="lang-zh">第 0–2 级需要提升的权限（root、CAP_NET_RAW 或已安装 Npcap）。若不具备，发送会自动降级到 UDP 回退方式，它无需权限，但会丢失外层首部。</span>
+      </div>
+    </section>
+
+    <!-- ============ 17. Layout ============ -->
+    <section id="layout">
+      <h2><span class="lang-en">17. Dockable Layout</span><span class="lang-zh">17. 可停靠布局</span></h2>
+      <p>
+        <span class="lang-en">The packet list, protocol tree and hex editor are panes of a Visual-Studio-style dock. You can arrange the workspace to suit the task:</span>
+        <span class="lang-zh">数据包列表、协议树与十六进制视图都是 Visual Studio 风格停靠面板。你可以按任务需要自由排布工作区：</span>
+      </p>
+      <ul>
+        <li><span class="lang-en">Drag a pane header to re-dock it elsewhere.</span><span class="lang-zh">拖动面板标题栏，将其重新停靠到别处。</span></li>
+        <li><span class="lang-en">Group panes as tabs.</span><span class="lang-zh">将面板组合为标签页。</span></li>
+        <li><span class="lang-en">Float a pane in its own window.</span><span class="lang-zh">将面板浮动为独立窗口。</span></li>
+        <li><span class="lang-en">Close a pane and re-open it from the <strong>View</strong> menu.</span><span class="lang-zh">关闭面板后，可从<strong>视图</strong>菜单重新打开。</span></li>
+      </ul>
+      <h3><span class="lang-en">Layout persistence</span><span class="lang-zh">布局持久化</span></h3>
+      <p>
+        <span class="lang-en">Two files under the application data folder remember your workspace between launches:</span>
+        <span class="lang-zh">应用程序数据文件夹下的两个文件会在两次启动之间记住你的工作区：</span>
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th><span class="lang-en">File</span><span class="lang-zh">文件</span></th><th><span class="lang-en">Contents</span><span class="lang-zh">内容</span></th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>layout.json</code></td><td><span class="lang-en">Window geometry and pane-visibility flags.</span><span class="lang-zh">窗口几何尺寸与面板可见性标志。</span></td></tr>
+            <tr><td><code>docklayout.json</code></td><td><span class="lang-en">The serialized dock tree (pane arrangement).</span><span class="lang-zh">序列化的停靠树（面板排布）。</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        <span class="lang-en">Locations: <code>%APPDATA%/ProtocolForge/</code> on Windows, <code>~/.config/ProtocolForge/</code> on Linux, <code>~/Library/Application Support/ProtocolForge/</code> on macOS.</span>
+        <span class="lang-zh">位置：Windows 为 <code>%APPDATA%/ProtocolForge/</code>，Linux 为 <code>~/.config/ProtocolForge/</code>，macOS 为 <code>~/Library/Application Support/ProtocolForge/</code>。</span>
+      </p>
+    </section>
+
+    <!-- ============ 18. Find ============ -->
+    <section id="find">
+      <h2><span class="lang-en">18. Find</span><span class="lang-zh">18. 查找</span></h2>
+      <p>
+        <span class="lang-en">Find searches the packet-list columns and the selected packet's protocol tree, in either direction:</span>
+        <span class="lang-zh">查找可在数据包列表各列以及所选报文的协议树中搜索，支持双向：</span>
+      </p>
+      <ul>
+        <li><span class="lang-en"><strong>Forward / backward</strong> — move to the next or previous match.</span><span class="lang-zh"><strong>向前 / 向后</strong>——移动到下一个或上一个匹配项。</span></li>
+        <li><span class="lang-en"><strong>Tree hits</strong> — a match in the tree is expanded and revealed, rather than rebuilding the tree.</span><span class="lang-zh"><strong>协议树命中</strong>——树中的匹配项会被展开并显示，而不是重建整棵树。</span></li>
+      </ul>
+      <p>
+        <span class="lang-en">The find box also keeps your last 10 successful searches: click the <strong>▾</strong> arrow inside the box to reopen one. Only searches that produced a match are remembered.</span>
+        <span class="lang-zh">查找框同样会保留最近 10 次成功的查找：点击输入框内的 <strong>▾</strong> 箭头即可重新打开其中一条。只有命中的查找才会被记录。</span>
+      </p>
+    </section>
+
+    <!-- ============ 19. Shortcuts ============ -->
+    <section id="shortcuts">
+      <h2><span class="lang-en">19. Keyboard Shortcuts</span><span class="lang-zh">19. 键盘快捷键</span></h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th><span class="lang-en">Shortcut</span><span class="lang-zh">快捷键</span></th>
+              <th><span class="lang-en">Action</span><span class="lang-zh">操作</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>O</kbd></td><td><span class="lang-en">Open PCAP</span><span class="lang-zh">打开 PCAP</span></td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td><span class="lang-en">Save PCAP (overwrite)</span><span class="lang-zh">保存 PCAP（覆盖）</span></td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd></td><td><span class="lang-en">Export PCAP As</span><span class="lang-zh">导出 PCAP 为…</span></td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td><span class="lang-en">Undo</span><span class="lang-zh">撤销</span></td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>Y</kbd></td><td><span class="lang-en">Redo</span><span class="lang-zh">重做</span></td></tr>
+            <tr><td><kbd>Enter</kbd></td><td><span class="lang-en">Apply the current inline edit (tree or hex)</span><span class="lang-zh">应用当前内联编辑（协议树或十六进制）</span></td></tr>
+            <tr><td><kbd>Esc</kbd></td><td><span class="lang-en">Cancel the current inline edit</span><span class="lang-zh">取消当前内联编辑</span></td></tr>
+            <tr><td><kbd>↑</kbd> / <kbd>↓</kbd></td><td><span class="lang-en">Move through filter autocomplete suggestions; navigate hex cells</span><span class="lang-zh">在过滤器自动补全候选中移动；在十六进制单元格间导航</span></td></tr>
+            <tr><td><kbd>Tab</kbd></td><td><span class="lang-en">Accept the highlighted filter suggestion</span><span class="lang-zh">接受高亮的过滤器候选</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ============ 20. CLI ============ -->
+    <section id="cli">
+      <h2><span class="lang-en">Appendix A — Headless CLI</span><span class="lang-zh">附录 A — 命令行工具</span></h2>
+      <p>
+        <span class="lang-en">The same engine is available without a GUI for CI and batch use. Edits go through the same Verify-Before-Commit transaction as the GUI. Exit codes: <code>0</code> success, <code>1</code> failure or aborted VBC, <code>2</code> usage error. See <code>docs/pfcheck-cli.md</code> for the full reference.</span>
+        <span class="lang-zh">同一套引擎也可在无图形界面下用于 CI 与批处理。编辑走与界面完全相同的提交前校验事务。退出码：<code>0</code> 成功，<code>1</code> 失败或 VBC 中止，<code>2</code> 参数用法错误。完整参考见 <code>docs/pfcheck-cli.md</code>。</span>
+      </p>
+      <pre><code>ProtocolForge validate &lt;capture.pcap&gt; [--filter &lt;display-filter&gt;]
+ProtocolForge edit &lt;capture.pcap&gt; --offset &lt;n&gt; --length &lt;n&gt; --hex &lt;hex&gt; --out &lt;out.pcap&gt; [--packet &lt;n&gt;]
+ProtocolForge send &lt;capture.pcap&gt; --interface &lt;name&gt; [--count &lt;n&gt;] [--interval &lt;ms&gt;] [--all] [--filter &lt;display-filter&gt;]
+ProtocolForge stats &lt;capture.pcap&gt; --tap &lt;tap&gt; [--filter &lt;display-filter&gt;]</code></pre>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th><span class="lang-en">Command</span><span class="lang-zh">命令</span></th><th><span class="lang-en">Purpose</span><span class="lang-zh">用途</span></th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>validate</code></td><td><span class="lang-en">Open a capture, report metadata, and dissect the first frame to prove the pipeline works.</span><span class="lang-zh">打开抓包、报告元数据，并解析首帧以证明解析链路可用。</span></td></tr>
+            <tr><td><code>edit</code></td><td><span class="lang-en">Rewrite bytes at an offset; must pass VBC.</span><span class="lang-zh">按偏移改写字节；必须通过 VBC 校验。</span></td></tr>
+            <tr><td><code>send</code></td><td><span class="lang-en">Inject through the send ladder; supports interface, count, interval and filter.</span><span class="lang-zh">经发送阶梯注入；支持网卡、次数、间隔与过滤器。</span></td></tr>
+            <tr><td><code>stats</code></td><td><span class="lang-en">Run a tshark analysis tap and print its raw output.</span><span class="lang-zh">运行一个 tshark 分析 tap 并原样输出。</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ============ 21. Appendix B ============ -->
+    <section id="appendix">
+      <h2><span class="lang-en">Appendix B — Protocols &amp; Logs</span><span class="lang-zh">附录 B — 协议与日志</span></h2>
+
+      <h3><span class="lang-en">Supported protocols</span><span class="lang-zh">支持的协议</span></h3>
+      <p>
+        <span class="lang-en">Because dissection is delegated to tshark, ProtocolForge supports any protocol your installed Wireshark knows. Common 3GPP and transport protocols include:</span>
+        <span class="lang-zh">由于解析交由 tshark 完成，ProtocolForge 支持你所安装的 Wireshark 能识别的任何协议。常见的 3GPP 与传输协议包括：</span>
+      </p>
+      <p>
+        <span class="badge">PFCP</span>
+        <span class="badge">NGAP</span>
+        <span class="badge">GTP-U</span>
+        <span class="badge">NAS</span>
+        <span class="badge">S1AP</span>
+        <span class="badge">Diameter</span>
+        <span class="badge">HTTP/2</span>
+        <span class="badge">SCTP</span>
+        <span class="lang-en badge">…and more</span>
+        <span class="lang-zh badge">……等</span>
+      </p>
+
+      <h3><span class="lang-en">Trace log</span><span class="lang-zh">跟踪日志</span></h3>
+      <p>
+        <span class="lang-en">Runtime diagnostics are written to <code>trace.log</code> under the local application data folder. It records packet loads, selections and send activity — consult it when investigating behavioural issues.</span>
+        <span class="lang-zh">运行时诊断信息写入本地应用程序数据文件夹下的 <code>trace.log</code>。它记录报文加载、选择与发送活动——排查行为问题时请查阅它。</span>
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th><span class="lang-en">Platform</span><span class="lang-zh">平台</span></th><th><span class="lang-en">trace.log location</span><span class="lang-zh">trace.log 位置</span></th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Windows</td><td><code>%LOCALAPPDATA%/ProtocolForge/logs/trace.log</code></td></tr>
+            <tr><td>Linux</td><td><code>~/.local/share/ProtocolForge/logs/trace.log</code></td></tr>
+            <tr><td>macOS</td><td><code>~/Library/Application Support/ProtocolForge/logs/trace.log</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ============ 22. FAQ ============ -->
+    <section id="faq">
+      <h2><span class="lang-en">Troubleshooting / FAQ</span><span class="lang-zh">故障排查 / 常见问题</span></h2>
+      <dl class="faq">
+
+        <dt><span class="lang-en">The window opens but editing, export and send are greyed out. Why?</span><span class="lang-zh">窗口打开了，但编辑、导出与发送都是灰色不可用，为什么？</span></dt>
+        <dd>
+          <span class="lang-en">You are in read-only mode, which happens when tshark is missing or older than 2.6.0. Install or update Wireshark, then open <em>File → Tshark Path…</em> and pick the valid tshark executable — the gate lifts as soon as it passes the version check. You can also set the <code>TSHARK_PATH</code> environment variable.</span>
+          <span class="lang-zh">你正处于只读模式，这通常发生在 tshark 缺失或版本低于 2.6.0 时。请安装或更新 Wireshark，然后打开 <em>文件 → Tshark 路径…</em> 并选择有效的 tshark 可执行文件——一旦通过版本校验，门禁会立即解除。你也可以设置 <code>TSHARK_PATH</code> 环境变量。</span>
+        </dd>
+
+        <dt><span class="lang-en">The filter box has a red border. What is wrong?</span><span class="lang-zh">过滤器输入框显示红色边框，哪里出问题了？</span></dt>
+        <dd>
+          <span class="lang-en">The expression failed to parse as a tshark display filter. Hover the box to read the reason in the tooltip, fix the syntax, and press <kbd>Enter</kbd> or <strong>Apply</strong> again. A green border means the filter is valid.</span>
+          <span class="lang-zh">该表达式无法作为 tshark 显示过滤器解析。将鼠标悬停在输入框上查看提示中的原因，修正语法后再次按 <kbd>Enter</kbd> 或点击 <strong>应用</strong>。绿色边框表示过滤器有效。</span>
+        </dd>
+
+        <dt><span class="lang-en">A field refuses to open an editor and says "Not editable: …".</span><span class="lang-zh">某字段拒绝打开编辑器并提示 “Not editable: …”。</span></dt>
+        <dd>
+          <span class="lang-en">The field failed an edit-fence check — for example a bit-level sub-field with no bit mask, or recorded bytes that no longer agree with the frame. (A bit field with a mask is editable by read-modify-write; an untyped opaque leaf falls back to a raw-hex editor; a container or an undecoded "IE not decoded yet" marker edits as one whole hex blob when its byte span is derivable.) The reason after the colon explains which check failed. Such fields cannot be edited safely and are blocked by design.</span>
+          <span class="lang-zh">该字段未通过某项编辑围栏检查——例如没有位掩码的位级子字段，或其记录的字节已与帧不一致。（带掩码的位字段可通过读-改-写编辑；无类型的不可解析叶子字段回退为整块十六进制编辑；容器或未解码的“IE not decoded yet”标记在其字节跨度可推导时按整块十六进制编辑。）冒号后的原因会说明是哪一项未通过。此类字段无法安全编辑，因此按设计被阻止。</span>
+        </dd>
+
+        <dt><span class="lang-en">My edit was rejected even though the value looks fine.</span><span class="lang-zh">值看起来没问题，但编辑却被拒绝了。</span></dt>
+        <dd>
+          <span class="lang-en">Verify-Before-Commit re-parses the candidate frame and requires the new value to land at the expected field name and byte offset. If tshark dissects the frame differently after the change — offset drift, a value mismatch or a length change — the commit is aborted and the packet is left byte-identical. Adjust the value so it dissects consistently, or edit the bytes directly in the hex viewer.</span>
+          <span class="lang-zh">提交前校验会重新解析候选帧，并要求新值落在预期的字段名与字节偏移上。若改动后 tshark 的解析结果发生变化——偏移漂移、值不匹配或长度变化——提交会被中止，报文保持逐字节不变。请调整取值使其能一致地解析，或直接在十六进制视图中编辑字节。</span>
+        </dd>
+
+        <dt><span class="lang-en">Sending fails, or packets never appear on the wire.</span><span class="lang-zh">发送失败，或报文根本没有出现在网络上。</span></dt>
+        <dd>
+          <span class="lang-en">High rungs need privileges and a suitable adapter. Run with elevated privileges (root / CAP_NET_RAW / admin), confirm Npcap is installed on Windows, and make sure the selected interface is a physical (non-loopback) adapter. Without privileges the app falls back to UDP, which sends only the payload and drops the outer headers. Check the sent/failed counters and the status bar for the per-packet outcome.</span>
+          <span class="lang-zh">高层级需要权限与合适的网卡。请以提升的权限运行（root / CAP_NET_RAW / 管理员），确认 Windows 上已安装 Npcap，并确保所选接口是物理（非回环）网卡。若无相应权限，程序会回退到 UDP，仅发送载荷并丢弃外层首部。请查看已发送/失败计数器与状态栏以了解逐包结果。</span>
+        </dd>
+
+        <dt><span class="lang-en">Where are the logs?</span><span class="lang-zh">日志在哪里？</span></dt>
+        <dd>
+          <span class="lang-en">In <code>trace.log</code> under the local application data folder: <code>%LOCALAPPDATA%/ProtocolForge/logs/</code> (Windows), <code>~/.local/share/ProtocolForge/logs/</code> (Linux) or <code>~/Library/Application Support/ProtocolForge/logs/</code> (macOS). <em>File → Open Support Data Folder</em> takes you straight there.</span>
+          <span class="lang-zh">位于本地应用程序数据文件夹下的 <code>trace.log</code>：Windows 为 <code>%LOCALAPPDATA%/ProtocolForge/logs/</code>，Linux 为 <code>~/.local/share/ProtocolForge/logs/</code>，macOS 为 <code>~/Library/Application Support/ProtocolForge/logs/</code>。<em>文件 → 打开支持数据目录</em> 可直接带你前往该位置。</span>
+        </dd>
+
+      </dl>
+    </section>
+
+    <footer class="site-footer">
+      <span class="version"><span class="lang-en">ProtocolForge v0.2.0</span><span class="lang-zh">ProtocolForge v0.2.0</span></span>
+      <span><span class="lang-en">Licensed under Apache-2.0.</span><span class="lang-zh">基于 Apache-2.0 许可证。</span></span>
+      <span><span class="lang-en">Offline single-file manual — no network required.</span><span class="lang-zh">离线单文件手册——无需联网。</span></span>
+    </footer>
+
+  </main>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var root = document.documentElement;
+  var btn = document.getElementById("langToggle");
+  var KEY = "pf-manual-lang";
+
+  function apply(lang) {
+    var isZh = lang === "zh";
+    if (isZh) {
+      root.setAttribute("data-lang", "zh");
+    } else {
+      root.setAttribute("data-lang", "en");
+    }
+    root.setAttribute("lang", isZh ? "zh-CN" : "en-US");
+    // The button always offers the OTHER language.
+    btn.textContent = isZh ? "English" : "中文";
+    btn.setAttribute("aria-label", isZh ? "Switch to English" : "切换到中文");
+    try { localStorage.setItem(KEY, isZh ? "zh" : "en"); } catch (e) { /* file:// may block storage */ }
+  }
+
+  var initial = "en";
+  try {
+    var saved = localStorage.getItem(KEY);
+    if (saved === "zh" || saved === "en") { initial = saved; }
+  } catch (e) { /* ignore */ }
+
+  apply(initial);
+
+  btn.addEventListener("click", function () {
+    apply(root.getAttribute("data-lang") === "zh" ? "en" : "zh");
+  });
+})();
+</script>
+
+</body>
+</html>

@@ -7,12 +7,6 @@
 # to true, which without this rule rewrites publish-linux.sh to CRLF and breaks it.
 *.sh text eol=lf
 
-# Freedesktop .desktop files MUST stay LF: publish-linux.sh copies them verbatim
-# into the AppImage AppDir and the .deb, and appimagetool / desktop-file-validate
-# reject a carriage return. A Windows-side checkout without this rule lands them
-# as CRLF and local Linux packaging fails with "line ending with a carriage return".
-*.desktop text eol=lf
-
 # C# / XAML / MSBuild / PowerShell follow the project's documented Windows
 # convention: CRLF. These are the files the toolchain and editors care about.
 *.cs      text eol=crlf
@@ -59,3 +53,7 @@
 *.woff binary
 *.woff2 binary
 *.ttf binary
+# Freedesktop .desktop files MUST stay LF: publish-linux.sh copies them verbatim
+# into the AppImage AppDir and the .deb, and appimagetool / desktop-file-validate
+# reject CRLF.
+*.desktop text eol=lf

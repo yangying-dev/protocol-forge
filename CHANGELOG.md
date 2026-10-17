@@ -6,28 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-## [1.0.0-beta.1] - 2026-10-17
-
 ### Added
-
-- **Headless UI verification.** The harness can now mount the real `MainWindow` with the
-  real view models under `Avalonia.Headless` and render it through Skia with no X server
-  and no GL, then assert on the result: the window mounts, the panels the reassembly work
-  touched are in the visual tree and are mutually exclusive, the VLAN id box follows the
-  VLAN mode, the checkbox labels resolve from the localization dictionary, and the captured
-  frame is real rendered content rather than a blank surface. Run it with
-  `dotnet run --project tests/pf-verify -- --ui`. It is a separate process and a separate
-  CI step on purpose — initialising Avalonia and Skia inside the process that then runs the
-  tshark-backed groups crashes it. This raises the guarantee from "the XAML compiled" to
-  "the window rendered", and it is deliberately the framework-free `Avalonia.Headless`
-  package rather than the xUnit/NUnit integration, so the harness keeps its hand-rolled
-  assertions.
 
 **Editing**
 
+- **Extended protocol-tree editable scope.** Three field shapes the edit fence used to refuse
+  are now editable, so IEs tshark leaves partly opaque can be patched in place. A **bit-level
+  sub-field** (e.g. IPv4 DSCP/ECN) is rewritten in place by read-modify-write against the live
+  frame bytes — a single contiguous bit mask of up to 8 bytes is accepted, an unmasked or
+  non-contiguous mask is still refused. An **untyped opaque leaf** tshark emits with no field
+  type falls back to a raw-hex `Bytes` editor once it is 9 bytes or longer, so unknown IEs
+  become editable instead of silently dead. A field **with children** — an IE container, or an
+  undecoded `IE not decoded yet` marker whose byte span is derivable — is edited as one whole
+  hex blob; a marker now derives its span by pairing the PDML anonymous "not decoded" children
+  with the marker's jsonraw `_raw` entries in document order (the PDML alone cannot — every
+  anonymous child shares the same empty name and `show` text), and a marker or container with
+  no derivable span stays read-only and says so. Byte-level edits still clear the same five
+  checks; bit fields go through read-modify-write and containers/markers through whole-blob
+  verification, both via Verify-Before-Commit. New harness groups pin the verdicts.
 - **Length-changing edits.** A field's value may now be a different length: the frame is spliced, every later field is shifted, and fields the splice pushed outside the frame are pruned from the tree. This is gated behind an explicit per-editor "allow length change" opt-in, is hex-only, and resets each time an editor opens.
 - **Compound edits.** Several fields are edited in one transaction. This is what makes an insert usable at all: growing a payload and correcting the enclosing length fields cannot be done one transaction at a time, because the frame is malformed in between and each transaction would correctly refuse it. Verified end-to-end by growing a UDP payload together with `udp.length` and `ip.len`.
-- **Undo / redo** over committed edits, per packet, capped at 200 entries with a visible bound. A new edit discards the redo branch. Ctrl+Z / Ctrl+Y, also on the File menu. Undo and redo reload the capture so the protocol tree matches the restored bytes.
+- **Undo / redo** over committed edits, per packet, capped at 200 entries with a visible bound. A new edit discards the redo branch. Ctrl+Z / Ctrl+Y, also on the File menu. Undo and redo rebuild the protocol tree in memory from the restored bytes without reloading the capture from disk.
 - **Recent files** persisted per user, capped at 10.
 - **Enumerated-value dropdown.** Integer fields tshark renders a name for are now edited from a list instead of a bare number. The interpretations are harvested from PDML during dissection, so the list holds values observed in the session — tshark has no enum-dump facility and its `show` attribute only ever describes the value present in that one packet. `Kind` is deliberately unchanged, so the edit fence and every value converter keep working as before.
 
@@ -65,12 +64,62 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 **Housekeeping**
 
+- **Headless UI verification.** The harness can now mount the real `MainWindow` with the
+  real view models under `Avalonia.Headless` and render it through Skia with no X server
+  and no GL, then assert on the result: the window mounts, the panels the reassembly work
+  touched are in the visual tree and are mutually exclusive, the VLAN id box follows the
+  VLAN mode, the checkbox labels resolve from the localization dictionary, and the captured
+  frame is real rendered content rather than a blank surface. Run it with
+  `dotnet run --project tests/pf-verify -- --ui`. It is a separate process and a separate
+  CI step on purpose — initialising Avalonia and Skia inside the process that then runs the
+  tshark-backed groups crashes it. This raises the guarantee from "the XAML compiled" to
+  "the window rendered", and it is deliberately the framework-free `Avalonia.Headless`
+  package rather than the xUnit/NUnit integration, so the harness keeps its hand-rolled
+  assertions.
 - **Rescan network adapters** button on the send toolbar. The command existed but was bound to nothing, so plugging in an adapter required restarting the app.
 - **Export-as offers PCAPNG.** The writer shipped in this release was unreachable from the file dialog, which only listed `*.pcap`.
 - **Harness output filter.** `dotnet run --project tests/pf-verify -- --only <组号>` (or `--group <标题子串>`) prints a single group while iterating. It suppresses **output only** — every group still executes, FAIL lines always print, and the footer and exit code still judge the whole run, so a filtered run cannot look green when something failed. Group banners and in-group detail lines are emitted through `Banner(n, title)` / `Detail(text)` helpers so nothing slips past the filter.
 - **The harness is part of `ProtocolForge.sln`.** `dotnet build` now compiles `tests/pf-verify`, so harness compile errors surface in a plain build instead of only when someone remembers to run it. Building is not running: the harness still has to be executed explicitly.
 
+### Changed
+
+- **Unified theming on SukiUI.** The window chrome, controls and dock panes now share one
+  runtime theme system built on [`SukiUI`](https://github.com/kikipoulet/SukiUI) 7.0.1 +
+  `SukiUI.Dock` 7.0.1 (both MIT). The theme menu offers a base (**System / Light / Dark**)
+  with the SukiUI accent fixed at **Blue**; the choice persists and applies
+  instantly with no restart. This replaces the previous hand-rolled multi-theme palette
+  (`Services/AppThemes.cs` is removed): the standard Dock chrome is now restyled by
+  `SukiUI.Dock`, so the panes and the host no longer drift apart when the theme changes.
+  Existing `ThemeVariant` settings migrate (e.g. `Midnight` → Dark, `Sakura` → Light; the
+  legacy `Base|Color` form is read as its base part).
+
+- **Compact density override.** SukiUI's default control metrics were looser than the
+  theme they replaced (taller menus, tree rows, grid cells and inputs); a compact style
+  block in `App.axaml` now tightens paddings and minimum heights on those controls so
+  the layout keeps the previous density. The dock panes get the same treatment from
+  `Assets/DockDensity.axaml` (loaded before `SukiUI.Dock/Index.axaml` so its keyed
+  `ControlTheme`s win): tool-window chrome is slimmer (title 14→12, grip/title margins
+  tightened, 16×14 chrome buttons), pane shadow/glass margins shrink toward the edges
+  (border 8→4, glass 5→2, dockable 12,15→4,6), and the grid is denser — DataGrid rows
+  keep a 26 px minimum, column headers 28 px and 12 pt text, list rows 26 px, with the
+  packet-list toolbar and hex cells trimmed (30→28 px cells, 13→12 pt hex/ASCII text).
+
+- **One adapter per instance is the supported shape.** Capturing several NICs is done by
+  running several instances, not by teaching one instance to handle several. Accordingly
+  the per-PID `trace.log` split and the multi-interface notice below exist to make that
+  workable, not to grow multi-NIC support. Multi-interface PCAPNG write-back is therefore
+  out of scope: a file that merged several adapters is reported on load and again on save,
+  so the merge is never silent.
+
+- The verification harness generates its own capture. With `PF_CAPTURE` unset it builds a 4413-frame synthetic capture into the temp directory and deletes it afterwards, so the capture-dependent groups — the edit fence, Verify-Before-Commit, address re-extraction — run in CI instead of skipping. A bare run reports 414 PASS / 0 FAIL / 1 SKIP (+ HG-01..10 headless UI); the one skip is `G17-13`, which needs the ≥180k-packet pcapng that cannot be synthesised. No capture is committed and the no-pcap rule is unchanged.
+
 ### Fixed
+
+- **Menu labels no longer show a leading underscore.** The `_` access-key mnemonics in the
+  localization dictionaries (`_Open PCAP…`, `E_xit`, `_语言`) are removed: SukiUI's
+  `MenuItem` template does not interpret `AccessText`, so the marker was rendered as part
+  of the label. Underscores inside real content (`TSHARK_PATH`, `SO_BINDTODEVICE`) are
+  untouched.
 
 - **The Follow Stream combo did nothing.** `ApplySelectedStreamFilterAsync` existed but no generated-property hook called it, so selecting a stream changed the label without filtering the list.
 - **The reassembled viewer and the statistics list were drawn in the same grid cell.** Showing reassembled bytes left the statistics table painted underneath, so the two overlapped.
@@ -90,18 +139,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `ViewLocator` and the two value converters. All three were registered or defined but referenced nowhere: the app constructs its views directly. `ViewLocator` was additionally annotated by its own author as a trimming hazard.
 - `OpenPcapAsync` and `ExportPcapAsync`. Both were `[RelayCommand]` wrappers that no XAML or code-behind referenced; the first was an empty stub and the second duplicated `ExportToFileAsync`.
-- `docs/PfcheckUserManual.md`, which documented a CLI that did not exist and described a GUI feature as paid. Replaced by [`docs/pfcheck-cli.md`](docs/pfcheck-cli.md), written against the tool that now ships.
+- `docs/PfcheckUserManual.md`, which documented a CLI that did not exist and described a GUI feature as paid. Replaced by `docs/pfcheck-cli.md`, written against the tool that now ships.
 
-### Changed
+### Notes
 
-- **One adapter per instance is the supported shape.** Capturing several NICs is done by
-  running several instances, not by teaching one instance to handle several. Accordingly
-  the per-PID `trace.log` split and the multi-interface notice below exist to make that
-  workable, not to grow multi-NIC support. Multi-interface PCAPNG write-back is therefore
-  out of scope: a file that merged several adapters is reported on load and again on save,
-  so the merge is never silent.
-
-- The verification harness generates its own capture. With `PF_CAPTURE` unset it builds a 4413-frame synthetic capture into the temp directory and deletes it afterwards, so the capture-dependent groups — the edit fence, Verify-Before-Commit, address re-extraction — run in CI instead of skipping. A bare run reports 378 PASS / 0 FAIL / 1 SKIP (+ HG-01..10 headless UI); the one skip is `G17-13`, which needs the ≥180k-packet pcapng that cannot be synthesised. No capture is committed and the no-pcap rule is unchanged.
+- `v0.2.0` has **no git tag**. The repository previously claimed a 0.1.0 release that was never tagged, so `release.yml` never produced an artifact from this history. The tag is deliberately left for a maintainer to cut after review, not created here.
 
 ## [0.1.0] - 2026-09-30
 
@@ -123,7 +165,7 @@ First public release. Apache-2.0, self-contained, cross-platform.
 - **Hex viewer** with a Wireshark-style layout: 16 bytes per row, offset column, hex grouped 8+8, ASCII pane. Click or arrow-key navigation, selected bytes highlighted, protocol field ranges highlighted per protocol, edited bytes marked.
 - **REPLACE-only inline hex editing.** Start typing hex digits over any byte, the pending value previews in place, Enter commits the whole run as a single replace, Esc cancels. Each run is built from full hex-digit pairs, so **packet length never changes** and every offset outside the edited span stays valid.
 - **Six-check edit fence** (`CheckTreeEditFence`) gating every field edit: a resolvable field type, a non-negative byte span, byte alignment rather than a bit-level sub-field, an in-frame span (fanning into a reassembled PDU fails), concrete byte evidence with `RawBytes.Length` matching the field length, and recorded bytes agreeing with the actual frame bytes. Blocked fields report the reason and refuse to open an editor.
-- **Verify-Before-Commit.** A proposed edit is not written straight into the packet. The candidate frame is saved to a temp PCAP with surrounding context frames where available, reparsed by tshark, and the field's new hex value must land at the expected `(PDML name, byte offset)`. Offset drift, a wrong value, or a length mismatch aborts the commit and leaves the packet byte-identical. Applies to both tree and hex edits.
+- **Verify-Before-Commit.** A proposed edit is not written straight into the packet. The candidate frame is saved to a temp PCAP with surrounding context frames where available, reparsed by tshark, and the field's new hex value must land at the expected `(PDML name, byte offset)`. Offset drift, a wrong value, or a length mismatch aborts the commit and leaves the packet byte-identical. Applies to tree field edits (hex-pane runs are fence-checked and applied directly, then a follow-up reparse refreshes the tree).
 - **Container auto-relink.** After a committed field edit the packet is reparsed once in the background and the tree's container and layer header texts are patched in place, so editing a PFCP SEID refreshes the surrounding `F-SEID : SEID: 0x…, IPv4 …` display without rebuilding the tree. Anonymous IE containers are matched by effective offset.
 - Hex-native field editing: fields Wireshark renders in hexadecimal, such as PFCP SEID and TEID, are detected from the PDML showname and edited as hex, round-tripping big-endian bytes exactly as tshark displays them.
 - **Bidirectional tree and hex sync.** Selecting a field highlights its byte range in the hex viewer; selecting bytes resolves the owning field and reveals the matching node in the tree.
@@ -159,6 +201,5 @@ First public release. Apache-2.0, self-contained, cross-platform.
 - Npcap (Windows, optional) is not bundled, not redistributed, and not installed by the application. See [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
 - Security reporting channels, intended use, and the disclosed limits of the send path are in [`SECURITY.md`](SECURITY.md).
 
-[Unreleased]: https://github.com/yangying-dev/protocol-forge/compare/v1.0.0-beta.1...HEAD
-[1.0.0-beta.1]: https://github.com/yangying-dev/protocol-forge/releases/tag/v1.0.0-beta.1
+[Unreleased]: https://github.com/yangying-dev/protocol-forge/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/yangying-dev/protocol-forge/releases/tag/v0.1.0
