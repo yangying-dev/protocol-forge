@@ -145,6 +145,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `v0.2.0` has **no git tag**. The repository previously claimed a 0.1.0 release that was never tagged, so `release.yml` never produced an artifact from this history. The tag is deliberately left for a maintainer to cut after review, not created here.
 
+## [1.0.0-beta.1] - 2026-10-17
+
+Tagged release of the `main` line (`v1.0.0-beta.1` → `e530fe0`). Every entry it shipped — headless UI verification, length-changing and compound edits, undo/redo, display filter, statistics, PCAPNG write-back, the headless CLI and the fixes that came with them — is listed under `[Unreleased]` above: the gitee `protocol-forge-pro` line was merged into `main` on top of this tag and carries each of those entries in its current wording, so the content is not duplicated here. This heading exists to keep the tag and its date discoverable.
+
 ## [0.1.0] - 2026-09-30
 
 First public release. Apache-2.0, self-contained, cross-platform.
@@ -201,5 +205,6 @@ First public release. Apache-2.0, self-contained, cross-platform.
 - Npcap (Windows, optional) is not bundled, not redistributed, and not installed by the application. See [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
 - Security reporting channels, intended use, and the disclosed limits of the send path are in [`SECURITY.md`](SECURITY.md).
 
-[Unreleased]: https://github.com/yangying-dev/protocol-forge/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/yangying-dev/protocol-forge/compare/v1.0.0-beta.1...HEAD
+[1.0.0-beta.1]: https://github.com/yangying-dev/protocol-forge/releases/tag/v1.0.0-beta.1
 [0.1.0]: https://github.com/yangying-dev/protocol-forge/releases/tag/v0.1.0
