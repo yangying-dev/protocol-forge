@@ -59,7 +59,11 @@ jobs:
           # 首次推送到空仓库时 before 全为 0，git diff 会失败；原来用 2>/dev/null
           # 吞掉错误，导致门禁静默放行。回退到根提交，与 ci.yml 的做法一致。
           if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
-            base="$(git rev-list --max-parents=0 HEAD)"
+            # 仓库历史有多个根提交（migrate/gitee-pro 合并了两条无共同祖先的
+            # 历史），rev-list 会对每个根输出一行；git diff 只接受单个 base，
+            # 多行字符串会报 bad revision (exit 128)。取第一个根即可：diff
+            # 比较的是两棵树，任一根提交的树与 HEAD 的差异都覆盖全部新增文件。
+            base="$(git rev-list --max-parents=0 HEAD | sed -n '1p')"
           fi
           # 与 ci.yml 保持一致：用 :(icase,glob) 才能拦住 .PCAP 这类大写扩展名
           captures="$(git diff --name-only --diff-filter=ACMR "$base" HEAD -- ':(icase,glob)**/*.pcap' ':(icase,glob)**/*.pcapng')"

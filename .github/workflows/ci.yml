@@ -44,7 +44,11 @@ jobs:
             base="${{ github.event.before }}"
           fi
           if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
-            base="$(git rev-list --max-parents=0 HEAD)"
+            # The history is multi-root (the gitee-pro merge joined two unrelated
+            # lines), so rev-list prints one hash per root; git diff rejects a
+            # multi-line base with "bad revision" (exit 128). Take the first
+            # root: the diff compares trees, so any root covers every add.
+            base="$(git rev-list --max-parents=0 HEAD | sed -n '1p')"
           fi
           # :(icase,glob) is required, not cosmetic: core.ignorecase is true on this repo, so
           # .gitignore's *.pcap already absorbs .PCAP — the gate has to agree or B.PCAP slips through.
