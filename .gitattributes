@@ -57,3 +57,8 @@
 # into the AppImage AppDir and the .deb, and appimagetool / desktop-file-validate
 # reject CRLF.
 *.desktop text eol=lf
+
+# GitHub Linguist: exclude documentation HTML from language statistics
+# The large UserManual.html with embedded base64 screenshots inflates HTML percentage.
+ProtocolForge/Manual/*.html linguist-documentation
+docs/**/*.html linguist-documentation
