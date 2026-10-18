@@ -202,6 +202,11 @@ jobs:
           # would silently overwrite one platform's checksums with the other's.
           cp -a out/linux/. out/stage/linux/
           cp -a out/windows/. out/stage/windows/
+          # A GitHub release is a flat namespace and gh fails an opaque HTTP 404
+          # when two assets share a filename (cli/cli#10792), so the two
+          # per-platform SHA256SUMS files must get distinct asset names.
+          mv out/stage/linux/SHA256SUMS out/stage/linux/SHA256SUMS.linux
+          mv out/stage/windows/SHA256SUMS out/stage/windows/SHA256SUMS.windows
           echo "--- staged payload ---"
           find out/stage -type f | sort
 
