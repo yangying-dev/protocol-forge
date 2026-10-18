@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 Set-Location $Root
 
-$Version = if ($env:PROTOCOLFORGE_VERSION) { $env:PROTOCOLFORGE_VERSION } else { "0.1.0" }
+$Version = if ($env:PROTOCOLFORGE_VERSION) { $env:PROTOCOLFORGE_VERSION } else { "1.1.0-beta.1" }
 $Out = Join-Path $Root "artifacts\windows-x64"
 $Stage = Join-Path $Out "ProtocolForge"
 $Zip = Join-Path $Out "ProtocolForge-$Version-win-x86_64.zip"

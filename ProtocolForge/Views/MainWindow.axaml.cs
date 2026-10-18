@@ -3,19 +3,19 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
-using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
-using Avalonia.Platform;
 using Avalonia.Platform.Storage;
 using System.Diagnostics;
 using System.Reflection;
 using ProtocolForge.Services;
 using ProtocolForge.ViewModels;
+using SukiUI.Controls;
+using SukiUI.MessageBox;
 
 namespace ProtocolForge.Views;
 
-public partial class MainWindow : Window
+public partial class MainWindow : SukiWindow
 {
     private MainWindowViewModel? ViewModel => DataContext as MainWindowViewModel;
     private readonly LayoutService _layoutService = new();
@@ -25,126 +25,13 @@ public partial class MainWindow : Window
         InitializeComponent();
         UpdateLanguageMenuChecks();
         LocalizationService.LanguageChanged += (_, _) => UpdateLanguageMenuChecks();
+        UpdateThemeMenuChecks();
+        ThemeService.ThemeVariantChanged += (_, _) => UpdateThemeMenuChecks();
         RestoreLayout();
-        DataContextChanged += OnDataContextChanged;
     }
 
-    private bool _selectionSyncWired;
     private bool _allowClose;
     private bool _closePromptOpen;
-
-    private void OnDataContextChanged(object? sender, EventArgs e)
-    {
-        if (ViewModel == null)
-            return;
-
-        if (_selectionSyncWired)
-            return;
-
-        _selectionSyncWired = true;
-        ViewModel.PacketList.SendSelectionChanged += SyncHeaderSelectAllCheckBox;
-        SyncHeaderSelectAllCheckBox();
-    }
-
-    private void SyncHeaderSelectAllCheckBox()
-    {
-        if (ViewModel != null)
-            SelectAllSendCheckBox.IsChecked = ViewModel.PacketList.AllSelectedForSend;
-    }
-
-    private void OnSelectAllSendToggle(object? sender, RoutedEventArgs e)
-    {
-        if (ViewModel == null || SelectAllSendCheckBox.IsChecked is null)
-            return;
-        ViewModel.PacketList.AllSelectedForSend = SelectAllSendCheckBox.IsChecked.Value;
-    }
-
-    // ─── Packet List Context Menu ───
-
-    private void OnSelectAllSendClick(object? sender, RoutedEventArgs e)
-    {
-        ViewModel?.PacketList.SelectAllForSend();
-    }
-
-    private void OnClearSendSelectionClick(object? sender, RoutedEventArgs e)
-    {
-        ViewModel?.PacketList.ClearSendSelection();
-    }
-
-    private void OnInvertSendSelectionClick(object? sender, RoutedEventArgs e)
-    {
-        ViewModel?.PacketList.InvertSendSelection();
-    }
-
-    private async void OnSendThisPacketClick(object? sender, RoutedEventArgs e)
-    {
-        var vm = ViewModel;
-        if (vm?.PacketList.SelectedPacket is not { } packet)
-            return;
-        await vm.ToolBar.SendPacketsAsync(new[] { packet });
-    }
-
-    private async void OnStatisticsTapChanged(object? sender, SelectionChangedEventArgs e)
-    {
-        if (ViewModel is not null && ViewModel.SelectedStatisticsTap is not null)
-            await ViewModel.LoadStatisticsCommand.ExecuteAsync(null);
-    }
-
-    private async void OnRefreshStatisticsClick(object? sender, RoutedEventArgs e)
-    {
-        if (ViewModel is not null)
-            await ViewModel.LoadStatisticsCommand.ExecuteAsync(null);
-    }
-
-    private void OnFindKeyDown(object? sender, KeyEventArgs e)
-    {
-        if (ViewModel is null)
-            return;
-        if (e.Key == Key.Enter)
-        {
-            e.Handled = true;
-            ViewModel.FindNext();
-        }
-        else if (e.Key == Key.Escape)
-        {
-            e.Handled = true;
-            ViewModel.FindText = string.Empty;
-        }
-    }
-
-    private void OnFocusFindBox(object? sender, RoutedEventArgs e) => FindBox.Focus();
-
-    private async void OnFilterKeyDown(object? sender, KeyEventArgs e)
-    {
-        if (e.Key != Key.Enter)
-            return;
-        e.Handled = true;
-        if (ViewModel is not null)
-            await ViewModel.ApplyFilterCommand.ExecuteAsync(null);
-    }
-
-    private async void OnExportSendHistoryClick(object? sender, RoutedEventArgs e)
-    {
-        var vm = ViewModel;
-        if (vm is null || vm.ToolBar.SendHistory.Count == 0)
-            return;
-
-        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
-        {
-            SuggestedFileName = "send-history.csv",
-            DefaultExtension = "csv",
-            FileTypeChoices = [new FilePickerFileType("CSV") { Patterns = ["*.csv"] }],
-        });
-        if (file is null)
-            return;
-
-        vm.ToolBar.ExportSendHistory(file.Path.LocalPath);
-    }
-
-    private void OnClearSendHistoryClick(object? sender, RoutedEventArgs e)
-    {
-        ViewModel?.ToolBar.ClearSendHistory();
-    }
 
     private enum UnsavedCloseAction
     {
@@ -153,69 +40,48 @@ public partial class MainWindow : Window
         Discard,
     }
 
+    // 固定宽度让长文案按该宽度换行,高度自适应内容(旧实现写死高度会裁掉长文本);
+    // 居中于主窗口/不进任务栏/不可缩放由 SukiUI 默认处理,不要在此重复设置。
+    private static SukiMessageBoxOptions DialogWindow(double width) => new()
+    {
+        Width = width,
+        SizeToContent = SizeToContent.Height,
+    };
+
     private async Task<UnsavedCloseAction> ShowUnsavedChangesDialogAsync()
     {
-        var completion = new TaskCompletionSource<UnsavedCloseAction>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var cancelButton = new Button
-        {
-            Content = LocalizationService.Resolve("Dlg.Cancel"),
-            IsCancel = true,
-            IsDefault = true,
-            MinWidth = 110,
-        };
-        var discardButton = new Button
-        {
-            Content = LocalizationService.Resolve("Dlg.CloseDiscard"),
-            MinWidth = 130,
-        };
-        var saveButton = new Button
-        {
-            Content = LocalizationService.Resolve("Dlg.CloseSave"),
-            MinWidth = 130,
-            FontWeight = FontWeight.Bold,
-        };
+        var cancelButton = SukiMessageBoxButtonsFactory.CreateButton(
+            LocalizationService.Resolve("Dlg.Cancel"), SukiMessageBoxResult.Cancel);
+        cancelButton.IsCancel = true;
+        cancelButton.IsDefault = true;
+        cancelButton.MinWidth = 110;
 
-        var buttons = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8,
-            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
-        };
-        buttons.Children.Add(cancelButton);
-        buttons.Children.Add(discardButton);
-        buttons.Children.Add(saveButton);
+        var discardButton = SukiMessageBoxButtonsFactory.CreateButton(
+            LocalizationService.Resolve("Dlg.CloseDiscard"), SukiMessageBoxResult.No);
+        discardButton.MinWidth = 130;
 
-        var content = new StackPanel
-        {
-            Margin = new Thickness(20),
-            Spacing = 18,
-        };
-        content.Children.Add(new TextBlock
-        {
-            Text = LocalizationService.Resolve("Dlg.CloseUnsavedText"),
-            TextWrapping = TextWrapping.Wrap,
-            FontSize = 13,
-        });
-        content.Children.Add(buttons);
+        var saveButton = SukiMessageBoxButtonsFactory.CreateButton(
+            LocalizationService.Resolve("Dlg.CloseSave"), SukiMessageBoxResult.Yes);
+        saveButton.MinWidth = 130;
+        saveButton.FontWeight = FontWeight.Bold;
 
-        var dialog = new Window
-        {
-            Title = LocalizationService.Resolve("Dlg.CloseUnsavedTitle"),
-            Width = 500,
-            Height = 220,
-            CanResize = false,
-            ShowInTaskbar = false,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://ProtocolForge/Assets/protocol-forge.ico"))),
-            Content = content,
-        };
+        var result = await SukiMessageBox.ShowDialogResult(
+            this,
+            new SukiMessageBoxHost
+            {
+                IconPreset = SukiMessageBoxIcons.Warning,
+                Content = LocalizationService.Resolve("Dlg.CloseUnsavedText"),
+                ActionButtonsSource = [cancelButton, discardButton, saveButton],
+            },
+            LocalizationService.Resolve("Dlg.CloseUnsavedTitle"),
+            DialogWindow(500));
 
-        cancelButton.Click += (_, _) => completion.TrySetResult(UnsavedCloseAction.Cancel);
-        discardButton.Click += (_, _) => completion.TrySetResult(UnsavedCloseAction.Discard);
-        saveButton.Click += (_, _) => completion.TrySetResult(UnsavedCloseAction.Save);
-        dialog.Closed += (_, _) => completion.TrySetResult(UnsavedCloseAction.Cancel);
-        _ = dialog.ShowDialog(this);
-        return await completion.Task;
+        return result switch
+        {
+            SukiMessageBoxResult.Yes => UnsavedCloseAction.Save,
+            SukiMessageBoxResult.No => UnsavedCloseAction.Discard,
+            _ => UnsavedCloseAction.Cancel,
+        };
     }
 
     private async Task ConfirmCloseAsync()
@@ -260,6 +126,47 @@ public partial class MainWindow : Window
         base.OnClosing(e);
     }
 
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        // Avalonia's MenuItem.InputGesture is display-only — it never wires an
+        // accelerator. Bind the real shortcuts here. Focused controls get first
+        // refusal (a TextBox keeps its own Ctrl+Z/Ctrl+A), so only unhandled keys
+        // reach the window.
+        if ((e.KeyModifiers & KeyModifiers.Control) != 0)
+        {
+            switch (e.Key)
+            {
+                case Key.O:
+                    e.Handled = true;
+                    OnOpenPcapClicked(null, new RoutedEventArgs());
+                    break;
+                case Key.S:
+                    e.Handled = true;
+                    if ((e.KeyModifiers & KeyModifiers.Shift) != 0)
+                        OnExportPcapClicked(null, new RoutedEventArgs());
+                    else
+                        OnSavePcapClicked(null, new RoutedEventArgs());
+                    break;
+                case Key.Z:
+                    e.Handled = true;
+                    if (ViewModel?.UndoCommand.CanExecute(null) == true)
+                        ViewModel.UndoCommand.Execute(null);
+                    break;
+                case Key.Y:
+                    e.Handled = true;
+                    if (ViewModel?.RedoCommand.CanExecute(null) == true)
+                        ViewModel.RedoCommand.Execute(null);
+                    break;
+                case Key.F:
+                    e.Handled = true;
+                    ViewModel?.RequestFindFocus();
+                    break;
+            }
+        }
+
+        base.OnKeyDown(e);
+    }
+
     // ─── Layout Persistence ───
 
     private void RestoreLayout()
@@ -269,7 +176,6 @@ public partial class MainWindow : Window
         {
             var state = _layoutService.Load();
 
-            // Restore window geometry
             if (state.WindowX >= 0 && state.WindowY >= 0)
             {
                 Position = new PixelPoint((int)state.WindowX, (int)state.WindowY);
@@ -277,21 +183,6 @@ public partial class MainWindow : Window
             Width = state.WindowWidth;
             Height = state.WindowHeight;
             WindowState = (WindowState)state.WindowState;
-
-            // Restore splitter positions via row/column definitions
-            // Top row ratio: e.g., "2*,5*,3*" → top=2/(2+3)=0.4
-            double topRatio = Math.Clamp(state.TopRowRatio, 0.15, 0.75);
-            double bottomRatio = Math.Clamp(state.BottomLeftRatio, 0.15, 0.85);
-
-            double topStar = topRatio;
-            double bottomStar = 1.0 - topRatio;
-            ContentGrid.RowDefinitions[0].Height = new GridLength(topStar, GridUnitType.Star);
-            ContentGrid.RowDefinitions[2].Height = new GridLength(bottomStar, GridUnitType.Star);
-
-            double leftStar = bottomRatio;
-            double rightStar = 1.0 - bottomRatio;
-            BottomGrid.ColumnDefinitions[0].Width = new GridLength(leftStar, GridUnitType.Star);
-            BottomGrid.ColumnDefinitions[2].Width = new GridLength(rightStar, GridUnitType.Star);
         }
         catch { /* use defaults */ }
     }
@@ -300,28 +191,15 @@ public partial class MainWindow : Window
     {
         if (ViewModel == null) return;
 
-        double totalTopStar = ContentGrid.RowDefinitions[0].Height.Value
-                            + ContentGrid.RowDefinitions[2].Height.Value;
-        double topRatio = totalTopStar > 0
-            ? ContentGrid.RowDefinitions[0].Height.Value / totalTopStar
-            : 0.35;
-
-        double totalBottomStar = BottomGrid.ColumnDefinitions[0].Width.Value
-                               + BottomGrid.ColumnDefinitions[2].Width.Value;
-        double bottomRatio = totalBottomStar > 0
-            ? BottomGrid.ColumnDefinitions[0].Width.Value / totalBottomStar
-            : 0.5;
-
-        TraceLog.Write($"MW.SaveLayout topRatio={topRatio} bottomRatio={bottomRatio}");
-
         ViewModel.SaveLayout(
-            topRatio, bottomRatio,
             Position.X, Position.Y,
             Width, Height,
             (int)WindowState);
     }
 
     // ─── Menu Event Handlers ───
+
+    private void OnFocusFindBox(object? sender, RoutedEventArgs e) => ViewModel?.RequestFindFocus();
 
     private async void OnOpenPcapClicked(object? sender, RoutedEventArgs e)
     {
@@ -357,59 +235,29 @@ public partial class MainWindow : Window
     /// </summary>
     private async Task<bool> ConfirmResetModificationsAsync(int modifiedCount)
     {
-        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var cancelButton = new Button
-        {
-            Content = LocalizationService.Resolve("Dlg.Cancel"),
-            IsCancel = true,
-            MinWidth = 110,
-        };
-        var confirmButton = new Button
-        {
-            Content = LocalizationService.Resolve("Dlg.ResetModsConfirm"),
-            IsDefault = true,
-            MinWidth = 130,
-            FontWeight = FontWeight.Bold,
-        };
-        var buttons = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8,
-            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
-        };
-        buttons.Children.Add(cancelButton);
-        buttons.Children.Add(confirmButton);
+        var cancelButton = SukiMessageBoxButtonsFactory.CreateButton(
+            LocalizationService.Resolve("Dlg.Cancel"), SukiMessageBoxResult.Cancel);
+        cancelButton.IsCancel = true;
+        cancelButton.MinWidth = 110;
 
-        var content = new StackPanel
-        {
-            Margin = new Thickness(20),
-            Spacing = 18,
-        };
-        content.Children.Add(new TextBlock
-        {
-            Text = LocalizationService.Resolve("Dlg.ResetModsText", modifiedCount),
-            TextWrapping = TextWrapping.Wrap,
-            FontSize = 13,
-        });
-        content.Children.Add(buttons);
+        var confirmButton = SukiMessageBoxButtonsFactory.CreateButton(
+            LocalizationService.Resolve("Dlg.ResetModsConfirm"), SukiMessageBoxResult.Yes);
+        confirmButton.IsDefault = true;
+        confirmButton.MinWidth = 130;
+        confirmButton.FontWeight = FontWeight.Bold;
 
-        var dialog = new Window
-        {
-            Title = LocalizationService.Resolve("Dlg.ResetModsTitle"),
-            Width = 460,
-            Height = 220,
-            CanResize = false,
-            ShowInTaskbar = false,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://ProtocolForge/Assets/protocol-forge.ico"))),
-            Content = content,
-        };
+        var result = await SukiMessageBox.ShowDialogResult(
+            this,
+            new SukiMessageBoxHost
+            {
+                IconPreset = SukiMessageBoxIcons.Warning,
+                Content = LocalizationService.Resolve("Dlg.ResetModsText", modifiedCount),
+                ActionButtonsSource = [cancelButton, confirmButton],
+            },
+            LocalizationService.Resolve("Dlg.ResetModsTitle"),
+            DialogWindow(460));
 
-        cancelButton.Click += (_, _) => completion.TrySetResult(false);
-        confirmButton.Click += (_, _) => completion.TrySetResult(true);
-        dialog.Closed += (_, _) => completion.TrySetResult(false);
-        _ = dialog.ShowDialog(this);
-        return await completion.Task;
+        return result is SukiMessageBoxResult.Yes;
     }
 
     private void OnExitClicked(object? sender, RoutedEventArgs e)
@@ -456,70 +304,46 @@ public partial class MainWindow : Window
 
     private void OnResetLayoutClicked(object? sender, RoutedEventArgs e)
     {
-        // Reset to default ratios
-        ContentGrid.RowDefinitions[0].Height = new GridLength(2, GridUnitType.Star);
-        ContentGrid.RowDefinitions[2].Height = new GridLength(3, GridUnitType.Star);
-        BottomGrid.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
-        BottomGrid.ColumnDefinitions[2].Width = new GridLength(1, GridUnitType.Star);
-        SaveLayout();
+        ViewModel?.ResetDockLayout();
     }
 
-    private void OnAboutClicked(object? sender, RoutedEventArgs e)
+    private async void OnAboutClicked(object? sender, RoutedEventArgs e)
     {
         string version = Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "0.0.0";
-        var dialog = new Window
-        {
-            Title = LocalizationService.Resolve("Dlg.About"),
-            Width = 460,
-            Height = 280,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://ProtocolForge/Assets/protocol-forge.ico"))),
-            Content = new TextBlock
+        var okButton = SukiMessageBoxButtonsFactory.CreateButton(
+            LocalizationService.Resolve("Dlg.OK"), SukiMessageBoxResult.OK);
+        okButton.IsDefault = true;
+        okButton.MinWidth = 100;
+
+        await SukiMessageBox.ShowDialog(
+            this,
+            new SukiMessageBoxHost
             {
-                Text = LocalizationService.Resolve("Dlg.AboutText", version),
-                Margin = new Thickness(20),
-                TextWrapping = TextWrapping.Wrap,
+                IconPreset = SukiMessageBoxIcons.Information,
+                Content = LocalizationService.Resolve("Dlg.AboutText", version),
+                ActionButtonsSource = [okButton],
             },
-        };
-        dialog.ShowDialog(this);
+            LocalizationService.Resolve("Dlg.About"),
+            DialogWindow(460));
     }
-
-
 
     private async Task ShowInfoAsync(string title, string message)
     {
-        var closeButton = new Button
-        {
-            Content = LocalizationService.Resolve("Lic.OK"),
-            IsDefault = true,
-            MinWidth = 100,
-        };
-        var content = new StackPanel
-        {
-            Margin = new Thickness(20),
-            Spacing = 18,
-        };
-        content.Children.Add(new TextBlock
-        {
-            Text = message,
-            TextWrapping = TextWrapping.Wrap,
-            FontSize = 13,
-        });
-        content.Children.Add(closeButton);
+        var okButton = SukiMessageBoxButtonsFactory.CreateButton(
+            LocalizationService.Resolve("Dlg.OK"), SukiMessageBoxResult.OK);
+        okButton.IsDefault = true;
+        okButton.MinWidth = 100;
 
-        var dialog = new Window
-        {
-            Title = title,
-            Width = 440,
-            Height = 220,
-            CanResize = false,
-            ShowInTaskbar = false,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://ProtocolForge/Assets/protocol-forge.ico"))),
-            Content = content,
-        };
-        closeButton.Click += (_, _) => dialog.Close();
-        await dialog.ShowDialog(this);
+        await SukiMessageBox.ShowDialog(
+            this,
+            new SukiMessageBoxHost
+            {
+                IconPreset = SukiMessageBoxIcons.Information,
+                Content = message,
+                ActionButtonsSource = [okButton],
+            },
+            title,
+            DialogWindow(440));
     }
 
     private void OnOpenLogDirClicked(object? sender, RoutedEventArgs e)
@@ -533,6 +357,28 @@ public partial class MainWindow : Window
         catch
         {
             // 打开目录失败时静默忽略,不打断用户
+        }
+    }
+
+    private void OnUserManualClicked(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            // 手册以单个自包含 HTML 随包分发(Manual/UserManual.html),
+            // 用系统默认浏览器打开,完全离线,无需网络。
+            string manualPath = Path.Combine(AppContext.BaseDirectory, "Manual", "UserManual.html");
+            if (!File.Exists(manualPath))
+                manualPath = Path.Combine(AppContext.BaseDirectory, "UserManual.html");
+            if (File.Exists(manualPath))
+                Process.Start(new ProcessStartInfo { FileName = manualPath, UseShellExecute = true });
+            else
+                _ = ShowInfoAsync(
+                    LocalizationService.Resolve("Mnu.UserManual"),
+                    LocalizationService.Resolve("Dlg.ManualMissing", manualPath));
+        }
+        catch
+        {
+            // 打开手册失败时静默忽略,不打断用户
         }
     }
 
@@ -555,6 +401,27 @@ public partial class MainWindow : Window
         var cur = LocalizationService.CurrentLanguage;
         MenuLangZhCn.IsChecked = cur == AppLanguage.ZhCn;
         MenuLangEnUs.IsChecked = cur == AppLanguage.EnUs;
+    }
+
+    private void OnMenuThemeBaseClicked(object? sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem { Tag: string key })
+            ThemeService.SetBase(key);
+        // SetBase is a no-op when already active (no ThemeVariantChanged), but the
+        // ToggleType auto-toggle still flipped the check off — restore explicitly.
+        UpdateThemeMenuChecks();
+    }
+
+    private void UpdateThemeMenuChecks()
+    {
+        foreach (var item in MenuTheme.Items.OfType<MenuItem>())
+        {
+            if (item.Tag is not string tag)
+                continue;
+
+            item.IsChecked = ThemeService.BaseKeys.Contains(tag, StringComparer.OrdinalIgnoreCase)
+                && string.Equals(tag, ThemeService.CurrentBase, StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     // ─── File Dialogs ───

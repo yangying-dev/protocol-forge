@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
-VERSION="${PROTOCOLFORGE_VERSION:-0.1.0}"
+VERSION="${PROTOCOLFORGE_VERSION:-1.1.0-beta.1}"
 OUT="$ROOT/artifacts/windows-x64"
 STAGE="$OUT/ProtocolForge"
 ZIP="$OUT/ProtocolForge-${VERSION}-win-x86_64.zip"

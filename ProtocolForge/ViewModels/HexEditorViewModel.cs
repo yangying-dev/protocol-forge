@@ -132,7 +132,7 @@ public sealed partial class HexEditorViewModel : ObservableObject
     /// Highlights a range of bytes for a protocol field and scrolls to it.
     /// Uses Wireshark-style dark highlight.
     /// </summary>
-    public void HighlightField(ProtocolField field)
+    public void HighlightField(ProtocolField field, bool moveSelection = false)
     {
         TraceLog.Write($"HEX.HighlightField({field.Name}) offset={field.Offset} len={field.Length} parentLayer={field.ParentLayer?.ProtocolName ?? "null"}");
         ClearHighlights();
@@ -141,13 +141,18 @@ public sealed partial class HexEditorViewModel : ObservableObject
             return;
 
         ComputeFieldSpan(field, _currentPacket.EffectiveData.Length, out int start, out int length);
-        if (length <= 0)
+        if (start < 0 || length <= 0)
             return;
         // Virtual/reassembly fields (e.g. IP fragments) carry synthetic raw spans
         // beyond the packet's real bytes; a single-field highlight must not stretch
         // into data that does not exist in this packet.
         if (start + length > _currentPacket.EffectiveData.Length)
             return;
+
+        // Tree-driven clicks park the cursor on the field's first byte (single focus:
+        // blue start + protocol-colour rest); the hex-click path keeps its clicked byte.
+        if (moveSelection)
+            MoveSelectionTo(start);
 
         HighlightRange(start, length, GetHighlightColor(field));
 
@@ -156,7 +161,7 @@ public sealed partial class HexEditorViewModel : ObservableObject
         ScrollToOffsetRequested?.Invoke(start);
     }
 
-    public void HighlightLayer(ProtocolLayer layer)
+    public void HighlightLayer(ProtocolLayer layer, bool moveSelection = false)
     {
         TraceLog.Write($"HEX.HighlightLayer({layer.ProtocolName})");
         ClearHighlights();
@@ -203,6 +208,10 @@ public sealed partial class HexEditorViewModel : ObservableObject
         if (minStart == int.MaxValue)
             return;
 
+        // Layer rows follow the same single-focus rule as HighlightField.
+        if (moveSelection)
+            MoveSelectionTo(minStart);
+
         HighlightRange(minStart, maxEnd - minStart, GetProtocolColor(layer.ProtocolName));
 
         // Scroll-follow for layer clicks (same caller-responsibility as HighlightField).
@@ -222,8 +231,8 @@ public sealed partial class HexEditorViewModel : ObservableObject
             }
         }
 
-        // Only set SelectedByteOffset if no byte is currently selected.
-        // This prevents overriding the user's actual selection position.
+        // Anchor fallback: only when nothing is selected yet. Tree-driven moves happen
+        // in the caller (moveSelection) before this, so the refresh below repaints them.
         if (SelectedByteOffset < 0)
             SelectedByteOffset = start;
 
@@ -389,9 +398,9 @@ public sealed partial class HexEditorViewModel : ObservableObject
                 case "ipv6":
                     ScanAddressFields(layer.Fields, packet, true);
                     break;
-                case "udp":
-                case "tcp":
-                    ScanPortFields(layer.Fields, packet);
+                default:
+                    if (layer.HasPortFields)
+                        ScanPortFields(layer.Fields, packet);
                     break;
             }
         }
@@ -690,6 +699,17 @@ public sealed partial class HexEditorViewModel : ObservableObject
             b.IsSelected = false;
     }
 
+    /// <summary>Moves the single-byte cursor to <paramref name="offset"/>, clearing any previous selection.</summary>
+    private void MoveSelectionTo(int offset)
+    {
+        if (offset < 0 || offset >= Bytes.Count)
+            return;
+
+        ClearSelection();
+        Bytes[offset].IsSelected = true;
+        SelectedByteOffset = offset;
+    }
+
     /// <summary>
     /// Returns a Wireshark-style highlight color (translucent dark) based on protocol.
     /// Colors are applied as semi-transparent overlays so the hex text remains visible.
@@ -699,22 +719,41 @@ public sealed partial class HexEditorViewModel : ObservableObject
 
     private static string GetProtocolColor(string protocolName)
     {
-        var proto = protocolName.ToLowerInvariant();
-        return proto switch
+        if (string.IsNullOrEmpty(protocolName))
+            return "#CCB39DDB";
+
+        // FNV-1a over the lowercase protocol name → a stable hue bucket. Any protocol
+        // tshark can dissect gets its own highlight with no per-protocol code entry,
+        // and the same name always maps to the same color across runs and platforms.
+        uint hash = 2166136261; // FNV-1a offset basis
+        foreach (char c in protocolName.ToLowerInvariant())
         {
-            "pfcp" => "#CC81C784",    // Material Green 200 (light green tint)
-            "ngap" => "#CC90CAF9",    // Material Blue 200 (light blue tint)
-            "gtp" or "gtp-u" => "#CCFFCC80", // Material Orange 200
-            "nas" or "nas-eps" => "#CCF48FB1", // Material Pink 200
-            "s1ap" => "#CCCE93D8",    // Material Purple 200
-            "diameter" => "#CC80DEEA", // Material Cyan 200
-            "http" or "http2" => "#CCA1887F", // Material Brown 200
-            "sctp" => "#CCB0BEC5",    // Material Blue Grey 200
-            "udp" => "#CC9FA8DA",     // Material Indigo 200
-            "ip" => "#CCC5E1A5",      // Material Light Green 200
-            "eth" => "#CCE0E0E0",     // Light grey
-            _ => "#CCB39DDB",         // Material Deep Purple 200 (default)
+            hash ^= c;
+            hash *= 16777619; // FNV-1a prime
+        }
+
+        (int r, int g, int b) = HslToRgb(hash % 360, s: 0.55, l: 0.72);
+        return $"#CC{r:X2}{g:X2}{b:X2}"; // CC = translucency, hex text stays visible
+    }
+
+    /// <summary>HSL (h in degrees, s/l in 0..1) → 0..255 RGB channels.</summary>
+    private static (int R, int G, int B) HslToRgb(double h, double s, double l)
+    {
+        double c = (1 - Math.Abs(2 * l - 1)) * s;
+        double x = c * (1 - Math.Abs(h / 60 % 2 - 1));
+        double m = l - c / 2;
+        (double rr, double gg, double bb) = h switch
+        {
+            < 60 => (c, x, 0d),
+            < 120 => (x, c, 0d),
+            < 180 => (0d, c, x),
+            < 240 => (0d, x, c),
+            < 300 => (x, 0d, c),
+            _ => (c, 0d, x),
         };
+        return ((int)Math.Round((rr + m) * 255),
+                (int)Math.Round((gg + m) * 255),
+                (int)Math.Round((bb + m) * 255));
     }
 
     /// <summary>

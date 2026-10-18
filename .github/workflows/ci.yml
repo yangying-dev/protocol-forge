@@ -28,7 +28,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: 10.0.x
 
       - name: Install tshark
         run: |
@@ -135,7 +135,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: 10.0.x
 
       # Same reason as the Linux job: publish-windows.ps1 falls back to its own
       # hardcoded 0.1.0 unless PROTOCOLFORGE_VERSION is set.

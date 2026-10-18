@@ -60,16 +60,54 @@ public sealed partial class ToolBarViewModel : ObservableObject
     [ObservableProperty]
     private int _vlanId = 100;
 
+    /// <summary>
+    /// A VLAN mode paired with its localized label. The combo displays
+    /// <see cref="Label"/> instead of the raw enum name, so the choices follow the UI
+    /// language rather than always reading Leave/Insert/Replace/Remove.
+    /// </summary>
+    public sealed record VlanModeOption(PacketSendService.VlanMode Mode, string Label);
+
     /// <summary>Options for the VLAN combo, resolved for display rather than raw enum names.</summary>
-    public IReadOnlyList<PacketSendService.VlanMode> VlanModes { get; } =
-        [PacketSendService.VlanMode.Leave, PacketSendService.VlanMode.Insert,
-         PacketSendService.VlanMode.Replace, PacketSendService.VlanMode.Remove];
+    public ObservableCollection<VlanModeOption> VlanModes { get; } = [];
+
+    /// <summary>Combo selection; kept in sync with <see cref="VlanMode"/>.</summary>
+    [ObservableProperty]
+    private VlanModeOption? _selectedVlanOption;
 
     [ObservableProperty]
     private bool _isVlanIdVisible;
 
-    partial void OnVlanModeChanged(PacketSendService.VlanMode value) =>
+    partial void OnVlanModeChanged(PacketSendService.VlanMode value)
+    {
         IsVlanIdVisible = value is PacketSendService.VlanMode.Insert or PacketSendService.VlanMode.Replace;
+        // Keep the combo pointed at the matching option when the mode is set from code
+        // (harness / restore) rather than by the user picking in the combo.
+        if (SelectedVlanOption?.Mode != value)
+            SelectedVlanOption = VlanModes.FirstOrDefault(o => o.Mode == value);
+    }
+
+    partial void OnSelectedVlanOptionChanged(VlanModeOption? value)
+    {
+        if (value is not null && VlanMode != value.Mode)
+            VlanMode = value.Mode;
+    }
+
+    /// <summary>
+    /// Rebuilds the combo items against the active language. Called at construction and
+    /// on every language switch; the current mode is re-pointed at the matching new
+    /// option so the selection survives the rebuild. Without this the combo would keep
+    /// the labels it was built with until the next launch.
+    /// </summary>
+    private void RebuildVlanModes()
+    {
+        var mode = VlanMode;
+        VlanModes.Clear();
+        VlanModes.Add(new(PacketSendService.VlanMode.Leave, LocalizationService.Resolve("Vlan.Mode.Leave")));
+        VlanModes.Add(new(PacketSendService.VlanMode.Insert, LocalizationService.Resolve("Vlan.Mode.Insert")));
+        VlanModes.Add(new(PacketSendService.VlanMode.Replace, LocalizationService.Resolve("Vlan.Mode.Replace")));
+        VlanModes.Add(new(PacketSendService.VlanMode.Remove, LocalizationService.Resolve("Vlan.Mode.Remove")));
+        SelectedVlanOption = VlanModes.First(o => o.Mode == mode);
+    }
 
     [ObservableProperty]
     private bool _isReadOnly;
@@ -100,6 +138,7 @@ public sealed partial class ToolBarViewModel : ObservableObject
         _sendService = sendService;
         _packetList = packetList;
         IsVlanIdVisible = false;
+        RebuildVlanModes();
 
         // Wire send service events
         _sendService.PacketSent += OnPacketSent;
@@ -154,6 +193,7 @@ public sealed partial class ToolBarViewModel : ObservableObject
         if (_statusKey is not null)
             StatusText = LocalizationService.Resolve(_statusKey, _statusArgs ?? Array.Empty<object?>());
         OnPropertyChanged(nameof(PauseButtonText));
+        RebuildVlanModes();
     }
 
     partial void OnSelectedInterfaceChanged(NetworkInterfaceInfo? value)
@@ -290,7 +330,8 @@ public sealed partial class ToolBarViewModel : ObservableObject
                 intervalMs: (int)SendIntervalMs,
                 autoFixFrames: AutoFixFrames,
                 vlanMode: VlanMode,
-                vlanId: (ushort)Math.Clamp(VlanId, 0, 4095));
+                vlanId: (ushort)Math.Clamp(VlanId, 0, 4095),
+                linkLayerType: _packetList.LinkLayerType);
         }
         finally
         {

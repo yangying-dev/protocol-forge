@@ -2,7 +2,7 @@
 
 **3GPP 协议仿真与调试工作台**
 
-ProtocolForge 是一款跨平台桌面应用程序，用于检查、编辑和重放 PCAP 文件中捕获的 3GPP 协议报文（PFCP、NGAP、GTP-U、NAS、S1AP、Diameter 等）。它将 Wireshark 的解析引擎（tshark）与原生的报文编辑器和裸套接字注入结合于一个 .NET 8 + Avalonia UI 应用中。
+ProtocolForge 是一款跨平台桌面应用程序，用于检查、编辑和重放 PCAP 文件中捕获的 3GPP 协议报文（PFCP、NGAP、GTP-U、NAS、S1AP、Diameter 等）。它将 Wireshark 的解析引擎（tshark）与原生的报文编辑器和裸套接字注入结合于一个 .NET 10 + Avalonia UI 应用中。
 
 > **免费开源（Apache-2.0）。** 当前已交付的功能全部免费且无上限 —— 没有功能门禁、没有发送配额、没有遥测。Windows 上请自行安装 Wireshark，并在安装时保留 Npcap 选项（默认勾选）；ProtocolForge 不捆绑、不静默安装 Npcap。
 
@@ -12,8 +12,8 @@ ProtocolForge 是一款跨平台桌面应用程序，用于检查、编辑和重
 
 > ⚠️ **报文注入会向网络发送真实帧。** 请仅在你拥有或已获得书面授权的网络上使用 ProtocolForge。发送行为可能违反当地法律或运营商条款，责任完全由使用者承担。ProtocolForge 不包含规避检测、获取凭据或针对生产环境的载荷模糊测试工具。完整能力清单与使用声明见 [`SECURITY.md`](SECURITY.md)。
 
-![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4)
-![Avalonia](https://img.shields.io/badge/Avalonia-12.0.5-8B5CF6)
+![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4)
+![Avalonia](https://img.shields.io/badge/Avalonia-12.1.3-8B5CF6)
 ![平台](https://img.shields.io/badge/平台-Windows%20%2F%20Linux%20%2F%20macOS-lightgrey)
 
 ## 界面截图
@@ -38,14 +38,15 @@ ProtocolForge 是一款跨平台桌面应用程序，用于检查、编辑和重
 - **Tshark 集成** — 双模式使用 tshark：一次流式 `-T fields` 传递填充报文列表（Source/Destination/Protocol/Info 列，在 tshark 解析过程中逐步填充）；协议详情树仅在选中报文时按需解析（`-T jsonraw`/`json`/`pdml`，字节偏移精确）。支持 Wireshark 能解析的所有协议（PFCP、NGAP、GTP-U、NAS、S1AP、HTTP/2、Diameter、SCTP 等）。
 - **Tshark 环境门禁** — 启动时及路径更改后，会检查已安装 tshark 的版本，最低要求 2.6.0。若 tshark 缺失或版本过低，应用仍可打开抓包文件，但进入**只读模式**：显示警告横幅，原始报文数据正常加载（地址等列显示为 `N/A`），但树/十六进制编辑、导出和报文注入均被禁用。可通过 **文件 → Tshark Path…** 在运行时重新选择 tshark 路径，找到有效 tshark 后会重新检测并解除门禁。所选路径会被持久化（也可用 `TSHARK_PATH` 环境变量覆盖）。
 - **双语界面（简体中文 / English）** — 全界面本地化，通过 **语言 / Language** 菜单（位于 View 与 Help 之间）即时切换语言，无需重启；语言偏好会被持久化，首次运行时自动检测系统区域设置。
+- **主题（SukiUI）** — 基于 [SukiUI](https://github.com/kikipoulet/SukiUI) 的统一运行时主题系统：在 **主题** 菜单里选择底色（**跟随系统 / 浅色 / 深色**），选择会被持久化，SukiUI 主题色固定为**蓝色**；窗口外框、菜单和每个停靠面板都会跟随主题；标准 Dock 外框由 `SukiUI.Dock` 重新绘制，使面板与宿主外观统一。切换即时生效，无需重启。
 - **三遍式 jsonraw 解析器** — 仅遍历*选中报文*的 JSON 结构（而非整个文件）：
   1. 收集所有 `_raw` 数组（十六进制值、偏移量、长度）
   2. 处理 `_tree` 容器和子对象，递归构建字段嵌套
   3. 处理孤立的 `_raw` 条目（如没有 `_tree` 父级的 `ip.src_raw`）
-- **十六进制查看器 + 内联编辑** — Wireshark 风格的十六进制转储：每行 16 字节，含偏移列、十六进制（8+8 分组）和 ASCII 面板。单击单元格或使用方向键导航；选中的字节显示为深蓝色，协议字段范围以协议特有的颜色高亮，通过协议树或十六进制编辑器修改过的字节以橙色标记。字节也可以**直接在十六进制面板中编辑**：在任意字节上开始输入十六进制字符（0-9/A-F 或小键盘），待定值会就地预览（黄色背景、灰色 ASCII），按 Enter 将整段作为一次替换提交，按 Esc 取消。编辑是**仅替换（REPLACE-only）**的 — 每一段都由完整的十六进制数字对组成，因此报文长度永远不会改变，编辑跨度之外的偏移始终有效。
+- **十六进制查看器 + 内联编辑** — Wireshark 风格的十六进制转储：每行 16 字节，含偏移列、十六进制（8+8 分组）和 ASCII 面板。单击单元格或使用方向键导航；选中的字节显示为深蓝色，协议字段范围以协议特有的颜色高亮，通过协议树或十六进制编辑器修改过的字节以橙色标记。字节也可以**直接在十六进制面板中编辑**：在任意字节上开始输入十六进制字符（0-9/A-F 或小键盘），待定值会就地预览（黄色背景、灰色 ASCII），按 Enter 将整段作为一次替换提交，按 Esc 取消。**十六进制面板编辑是仅替换（REPLACE-only）的** — 每一段都由完整的十六进制数字对组成，因此 **hex 面板**不改变报文长度，编辑跨度之外的偏移始终有效。（要改变字段*长度*是另一项需显式选择加入的树编辑操作 — 见下方**协议树**。）
 - **树 ↔ 十六进制双向同步** — 点击协议树中的字段会在十六进制查看器中高亮其字节范围。反之，在十六进制面板中选择/编辑字节会解析出所属字段，并在树中滚动并选中对应节点（`FieldFoundAtOffset` → 树定位展开）。
-- **协议树** — 已解析信息元素的分层树视图。点击任意字段可在十六进制查看器中高亮其字节范围。右键单击字段（或双击它）可打开内联值编辑器：以自然形式输入值（十进制、点分 IP、MAC、字符串或十六进制），按 Enter（或单击其他位置）应用，按 Esc 取消。编辑受**编辑栅栏**（`CheckTreeEditFence`）限制 — 六个检查须全部通过字段才可编辑：可解析的字段类型、非负字节跨度、字节对齐（非位级子字段）、位于帧内（指向重组 PDU 的跨度则失败）、具体的字节证据（`RawBytes.Length` 与字段长度一致）、记录字节与实际帧字节一致（能捕获掩码/偏移漂移值）。被阻断的字段会在状态区显示原因（`Not editable: …`）并拒绝打开编辑器。
-- **验证后提交（VBC）** — 同时适用于树和十六进制编辑。提议的编辑不会直接写入报文：先将候选帧保存到临时 PCAP（有上下文帧时附带），**经 tshark 重新解析**，字段的新十六进制值必须落在预期的 `(PDML 名称, 字节偏移)` 位置。偏移漂移、值不匹配或长度变更都会中止提交并给出原因，报文保持逐字节不变。
+- **协议树** — 已解析信息元素的分层树视图。点击任意字段可在十六进制查看器中高亮其字节范围。右键单击字段（或双击它）可打开内联值编辑器：以自然形式输入值（十进制、点分 IP、MAC、字符串或十六进制），按 Enter（或单击其他位置）应用，按 Esc 取消。编辑受**编辑栅栏**（`CheckTreeEditFence`）限制。字节级编辑须通过五项检查：可解析的字段类型、非负字节跨度、位于帧内（指向重组 PDU 的跨度则失败）、具体的字节证据（`RawBytes.Length` 与字段长度一致）、记录字节与实际帧字节一致（能捕获掩码/偏移漂移值）。此外还有三类可编辑形态：**位级子字段**（如 DSCP）以读-改-写方式就地重写实时帧——单段连续位掩码且不超过 8 字节的字段被接受，无掩码或掩码不连续的字段被拒绝；tshark 未给出字段类型的**无类型不透明叶子字段**在达到 9 字节及以上时回退为整块十六进制（`Bytes`）编辑器，使未知 IE 可编辑；而**带子节点的字段**——字节跨度可推导的 IE 容器或未解码的 `IE not decoded yet` 标记——按整块十六进制编辑（无法推导跨度的容器或标记保持只读）。被阻断的字段会在状态区显示原因（`Not editable: …`）并拒绝打开编辑器。普通的树编辑保持字段的字节长度：会改变长度的值会被拒绝，并提示相差多少字节。改变字段长度是一项需要显式**选择加入（opt-in）**的操作 — 勾选该字段的「允许改变长度」，然后把新值以**十六进制**输入（十进制或 IP 字符串无法表达长度变化）；拼接后的帧仍会先经 tshark 重新解析校验再提交，其后每个字段的偏移都会相应平移以保持对齐；该开关在每次打开编辑器时重置，因此默认始终是等长编辑。
+- **验证后提交（VBC）** — 适用于树字段编辑。提议的树编辑不会直接写入报文：先将候选帧保存到临时 PCAP（有上下文帧时附带），**经 tshark 重新解析**，字段的新十六进制值必须落在预期的 `(PDML 名称, 字节偏移)` 位置。偏移漂移、值不匹配或长度变更都会中止提交并给出原因，报文保持逐字节不变。十六进制面板的编辑走单独路径：同样先过编辑栅栏，然后直接应用整段替换，再触发同一次单包重解析刷新树显示。
 - **容器自动联动** — 提交的字段编辑完成后，后台重新解析编辑过的报文（单包 PDML 重解析），并就地回填协议树的容器/层头文本，例如编辑 PFCP SEID 后，周围的 `F-SEID : SEID: 0x…, IPv4 …` 显示会立即刷新，无需重建树。按 PDML 名称 + 字节偏移匹配字段，匿名 IE 容器回退到有效（最小后代）偏移。
 - **十六进制原生字段编辑** — Wireshark 以十六进制渲染的字段（PFCP SEID/TEID、地址范围等）会自动从 PDML showname（`0x…` 前缀）检测，并默认按十六进制编辑，按大端逐字节精确往返，与 tshark 显示完全一致。
 - **地址/端口重新提取** — 字节编辑后，自动从修改后的字节重新解析 IP 地址和端口号，并反映在报文列表列中。
@@ -59,7 +60,15 @@ ProtocolForge 是一款跨平台桌面应用程序，用于检查、编辑和重
   3. **UDP 套接字** — 传输层回退（无需特权）
   发送由可配置的**发送间隔（毫秒）**和**循环次数**驱动。**Auto-fix** 开关会在注入前修复 IPv4/IPv6 与 TCP/UDP 校验和，并将源地址改写为所选接口自身的地址。
 - **工具栏 UI** — 开始/暂停/停止发送控制、网络适配器下拉菜单、发送间隔与循环次数输入框、Auto-fix 开关、实时发送/失败计数器和状态栏。
-- **布局持久化** — 窗口几何位置、分隔条位置和面板可见性保存到 `%APPDATA%/ProtocolForge/layout.json`，下次启动时恢复。
+- **显示过滤器** — 应用于报文列表的 tshark 显示过滤器。过滤器在加载时由 tshark 求值，因此列表只保存匹配的报文，且每一行仍保留其字节来源的帧号。在报文列表面板头部，按 Enter（或点 **应用**）即应用。输入时会实时向 tshark 校验表达式——绿框表示可解析，红框表示语法错误并在工具提示中给出原因——并在输入时从 tshark 的完整字段目录中自动补全字段/协议名（上/下移动、Tab/Enter 采纳、Esc 关闭）。
+- **查找** — 在报文列表各列与所选报文的协议树中向前或向后搜索。协议树中命中会展开并定位到匹配节点，而不是重建整棵树。
+- **统计面板** — 运行 `conv,*`、`endpoints,ip`、`io,phs`（协议层级）、`io,stat` 和 `expert` 统计 tap（tap 接受显示过滤器时遵循过滤器），还可在面板中直接输入任意其他 tshark `-z` 统计项；跟踪流支持 TCP 与 UDP 会话。通过 **视图** 菜单打开；与其他面板一样是可停靠窗格。tshark 按人类阅读习惯补齐空格，因此原样展示而不重新排版。
+- **PCAPNG 回写** — 以 `.pcapng` 打开的抓包保存时仍写为 PCAPNG，保留接口描述、snaplen 与时间戳分辨率。此前任何 `.pcapng` 在保存时都会被静默改写为小端/微秒的经典 PCAP，丢失所有接口描述与块注释。另存为会遵循你所选择的扩展名。
+- **无头 CLI** — `validate`、`edit`、`send` 与 `stats` 无需 GUI 即可运行，适用于 CI 与批处理。编辑走与 GUI 相同的验证后提交（VBC）事务。退出码 0/1/2。详见 [`docs/pfcheck-cli.md`](docs/pfcheck-cli.md)。
+- **发送历史** — 每次运行的逐包发送结果会被保留（而非只显示最近一次），并可从报文列表右键菜单导出为 CSV。
+- **可停靠布局** — 报文列表、协议树、十六进制编辑器和统计面板均为 visual-studio 风格的停靠窗格（Dock 12.1）：拖动窗格标题可重新停靠、以分页方式组合、浮动到独立窗口，或关闭后从视图菜单重新打开。布局保存到 `%APPDATA%/ProtocolForge/docklayout.json`。
+- **布局持久化** — 窗口几何位置和面板可见性保存到 `%APPDATA%/ProtocolForge/layout.json`（停靠布局保存到 `docklayout.json`，见上），下次启动时恢复。
+- **离线用户手册** — 随包分发一份单文件、双语（简体中文 / English，页面内可切换）HTML 用户手册，通过 **帮助 → 用户手册** 打开；15 张截图全部以 base64 内嵌，完全离线可用，覆盖除统计面板（按需求不编写）外的全部功能。随包文件 `ProtocolForge/Manual/UserManual.html` 由 `docs/manual/` 源稿生成——从源稿重新生成，勿手改。
 
 ---
 
@@ -90,7 +99,7 @@ ProtocolForge 是一款跨平台桌面应用程序，用于检查、编辑和重
 
 - **MVVM + 手动依赖注入** — 无外部 IoC 容器。服务在 `App.axaml.cs` 中按依赖顺序实例化。ViewModel 通过构造函数参数接收依赖。
 - **零原生依赖** — 纯 C#，无捆绑的原生库。唯一的例外是*可选*的 L2 路径：Windows 上探测用户已安装的 Npcap（`wpcap.dll`，P/Invoke），macOS 上探测 `/dev/bpfN` — 原生路径存在时提供完整 L2 注入，否则发送静默降级为纯托管套接字。唯一的外部依赖是协议解析所需的 **tshark**（来自 Wireshark）。
-- **跨平台** — 目标 net8.0，可在 Windows、Linux 和 macOS 上运行。Socket 策略根据操作系统自动调整。
+- **跨平台** — 目标 net10.0，可在 Windows、Linux 和 macOS 上运行。Socket 策略根据操作系统自动调整。
 - **最小耦合** — 服务独立；ViewModel 之间通过事件通信（`PacketSelected`、`FieldSelected`、`FieldEdited`、`LayerSelected`、`HexEdited`、`FieldFoundAtOffset`）。
 
 ---
@@ -101,15 +110,16 @@ ProtocolForge 是一款跨平台桌面应用程序，用于检查、编辑和重
 ProtocolForge/
 ├── App.axaml.cs              # 应用入口 — 手动 DI 组合
 ├── Program.cs                 # Avalonia 启动
-├── ProtocolForge.csproj       # .NET 8, Avalonia 12.0.5, CommunityToolkit.Mvvm 8.4.2, DataGrid 12.0.1
+├── ProtocolForge.csproj       # .NET 10, Avalonia 12.1.3, Dock 12.1.0.7, SukiUI 7.0.1, CommunityToolkit.Mvvm 8.4.2, DataGrid 12.1.2
 │
 ├── Assets/Lang/               # 本地化字典 — en-US.json + zh-CN.json（作为嵌入资源）
-│   ├── en-US.json            # 英文界面字符串（202 个键）
-│   └── zh-CN.json            # 简体中文界面字符串（198 个键，键集一致）
+│   ├── en-US.json            # 英文界面字符串（234 个键）
+│   └── zh-CN.json            # 简体中文界面字符串（234 个键，键集一致）
 │
 ├── Models/                    # 领域对象
 │   ├── Packet.cs              # 单个报文：原始数据、修改、地址/端口、协议层
-│   ├── PacketDocument.cs      # PCAP 文档：报文集合、脏状态跟踪
+│   ├── PacketDocument.cs      # PCAP 文档：脏状态跟踪 + 导出
+│   ├── PacketCollection.cs    # 绑定到报文列表 DataGrid 的可观察报文集合
 │   ├── HexByte.cs             # 十六进制查看器中的字节：值、选择、高亮、已修改标记、待编辑状态
 │   ├── ProtocolField.cs       # 协议信息元素：偏移量、长度、原始字节、子字段、PDML 名称/hex 偏好（用于重新联动）
 │   ├── ProtocolLayer.cs       # 协议层容器
@@ -119,12 +129,16 @@ ProtocolForge/
 ├── Services/                  # 业务逻辑
 │   ├── TsharkService.cs       # 流式 `-T fields` 列表加载 + 按报文按需 jsonraw/json/pdml 建树 + 单包 pdml 重解析 + tshark 检测/版本门禁
 │   ├── EditTransactionService.cs # 验证后提交：候选帧 → tshark 重解析 → (名称, 偏移) 十六进制校验 → 提交或中止
+│   ├── EditHistoryService.cs  # 已提交编辑的撤销/重做 — 整帧快照，上限 200，支撑 Ctrl+Z / Ctrl+Y
 │   ├── TsharkSettingsService.cs # 跨会话持久化用户选择的 tshark 路径和界面语言（settings.json）
 │   ├── LocalizationService.cs # 运行时本地化核心：Resolve(key, args)、SetCurrent(AppLanguage)、LanguageChanged 事件、DynamicResource 发布
+│   ├── EnumCatalog.cs         # 会话级枚举释义目录，从 PDML 采集，供值下拉列表使用
 │   ├── PcapIngestService.cs   # 原始 PCAP 字节读取器（处理字节序、µs/ns 时间戳）
 │   ├── PcapExportService.cs   # PCAP 写入器 — 覆盖保存、另存为、单包重解析临时文件
+│   ├── PcapngWriter.cs        # PCAPNG 写入器（SHB/IDB/EPB，单 section），用于 .pcapng 回写
 │   ├── ProtocolEditorService.cs # 编辑栅栏（CheckTreeEditFence）、字段级编辑、偏移量查找、十六进制↔字节转换
-│   ├── LayoutService.cs       # 窗口布局持久化（JSON 保存在 %APPDATA%）
+│   ├── LayoutService.cs       # 布局持久化（JSON 保存在 %APPDATA%）：窗口几何/可见性（layout.json）、停靠布局（docklayout.json）
+│   ├── SessionStateService.cs # 最近文件列表 + 上次打开路径（session.json，上限 10）
 │   ├── NetworkInterfaceService.cs  # 跨平台网络适配器扫描器
 │   ├── PacketContextProvider.cs # tshark 域内上下文扫描（SDP、IP 分片、TCP 重传），按需惰性执行
 │   ├── PacketSendService.cs   # 原始报文注入，带发送档位（rung）阶梯回退（L2 → IP → UDP）
@@ -140,26 +154,26 @@ ProtocolForge/
 │   ├── ProtocolTreeViewModel.cs # 协议层/字段树、字段点击 → 十六进制高亮、内联值编辑（Enter/Esc/点击外部）、VBC 提交、为 hex 选择定位树节点
 │   ├── HexEditorViewModel.cs  # 十六进制渲染 + 仅替换（REPLACE-only）内联编辑、选择/高亮、已修改字节标记、反向同步事件
 │   ├── ToolBarViewModel.cs    # 开始/暂停/停止发送命令、间隔/循环、接口下拉菜单
+│   ├── Panes.cs               # 四个可停靠窗格（报文列表 / 协议树 / 十六进制 / 统计）
+│   ├── DockLayoutFactory.cs   # 默认停靠布局与窗格 Id、InitLayout 宿主接线
 │   └── ViewModelBase.cs       # 公共 ObservableObject 基类
 │
 ├── Views/                     # Avalonia XAML + 代码后置
-│   ├── MainWindow.axaml       # 完整窗口布局：菜单、工具栏、报文列表、分隔条、协议树、十六进制
-│   ├── MainWindow.axaml.cs    # 文件对话框、布局恢复/保存、菜单处理
+│   ├── MainWindow.axaml       # 完整窗口布局：菜单、工具栏与停靠宿主（DockControl）
+│   ├── MainWindow.axaml.cs    # 文件对话框、窗口几何恢复/保存、菜单处理
 │   └── Controls/
+│       ├── PacketListPaneView.axaml(.cs) # 停靠窗格：过滤框 + 报文 DataGrid + 右键菜单
+│       ├── ProtocolTreePaneView.axaml(.cs) # 停靠窗格：协议树
+│       ├── HexEditorPaneView.axaml(.cs) # 停靠窗格：十六进制查看器 + 偏移标签
+│       ├── StatisticsPaneView.axaml(.cs) # 停靠窗格：统计 tap 选择器与输出
 │       ├── HexEditor.axaml.cs # 自定义十六进制查看器：16字节行、点击/键盘导航、视觉状态
 │       ├── HexEditor.axaml    # 极简 XAML — 所有内容在代码后置中构建
 │       ├── ProtocolTreeView.axaml  # 带字段数据模板的 TreeView
 │       ├── ProtocolTreeView.axaml.cs # 点击/双击/右键菜单处理：选择与内联编辑
 │       └── DoubleClickAutoFit.cs  # 双击列分隔线 → 列宽自适应（附加行为）
-│
-├── Converters/                # XAML 值转换器
-│   ├── HexByteColorConverter.cs    # 字节背景多值转换器（选中/高亮/已修改）
-│   └── BoolToStringConverter.cs    # 暂停/继续按钮文字
-│
-└── ViewLocator.cs             # 基于约定的 View → ViewModel 解析
 ```
 
-`tests/pf-verify/` 下有一个独立的验证 harness（独立控制台项目，引用 `ProtocolForge`）。它针对一份示例抓包（通过 `PF_CAPTURE` 指定；抓包缺失时相关分组会被跳过而非失败）驱动运行时服务层 — 对固定帧的编辑栅栏裁决、验证后提交（VBC）的合法/非法场景（提交、偏移漂移中止、长度变更拒绝、逐字节不变保证）、tshark 版本门禁（真实环境 + 通过 `TSHARK_PATH` 注入伪造过低/达标二进制）、只读加载、十六进制编辑的代码面检查以及本地化字典检查（GROUP 11）。运行方式：`dotnet run --project tests/pf-verify`。注意这里有两个不同的 tshark 下限：**应用**门禁是 tshark >= 2.6.0，而**验证 harness** 需要 tshark >= 3.6.2 才能全绿。没有抓包夹具时有 6 个分组会被跳过，而 harness 仍会输出 `ALL GROUPS PASS` —— 在把一次绿灯当成完整覆盖之前，请先读 [`CONTRIBUTING.md`](CONTRIBUTING.md)。
+`tests/pf-verify/` 下有一个独立的验证 harness（独立控制台项目，引用 `ProtocolForge`）。它针对一份抓包（通过 `PF_CAPTURE` 指定；未设置时 harness 会在临时目录生成一份 4413 帧的合成抓包并在结束后删除，因此只有 `G17-13` 会被跳过）驱动运行时服务层 — 对固定帧的编辑栅栏裁决、验证后提交（VBC）的合法/非法场景（提交、偏移漂移中止、默认的长度变更拒绝、opt-in 拼接接受、逐字节不变保证）、tshark 版本门禁（真实环境 + 通过 `TSHARK_PATH` 注入伪造过低/达标二进制）、只读加载、十六进制编辑的代码面检查以及本地化字典检查（GROUP 11）。运行方式：`dotnet run --project tests/pf-verify`。注意这里有两个不同的 tshark 下限：**应用**门禁是 tshark >= 2.6.0，而**验证 harness** 需要 tshark >= 3.6.2 才能全绿。没有 `PF_CAPTURE_LARGE` 时有 1 个分组（`G17-13`，需要 ≥180k 报文的本地 PCAPNG）会被跳过，而 harness 仍会输出 `ALL GROUPS PASS` —— 在把一次绿灯当成完整覆盖之前，请先读 [`CONTRIBUTING.md`](CONTRIBUTING.md)。
 
 ---
 
@@ -212,11 +226,11 @@ ProtocolForge/
 
 ### 编辑后刷新（单包重解析 + 验证后提交）
 
-树和十六进制编辑都经由 `EditTransactionService`（验证后提交）执行：
+树字段编辑经由 `EditTransactionService`（验证后提交）执行；十六进制面板编辑跳过提交前校验（过编辑栅栏后直接应用），但会复用同一次 `ReparseSinglePacketAsync` 事后刷新树：
 
 1. `PcapExportService.SavePacketAsync()` 将单个修改后的报文写入临时 PCAP（当报文需要 SDP/IP 分片上下文才能正确解析时，附带周围上下文帧）
 2. `TsharkService.ReparseSinglePacketAsync()` 对该临时文件运行 tshark `-T pdml`，收集 `(字段名, 字节偏移) → showname` 及原始值查找表
-3. 提交前，重解析必须证明**新值落在预期的位置** — 偏移漂移、值不匹配或长度变更都会中止事务，报文保持逐字节不变
+3. 提交前，重解析必须证明**新值落在预期的位置** — 在默认的等长路径下，偏移漂移、值不匹配或长度变更都会中止事务，报文保持逐字节不变。长度变更只会经由单独的 opt-in 拼接路径提交（字段「允许改变长度」+ 十六进制值），同样经过上述校验
 4. 成功后，`ProtocolTreeViewModel.RefreshFieldDisplays()` 就地遍历现有树，用新的 PDML 文本修补每个字段的 Name/DisplayValue
 
 这样可以保持树的稳定性（保留选择、展开状态），同时显示的文本跟上已编辑的字节。匿名 IE 容器 — tshark 以 `<field name="" show="…">` 输出的 PFCP/NGAP IE，其渲染文本（如 `F-SEID : SEID: 0x…, IPv4 …`）会随子字段字节变化 — 仅按偏移匹配（空名称键），因此 SEID 编辑会传播到周围的容器显示，而无需改动树结构。
@@ -261,12 +275,12 @@ ProtocolForge/
 
 ### 前置条件
 
-> **最终用户**：下载**自包含**发布包即可——.NET 8 运行时已捆绑，你什么都不用装，只需装 Wireshark（见下）。无需单独安装 .NET。
+> **最终用户**：下载**自包含**发布包即可——.NET 10 运行时已捆绑，你什么都不用装，只需装 Wireshark（见下）。无需单独安装 .NET。
 - **Wireshark / tshark（≥ 2.6.0）** — 协议解析需要 tshark 2.6.0 或更新版本位于 PATH（或通过 `TSHARK_PATH` 指定）。更旧的 tshark 版本会使应用以只读模式打开。从 [wireshark.org](https://www.wireshark.org/download.html) 下载。
   - Linux: `sudo apt install tshark`
   - macOS: `brew install wireshark`
   - Windows 10/11 x64：安装 Wireshark；保留 Npcap 选项（默认勾选）。应用不捆绑 Npcap。
-- **.NET 8 SDK**（8.0.421 或更新版本，**仅构建/贡献者需要**）——仅编译源码时需要；运行自包含构建产物则不需要。
+- **.NET 10 SDK**（10.0.100 或更新版本，由 `global.json` 固定，**仅构建/贡献者需要**）——仅编译源码时需要（目标框架为 net10.0）；运行自包含构建产物则不需要。
 
 ### 构建和运行
 
@@ -292,7 +306,7 @@ dotnet run --project tests/pf-verify/PfVerify.csproj
 4. 在任一面板中编辑报文内容：
    - **协议树**：右键单击可编辑字段（或双击它）并输入新值 — 十进制、IP/MAC、字符串或 `0x…` 十六进制；按 Enter 应用，按 Esc 取消。未通过编辑栅栏的字段会显示 `Not editable: …` 并拒绝打开编辑器。
    - **十六进制查看器**：单击一个字节偏移，然后输入十六进制字符（0-9/A-F/小键盘）开始替换段；待定值以黄色预览，按 Enter 一次性提交整段，按 Esc 取消。
-   两条路径都会执行验证后提交（VBC）重解析 — 未正确落位的提交编辑会被拒绝。修改过的字节在十六进制查看器中以橙色标记。
+   树编辑会执行验证后提交（VBC）重解析 — 新值未正确落位的编辑会被拒绝；十六进制编辑过编辑栅栏后直接应用，随后由一次后续重解析刷新树。修改过的字节在十六进制查看器中以橙色标记。
 5. 使用 **文件 → 保存 PCAP**（Ctrl+S）或 **导出 PCAP 另存为**（Ctrl+Shift+S）保存修改
 6. 勾选要发送的报文（每包复选框，或使用报文列表的右键上下文菜单），选择网卡并设置间隔和循环次数。点击 **开始** 即直接通过所选物理网卡发送；自动修复默认关闭，只影响发送前的报文处理。
 
@@ -333,7 +347,7 @@ OBFUSCATED_DLL=/path/to/ProtocolForge.dll ./packaging/linux/publish-linux.sh
 OBFUSCATED_DLL=/path/to/ProtocolForge.dll ./packaging/windows/publish-windows.sh
 ```
 
-只混淆本产品程序集，并保留公开类型/成员名称——XAML 绑定、`ViewLocator` 反射与 JSON 持久化都在运行时按名称解析成员，改名会导致绑定失败。`OBFUSCATED_DLL` 指向不存在的文件时构建会失败，而不是静默产出未混淆包。CI 不设置该变量，因此流水线产物保持未混淆。
+只混淆本产品程序集，并保留公开类型/成员名称——XAML 绑定与 JSON 持久化都在运行时按名称解析成员，改名会导致绑定失败。`OBFUSCATED_DLL` 指向不存在的文件时构建会失败，而不是静默产出未混淆包。CI 不设置该变量，因此流水线产物保持未混淆。
 
 真实抓包只保留在本机。CI、测试、截图和营销材料使用生成的测试夹具；任何真实抓包必须先完成脱敏才能外发。
 
@@ -347,7 +361,7 @@ ProtocolForge 不内置协议解析器 — 完全依赖 tshark。要支持新协
 
 1. 确保 tshark 有该协议的解析器（大多数 3GPP 协议在较新版本的 Wireshark 中都支持）
 2. 三遍 jsonraw 解析器会自动处理 tshark 输出的任何协议
-3. 如需自定义高亮色：在 `HexEditorViewModel.GetHighlightColor()` 中为该协议名添加颜色条目
+3. 高亮色无需改代码：协议名经哈希映射为稳定的色相，新协议会自动获得自己的颜色
 
 ### 添加新服务
 
@@ -385,13 +399,19 @@ ProtocolForge 不内置协议解析器 — 完全依赖 tshark。要支持新协
 
 | 包 | 版本 | 用途 |
 |------|---------|---------|
-| Avalonia | 12.0.5 | 跨平台 UI 框架 |
-| Avalonia.Desktop | 12.0.5 | 桌面后端 |
-| Avalonia.Themes.Fluent | 12.0.5 | Fluent 设计主题 |
-| Avalonia.Fonts.Inter | 12.0.5 | Inter 字体 |
-| Avalonia.Controls.DataGrid | 12.0.1 | 报文列表网格：排序 + 双击列宽自适应 |
-| AvaloniaUI.DiagnosticsSupport | 2.2.1 | 仅开发用诊断集成（Debug 构建） |
+| Avalonia | 12.1.3 | 跨平台 UI 框架 |
+| Avalonia.Desktop | 12.1.3 | 桌面后端 |
+| Avalonia.Themes.Fluent | 12.1.3 | Fluent 设计主题 |
+| Avalonia.Fonts.Inter | 12.1.3 | Inter 字体 |
+| Avalonia.Controls.DataGrid | 12.1.2 | 报文列表网格：排序 + 双击列宽自适应 |
+| AvaloniaUI.DiagnosticsSupport | 2.2.3 | 仅开发用诊断集成（Debug 构建） |
 | CommunityToolkit.Mvvm | 8.4.2 | MVVM 源代码生成器（ObservableProperty、RelayCommand） |
+| Dock.Avalonia | 12.1.0.7 | Visual Studio 风格可停靠布局宿主 |
+| Dock.Avalonia.Themes.Fluent | 12.1.0.7 | Dock 基础外框主题（先于 SukiUI.Dock 加载） |
+| Dock.Model.Mvvm | 12.1.0.7 | Dock 模型类型（MVVM） |
+| Dock.Serializer.SystemTextJson | 12.1.0.7 | Dock 布局持久化（docklayout.json） |
+| SukiUI | 7.0.1 | 整套控件换肤（窗口、菜单、DataGrid、TreeView、Dock） |
+| SukiUI.Dock | 7.0.1 | 与 SukiUI 一致的 Dock 面板外框 |
 
 外部运行时依赖：用于协议解析的 **tshark ≥ 2.6.0**（Wireshark 的一部分）。
 

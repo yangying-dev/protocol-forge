@@ -6,16 +6,16 @@
              x:DataType="vm:ProtocolTreeViewModel">
 
     <Grid RowDefinitions="Auto,*">
-        <Border Grid.Row="0" Background="#F0F0F0" Padding="8,4"
+        <Border Grid.Row="0" Background="{DynamicResource SukiStrongBackground}" Padding="8,3"
                 IsVisible="{Binding IsEnabled}">
             <TextBlock Text="{Binding SelectedFieldInfo}"
-                       FontSize="11" Foreground="Gray"
-                       FontFamily="Consolas, monospace" />
+                        FontSize="12" Foreground="{DynamicResource SukiMuteText}"
+                        FontFamily="Consolas, monospace" />
         </Border>
 
         <TreeView Grid.Row="1" Name="ProtocolTree"
                   ItemsSource="{Binding Layers}"
-                  Background="White"
+                  Background="{DynamicResource SukiCardBackground}"
                   BorderThickness="0"
                   ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                   ScrollViewer.VerticalScrollBarVisibility="Auto">
@@ -26,7 +26,7 @@
                     <StackPanel Orientation="Horizontal" Spacing="4"
                                 x:DataType="models:ProtocolLayer">
                         <TextBlock Text="{Binding ShortLabel}"
-                                   FontWeight="SemiBold" FontSize="12" />
+                                   FontWeight="SemiBold" FontSize="15" />
                     </StackPanel>
                 </TreeDataTemplate>
 
@@ -43,46 +43,45 @@
                             </ContextMenu>
                         </Border.ContextMenu>
                         <StackPanel Orientation="Horizontal" Spacing="6">
-                            <TextBlock Text="{Binding Name}" FontSize="12"
-                                       FontWeight="SemiBold" Foreground="#1565C0" />
-                            <TextBlock Text=":" FontSize="12" Foreground="#888" />
-                            <TextBlock Text="{Binding DisplayValue}" FontSize="12"
-                                       IsVisible="{Binding !IsEditing}"
-                                       Foreground="#424242" />
+                            <TextBlock Text="{Binding Name}" FontSize="15"
+                                        FontWeight="SemiBold" Classes="tree-field-name" />
+                            <TextBlock Text=":" FontSize="15" Classes="tree-field-colon" />
+                            <TextBlock Text="{Binding DisplayValue}" FontSize="15"
+                                        IsVisible="{Binding !IsEditing}" />
                             <TextBox Text="{Binding EditText}"
-                                     IsVisible="{Binding IsEditingAndNotEnum}"
-                                     Width="160" Padding="3,0"
-                                     FontSize="12" VerticalContentAlignment="Center"
-                                     FontFamily="Consolas, monospace"
-                                     KeyDown="OnEditKeyDown"
-                                     LostFocus="OnEditLostFocus" />
+                                      IsVisible="{Binding IsEditingAndNotEnum}"
+                                      Width="160" Padding="3,0"
+                                      FontSize="15" VerticalContentAlignment="Center"
+                                      FontFamily="Consolas, monospace"
+                                      KeyDown="OnEditKeyDown"
+                                      LostFocus="OnEditLostFocus" />
                             <ComboBox ItemsSource="{Binding EnumOptions}"
-                                      SelectedItem="{Binding SelectedEnumOption, Mode=TwoWay}"
-                                      IsVisible="{Binding IsEditingAndEnum}"
-                                      MinWidth="200" MaxWidth="340"
-                                      Padding="3,0" FontSize="12"
-                                      VerticalContentAlignment="Center"
-                                      HorizontalAlignment="Left"
-                                      SelectionChanged="OnEnumSelectionChanged">
+                                       SelectedItem="{Binding SelectedEnumOption, Mode=TwoWay}"
+                                       IsVisible="{Binding IsEditingAndEnum}"
+                                       MinWidth="200" MaxWidth="340"
+                                       Padding="3,0" FontSize="15"
+                                       VerticalContentAlignment="Center"
+                                       HorizontalAlignment="Left"
+                                       SelectionChanged="OnEnumSelectionChanged">
                                 <ComboBox.ItemTemplate>
                                     <DataTemplate DataType="models:EnumOption"
                                                  x:DataType="models:EnumOption">
-                                        <TextBlock Text="{Binding Label}" FontSize="12" />
+                                        <TextBlock Text="{Binding Label}" FontSize="15" />
                                     </DataTemplate>
                                 </ComboBox.ItemTemplate>
                             </ComboBox>
                             <StackPanel Orientation="Horizontal" Spacing="4"
-                                    IsVisible="{Binding IsEditing}">
+                                    IsVisible="{Binding IsEditingScalar}">
                                     <CheckBox IsChecked="{Binding AllowLengthChange}"
-                                              FontSize="11" VerticalAlignment="Center"
+                                              FontSize="15" VerticalAlignment="Center"
                                               ToolTip.Tip="{DynamicResource L10n.Field.TipLengthChange}" />
                                     <TextBlock Text="{DynamicResource L10n.Field.AllowLengthChange}"
-                                               FontSize="11" VerticalAlignment="Center" />
+                                                FontSize="15" VerticalAlignment="Center" />
                                 </StackPanel>
                                 <TextBlock Text="{Binding HexValue, StringFormat={}[{0}]}"
-                                       IsVisible="{Binding ShowHex}"
-                                       FontSize="11" Foreground="#9E9E9E"
-                                       FontFamily="Consolas, monospace" />
+                                        IsVisible="{Binding ShowHex}"
+                                        FontSize="15" Classes="tree-field-hex"
+                                        FontFamily="Consolas, monospace" />
                         </StackPanel>
                     </Border>
                 </TreeDataTemplate>
@@ -97,12 +96,47 @@
                         <Transitions />
                     </Setter>
                 </Style>
-                <!-- Immediate, lightweight hover highlight (no gradient/transition). -->
-                <Style Selector="TreeViewItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-                    <Setter Property="Background" Value="#E8F0FE" />
+
+                <!-- 选中行背景被 SukiUI 刷成 SukiPrimaryColor(蓝),字段名原本同色 → "蓝字蓝底"看不见;
+                     且该前景是模板局部值,外层 Style 覆盖不掉(只能改 DataTemplate)。故去掉局部前景、
+                     改用具名 class,按"常态各自配色 / 选中转浅色"分两组样式。关键:选中转浅色的后代
+                     选择器会穿透到子节点(选中父层时子字段整片变白),而 Avalonia 没有"不跨 TreeViewItem"
+                     的选择器,`:selected /template/ ...` 又只能命中模板元素、够不到 DataTemplate 内容。
+                     于是反过来给"处于选中项内、但自身不是选中项"的嵌套行补一组还原规则(多一个 TreeViewItem
+                     层级 → 特异性更高 → 覆盖上面的白色),同时把嵌套项的 Foreground 还原,避免其值文本
+                     (无局部前景)跟着父层继承成白色。 -->
+                <Style Selector="TreeViewItem:selected">
+                    <Setter Property="Foreground" Value="White" />
                 </Style>
-                <Style Selector="TreeViewItem:selected /template/ ContentPresenter#PART_ContentPresenter">
-                    <Setter Property="Background" Value="#CCE0E0FF" />
+                <Style Selector="TreeViewItem:selected TreeViewItem">
+                    <Setter Property="Foreground" Value="{DynamicResource SukiText}" />
+                </Style>
+                <Style Selector="TextBlock.tree-field-name">
+                    <Setter Property="Foreground" Value="{DynamicResource SukiPrimaryColor}" />
+                </Style>
+                <Style Selector="TreeViewItem:selected TextBlock.tree-field-name">
+                    <Setter Property="Foreground" Value="White" />
+                </Style>
+                <Style Selector="TreeViewItem:selected TreeViewItem TextBlock.tree-field-name">
+                    <Setter Property="Foreground" Value="{DynamicResource SukiPrimaryColor}" />
+                </Style>
+                <Style Selector="TextBlock.tree-field-colon">
+                    <Setter Property="Foreground" Value="{DynamicResource SukiMuteText}" />
+                </Style>
+                <Style Selector="TreeViewItem:selected TextBlock.tree-field-colon">
+                    <Setter Property="Foreground" Value="White" />
+                </Style>
+                <Style Selector="TreeViewItem:selected TreeViewItem TextBlock.tree-field-colon">
+                    <Setter Property="Foreground" Value="{DynamicResource SukiMuteText}" />
+                </Style>
+                <Style Selector="TextBlock.tree-field-hex">
+                    <Setter Property="Foreground" Value="{DynamicResource SukiDisabledText}" />
+                </Style>
+                <Style Selector="TreeViewItem:selected TextBlock.tree-field-hex">
+                    <Setter Property="Foreground" Value="#E0E0E0" />
+                </Style>
+                <Style Selector="TreeViewItem:selected TreeViewItem TextBlock.tree-field-hex">
+                    <Setter Property="Foreground" Value="{DynamicResource SukiDisabledText}" />
                 </Style>
             </TreeView.Styles>
         </TreeView>

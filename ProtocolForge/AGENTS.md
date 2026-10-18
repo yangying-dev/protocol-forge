@@ -8,11 +8,10 @@ The main Avalonia application: packet parsing (tshark), field-level editing (fen
 ## STRUCTURE
 ```
 ProtocolForge/
-├── Services/      # 16 files — all business logic (largest: TsharkService 2156 lines)
-├── ViewModels/    # 6 files — CommunityToolkit.Mvvm; events, not references
+├── Services/      # 20 files — all business logic (largest: TsharkService 2747 lines)
+├── ViewModels/    # 8 files — CommunityToolkit.Mvvm; events, not references
 ├── Models/        # 8 files — domain objects incl. Packet + ProtocolField
-├── Views/         # MainWindow + Controls/ (HexEditor, ProtocolTreeView)
-├── Converters/    # HexByteColorConverter + BoolToStringConverter
+├── Views/         # MainWindow + Controls/ (13 files: panes, HexEditor, ProtocolTreeView)
 └── App.axaml.cs   # Manual DI composition root (in dependency order)
 ```
 
@@ -24,16 +23,17 @@ ProtocolForge/
 | Entry/Program | `Program.cs` | Avalonia bootstrap + trace.log listener setup |
 | tshark integration | `Services/TsharkService.cs` | Streamed `-T fields` list, per-packet jsonraw tree, PDML reparse, version gate |
 | Verify-Before-Commit | `Services/EditTransactionService.cs` | Candidate → temp PCAP → reparse → verify (name, offset) → commit/abort |
-| Edit fence | `Services/ProtocolEditorService.cs` | `CheckTreeEditFence` — 6 checks before a field is editable |
+| Edit fence | `Services/ProtocolEditorService.cs` | `CheckTreeEditFence` — byte-level five checks; bit fields edit via RMW (mask required); container/marker edit as a whole `Bytes` blob |
 | Send rung ladder | `Services/PacketSendService.cs` + `IL2SendRung.cs`, `NpcapSendService.cs`, `BpfSendService.cs` | L2(native) → AF_PACKET → IP raw → UDP |
-| Hex editing | `ViewModels/HexEditorViewModel.cs` + `Views/Controls/HexEditor.axaml.cs` | REPLACE-only runs, pending preview, Enter/Esc |
+| Hex editing | `ViewModels/HexEditorViewModel.cs` + `Views/Controls/HexEditor.axaml.cs` | REPLACE-only hex-pane runs (same-length), pending preview, Enter/Esc |
 | Tree ↔ hex sync | `ViewModels/MainWindowViewModel.cs`, `ProtocolTreeViewModel.cs` | `FieldSelected`, `FieldFoundAtOffset`, `_treeBuildSeq` |
 | Layout persistence | `Services/LayoutService.cs` | JSON in ApplicationData |
+| User manual | `Manual/UserManual.html` (shipped), source `../docs/manual/` | Single self-contained bilingual HTML (base64 screenshots); **帮助 → 用户手册** opens it; csproj `<Content Include="Manual\**">` ships it |
 
 ## CONVENTIONS
 
 - **Services are standalone** — no VM references; they expose events/records (`PacketSendResult`, `EditResult`, `PdmlData`) for consumers.
-- **Split static/instance services** — instance (`sealed class`, DI'd in `App.axaml.cs`): Tshark, Pcap Ingest/Export, EditTransaction, ProtocolEditor, PacketSend, NetworkInterface, Layout, TsharkSettings. Static (`static class`, no DI): `PacketPrepareService`, `NpcapSendService`, `BpfSendService`, `TraceLog`.
+- **Split static/instance services** — instance (`sealed class`, DI'd in `App.axaml.cs`): Tshark, Pcap Ingest/Export, PcapngWriter, EditTransaction, EditHistory, ProtocolEditor, EnumCatalog, Localization, SessionState, PacketContext (providers), PacketSend, NetworkInterface, Layout, TsharkSettings. Static (`static class`, no DI): `PacketPrepareService`, `NpcapSendService`, `BpfSendService`, `TraceLog`.
 - **No async void** — commands use `[AsyncRelayCommand]`; services return `Task<T>` with `CancellationToken` params.
 - **Records for results** — `sealed record` used for DTOs/verdicts (`TsharkDetection`, `EditResult`, `PdmlData`, `PacketSendResult`).
 - **Streaming/progressive loading** — packet list fills incrementally; trees build on demand per packet (~0.4s). Never parse full files into memory.
@@ -43,7 +43,7 @@ ProtocolForge/
 
 ## ANTI-PATTERNS
 
-- **Never mutate packet length** — edits are REPLACE-only; `ProtocolField` offsets must stay valid.
+- **Never mutate packet length by default** — the hex pane is REPLACE-only and tree edits are same-length; a length change is opt-in only (`ProtocolField.AllowLengthChange`, hex value, default off, reset on each editor open) and goes through `EditTransactionService.CommitLengthChangingEditAsync`, which shifts the later offsets (`Packet.ShiftFieldOffsets`) after the reparse verifies.
 - **Never bypass `EditTransactionService`** for field edits — no direct `ApplyModification` outside VBC.
 - **Never rebuild the tree from scratch on edit** — use `RefreshFieldDisplays()` (in-place PDML text patch) to preserve selection/expansion.
 - **Never let stale async results clobber UI** — respect `_treeBuildSeq` (selection), `_reparseVersions` (per-packet refresh), `_prefetchSeq` (neighbor prefetch).

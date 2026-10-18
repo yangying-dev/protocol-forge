@@ -77,14 +77,14 @@ frame 1 dissected: True, layers: 5
 
 ```bash
 # 把第 1 帧的 IPv4 源地址改成 10.0.0.1
-ProtocolForge edit capture.pcap --packet 1 --offset 26 --length 4 --hex 0a000001 --out output.pcap
+ProtocolForge edit capture.pcap --packet 1 --offset 26 --length 4 --hex 0a000001 --out sample.pcap
 ```
 
 输出：
 
 ```
 target: Source Address (ip.src) at offset 26 length 4
-committed and written: output.pcap
+committed and written: sample.pcap
 frames written: 6 (frame 1 edited)
 verified: OK
 ```

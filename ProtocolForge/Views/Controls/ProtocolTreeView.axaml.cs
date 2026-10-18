@@ -215,6 +215,12 @@ public partial class ProtocolTreeView : UserControl
             currentNode = childNode;
         }
 
+        // 必须先清旧选择:程序化 IsSelected=true 只会走 ContainerSelectionChanged
+        // → SelectedItems.Add(不像指针路径 SelectSingleItem 会先 Clear),不清则旧
+        // 节点的 :selected 背景残留,两个节点同时高亮;SelectedItem=null 触发 Reset
+        // 分支,递归取消全部已实现容器的选中,选择模型一并归零。
+        ProtocolTree.SelectedItem = null;
+
         currentNode.IsSelected = true;
         currentNode.BringIntoView();
         _pendingSelect = null;

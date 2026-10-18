@@ -8,7 +8,7 @@
 
 | 分类 | 含义 | 谁执行 |
 |---|---|---|
-| **A — 自动化已验证** | 现有 `tests/pf-verify`（G1–G38；G9、G10 已随对应功能下线删除，组号不回收）已覆盖，已实际运行并通过 | 自动化（pf-verify） |
+| **A — 自动化已验证** | 现有 `tests/pf-verify`（G1–G54；G9、G10 已随对应功能下线删除，组号不回收）已覆盖，已实际运行并通过 | 自动化（pf-verify） |
 | **B — 可自动化新增** | 服务层逻辑；可新增 pf-verify 测试组覆盖，无需 GUI / 真机 / 网络注入 | 开发者补充实现 |
 | **C — 必须人工** | GUI 交互、视觉确认、真实网卡注入、Windows/macOS 专属路径、真机行为 | **人工执行** |
 
@@ -26,7 +26,7 @@
 | 4 | PCAP 读取（IngestService） | P-01 ~ P-12 | A |
 | 5 | 数据包列表加载（流式/只读） | L-01 ~ L-04 | A |
 | 6 | 协议树构建（jsonraw 三遍解析） | TR-01 ~ TR-10 | A/C |
-| 7 | 编辑围栏（CheckTreeEditFence 六检查） | F-01 ~ F-06 | A |
+| 7 | 编辑围栏（CheckTreeEditFence） | F-01 ~ F-06 | A |
 | 8 | 树字段值编辑（转换/内联编辑器） | CV-01 ~ CV-13 | A/C |
 | 9 | Hex 编辑（REPLACE-only） | H-01 ~ H-13 | A/C |
 | 10 | Verify-Before-Commit（VBC） | V-01 ~ V-10 | A/C |
@@ -43,7 +43,7 @@
 | 21 | 菜单 / 对话框 / 横幅 / 状态栏 | M-01 ~ M-12 | C |
 | 22 | 已知非功能面（死代码/不存在的功能确认） | D-01 ~ D-08 | A/C |
 
-**覆盖率声明**：上述 22 个功能域对应代码中所有 Service（16 个文件）、ViewModel（6 个）、View/控件（7 个）、Converter（2 个）、Model（8 个）中每个可观察行为点。任何未列出的功能点即视为缺陷（欢迎指出）。
+**覆盖率声明**：上述 22 个功能域对应代码中所有 Service（20 个文件）、ViewModel（8 个）、View/控件（13 个）、Model（8 个）中每个可观察行为点。任何未列出的功能点即视为缺陷（欢迎指出）。
 
 > **变更记录（2026-09-29）**：免费版每日发送配额功能已整体下线并从代码库删除（服务类文件、每日计数 JSON 状态文件、工具栏配额文本、预占/记账/守卫链路全部移除）。原"发送配额"功能域及其 Q-01~Q-14 用例整节移除，本清单与后续章节号顺延一位；用例编号 `N-*` 等**保持原号不重排**，故编号存在空缺。相关自动化断言（pf-verify G9、G10i、G21-04、G32 的 Q-12 子块）同步删除，组号不回收。
 >
@@ -55,10 +55,10 @@
 
 | 用例 | 分类 | 前置条件 | 步骤 | 预期 |
 |---|---|---|---|---|
-| **T-01** | A | dotnet SDK ≥ 8.0 | 仓库根目录执行 `dotnet build` | 0 错误 0 警告（QA 门禁） |
-| **T-02** | A | tshark ≥ 3.6.2 可用 + pcap/ 样本齐全 | `dotnet run --project tests/pf-verify` | 控制台输出 `ALL GROUPS PASS`，退出码 0 |
-| **T-03** | A | T-02 通过 | 检查 bin 输出目录 | 生成 `report.txt`，含全部断言行 + `ALL GROUPS PASS` footer（2026-09-30 实测 230 PASS / 0 FAIL / 6 SKIP；**现状：`PF_CAPTURE` 未设置时 harness 会自行生成 4413 帧合成抓包，实测 378 PASS / 0 FAIL / 1 SKIP，exit 0**，唯一跳过为 `G17-13`（需 ≥18 万包的本地 pcapng）。组号 G9/G10 已删除、G21 独立块并入别组，编号不连续属预期） |
-| **T-04** | C | 任一平台 | 检查 `ProtocolForge.sln` | 仅含主项目；`tests/pf-verify` 不在 sln 中（须独立 `dotnet run`） |
+| **T-01** | A | dotnet SDK ≥ 10.0 | 仓库根目录执行 `dotnet build` | 0 错误 0 警告（QA 门禁） |
+| **T-02** | A | tshark ≥ 3.6.2 可用（`PF_CAPTURE` 未设置时 harness 自行生成合成抓包） | `dotnet run --project tests/pf-verify` | 控制台输出 `ALL GROUPS PASS`，退出码 0 |
+| **T-03** | A | T-02 通过 | 检查 bin 输出目录 | 生成 `report.txt`，含全部断言行 + `ALL GROUPS PASS` footer（2026-09-30 实测 230 PASS / 0 FAIL / 6 SKIP；**现状：`PF_CAPTURE` 未设置时 harness 会自行生成 4413 帧合成抓包，实测 414 PASS / 0 FAIL / 1 SKIP，exit 0**，唯一跳过为 `G17-13`（需 ≥18 万包的本地 pcapng）。组号 G9/G10 已删除、G21 独立块并入别组，编号不连续属预期） |
+| **T-04** | C | 任一平台 | 检查 `ProtocolForge.sln` | 含主项目与 `tests/pf-verify`；`dotnet build` 会编译 harness 但不运行它（须独立 `dotnet run`） |
 
 ---
 
@@ -138,15 +138,15 @@
 
 ---
 
-## 8. 编辑围栏（CheckTreeEditFence 六检查）
+## 8. 编辑围栏（CheckTreeEditFence）
 
 | 用例 | 分类 | 前置条件 | 步骤 | 预期 |
 |---|---|---|---|---|
 | **F-01** | A | pcap/capture.pcap | pf-verify G1a | 元数据/位级字段被拦截（blockedByReason.Count>0） |
 | **F-02** | A | 同上 | pf-verify G1b | ≥1 个常规帧内字段放行 |
 | **F-03** | A | 同上 | pf-verify G1c | 放行/拦截两类判定并存（判别力） |
-| **F-04** | A | 构造六类字段各一 | pf-verify G12a-01~07 逐一 CheckTreeEditFence | 六检查各自拒绝并返回对应 Reason：UnknownField / BitLevel / OutOfFrame(+PduHint) / NoByteEvidence / BytesDisagree（构造 60B 合成帧；NoByteSpan 因 IsTreeEditable 门在负长度处先拦截而不可达——见附录诚实注记）；合法 IPv4 字段放行 |
-| **F-05** | C | 正常模式 | 双击一个不可编辑字段（如位级掩码 / ip.addr） | 状态区显示"不可编辑: {reason}"；不打开编辑器 |
+| **F-04** | A | 构造六类字段各一 | pf-verify G12a-01~07 逐一 CheckTreeEditFence | 各检查拒绝并返回对应 Reason：UnknownField / BitMaskMissing / OutOfFrame(+PduHint) / NoByteEvidence / BytesDisagree（构造 60B 合成帧；NoByteSpan 因 IsTreeEditable 门在负长度处先拦截而不可达——见附录诚实注记）；合法 IPv4 字段放行 |
+| **F-05** | C | 正常模式 | 双击一个不可编辑字段（如无掩码的位级子字段 / ip.addr） | 状态区显示"不可编辑: {reason}"；不打开编辑器 |
 | **F-06** | A | pf-verify 产物 | 检查 trace 日志 | 每次拒绝写 TraceLog 行 |
 
 ---
@@ -370,10 +370,10 @@
 
 | 用例 | 分类 | 前置条件 | 步骤 | 预期 |
 |---|---|---|---|---|
-| **D-01** | A | — | Grep 源码 | 无拖拽支持（DragDrop/AllowDrop 零匹配）；无搜索/查找功能（无 Ctrl+F） |
+| **D-01** | A | — | Grep 源码 | 无拖拽支持（DragDrop/AllowDrop 零匹配）；查找功能已提供（View 菜单 / Ctrl+F，逐列 + 协议树，未用 `ITextSearch` 控件接口） |
 | **D-02** | A | — | Grep 源码 | OpenPcapCommand/ExportPcapCommand/RefreshInterfacesCommand 生而未绑定（死命令，实际走 code-behind） |
-| **D-03** | A | — | Grep XAML | HexByteColorConverter（5 个）/BoolToStringConverter 未在 XAML 引用（死转换器；hex 背景为 code-behind） |
-| **D-04** | A | — | 源码 | ViewLocator 注册但从未触发（所有视图直接构造）；StatusInfo/SelectedIndex/IsEnabled 部分 VM 状态未绑定 |
+| **D-03** | A | — | Grep XAML | HexByteColorConverter / BoolToStringConverter 已删除（发布前移除；此前定义但 XAML 从未引用，hex 背景为 code-behind） |
+| **D-04** | A | — | 源码 | ViewLocator 已删除（发布前移除，此前注册但从未触发，所有视图直接构造）；StatusInfo/SelectedIndex/IsEnabled 部分 VM 状态未绑定 |
 | **D-06** | A | — | Grep App.axaml | 外观仅跟随系统主题（`RequestedThemeVariant="Default"`）；无自定义主题切换/配色功能 |
 | **D-07** | A | — | 查看 app.manifest | 标准 Avalonia 清单（assemblyIdentity + Windows 10 supportedOS，窗口透明/兼容所需）；**无** requireAdministrator 提权声明——原始套接字发送的管理员权限由"以管理员身份运行"外部保障（子 AGENTS.md 的"清单为提权而设"说法不成立，按实际记录） |
 
@@ -406,7 +406,7 @@
 | G6 hex 代码面 | 同上 | REPLACE-only/事件/只读门 PASS |
 | G7/G8 Npcap/BPF 纯逻辑 | 同上 | 路径探测/设备匹配/ifreq 构造 PASS |
 | G11 本地化 | 同上 | 6 断言全过（键一致性/占位符/切换/回退/格式化） |
-| G12a 围栏构造 | 同上 | 7 断言全过（UnknownField/BitLevel/OutOfFrame±PduHint/NoByteEvidence/BytesDisagree/放行） |
+| G12a 围栏构造 | 同上 | 7 断言全过（UnknownField/BitMaskMissing/OutOfFrame±PduHint/NoByteEvidence/BytesDisagree/放行） |
 | G12b 转换矩阵 | 同上 | 27 断言全过（UInt 越界拒/Int 补码+截断/IPv4/IPv6/MAC/BCD 交换/String 零填充/未知 Kind） |
 | G13 字段应用 | 同上 | 9 断言全过（ApplyFieldEdit/ApplyHexStringEdit/FindFieldAtOffset 全矩阵） |
 | G14 层树（真实帧2） | 同上 | 7 断言全过（层存在/父链/重复层名/嵌套字段含位级/ProtocolStack） |
@@ -445,7 +445,7 @@
 
 **诚实注记（覆盖边界与现状记录）**：
 
-1. **F-04 的 NoByteSpan 分支不可达**：六 Reason 中 UnknownField / BitLevel / OutOfFrame(+PduHint) / NoByteEvidence / BytesDisagree 由 G12a-01~06 直接断言；`NoByteSpan` 因上游 `IsTreeEditable` 门（长度/偏移前置检查）先行拦截，无法从公开入口构造触发——语义恒"拒绝"但无独立断言行。
+1. **F-04 的 NoByteSpan 分支不可达**：六 Reason 中 UnknownField / BitMaskMissing / OutOfFrame(+PduHint) / NoByteEvidence / BytesDisagree 由 G12a-01~06 直接断言；`NoByteSpan` 因上游 `IsTreeEditable` 门（长度/偏移前置检查）先行拦截，无法从公开入口构造触发——语义恒"拒绝"但无独立断言行。
 2. **Int 无符号越界检查**：CV-02 的越界断言仅对 UInt 成立；Int 路径 `999 → 1 字节截断`（无范围检查，G12b 固化该现状）为当前实现行为，非缺陷主张。
 3. **G14-05 为占位断言（恒真）**：`Report("G14-05 duplicate layer names tolerated (TR-03)", true, …)` 的历史占位——TR-03 真实孪生键解析已由 **G24** 行为化覆盖（`dhcp.option.type` 重复键按序消费），G14-05 保留原样不误导（同一代码路径 G14 层树断言照常有效）。G14-06 的位级计数仅证明字段可遍历；`MaskToLengthBits` 语义已由 **G24 TR-09** 断言（DSCP 位宽 6）。
 4. **G21 不锁定具体 rung**：仍成立（回环注入断言"任一 rung 成功 + 严格计数"）；N-10~N-13 的阶梯下降现已由 **G27** 定向覆盖（root：AF_PACKET→IP raw→UDP 三跳 trace 实证 + NoSocketType/FrameTooShort/TCP 文案）。

@@ -5,7 +5,6 @@
 # for what actually lands in the repository. The two files were written to agree:
 #
 #   *.sh            -> LF   (.gitattributes `*.sh text eol=lf`)
-#   *.desktop       -> LF   (.gitattributes `*.desktop text eol=lf`)
 #   *.cs/.axaml/... -> CRLF (.gitattributes `eol=crlf`)
 #   *.yml           -> LF   (.gitattributes `*.yml text eol=lf`)
 #
@@ -30,9 +29,6 @@ max_line_length = off
 
 # ── LF-only files (must match .gitattributes) ────────────────────────────────
 [*.sh]
-end_of_line = lf
-
-[*.desktop]
 end_of_line = lf
 
 [*.yml]
@@ -94,3 +90,6 @@ generated_code = true
 
 [bin/**]
 generated_code = true
+
+[*.desktop]
+end_of_line = lf

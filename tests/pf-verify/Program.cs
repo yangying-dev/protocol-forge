@@ -14,6 +14,11 @@ using Avalonia.Controls;
 using Avalonia;
 using ProtocolForge.Services;
 using ProtocolForge.ViewModels;
+using Dock.Model.Core;
+using Dock.Avalonia.Controls;
+using Dock.Avalonia.Contract;
+using Dock.Settings;
+using Avalonia.Input;
 
 // ── Path resolution: locate repo root by walking up to ProtocolForge.sln ──
 static string FindRepoRoot()
@@ -413,6 +418,8 @@ try
     Report("G6 reverse sync: tree SelectFieldOnTree + view walk",
         mw.Contains("HexEditor.FieldFoundAtOffset") && tree.Contains("ContainerFromItem") && tree.Contains("TreeContainerFromItem"), "missing reverse sync");
     Report("G6 reverse sync bounded retry", tree.Contains("MaxSelectAttempts"), "missing retry bound");
+    Report("G6 reverse sync clears the previously revealed node",
+        tree.Contains("ProtocolTree.SelectedItem = null"), "stale tree highlight guard missing");
 }
 catch (Exception ex)
 {
@@ -612,9 +619,9 @@ try
         g12ed.CheckTreeEditFence(g12pkt, fU).Reason);
 
     var fBit = new ProtocolField { Name = "Src", OriginalPdmlName = "ip.src", Offset = 26, Length = 4, LengthBits = 1, Kind = FieldKind.UInt, RawBytes = g12src };
-    Report("G12a-02 bit-level field → fence rejects (BitLevel)",
+    Report("G12a-02 bit-level field with no mask → fence rejects (BitMaskMissing)",
         !g12ed.CheckTreeEditFence(g12pkt, fBit).Allowed
-        && g12ed.CheckTreeEditFence(g12pkt, fBit).Reason == LocalizationService.Resolve("Fence.BitLevel"),
+        && g12ed.CheckTreeEditFence(g12pkt, fBit).Reason == LocalizationService.Resolve("Fence.BitMaskMissing"),
         g12ed.CheckTreeEditFence(g12pkt, fBit).Reason);
 
     var fOut = new ProtocolField { Name = "Src", OriginalPdmlName = "ip.src", Offset = 1000, Length = 4, Kind = FieldKind.UInt, RawBytes = g12src };
@@ -673,7 +680,7 @@ try
     G12Vector("Int -5 → 1 byte two's complement", FieldKind.Int, "-5", 1, false, new byte[] { 0xFB }, null);
     G12Vector("Int -5 → 2 bytes", FieldKind.Int, "-5", 2, false, new byte[] { 0xFF, 0xFB }, null);
     G12Vector("Int 0xFB → raw byte", FieldKind.Int, "0xFB", 1, false, new byte[] { 0xFB }, null);
-    G12Vector("Int 999 → truncates to 1 byte (no signed range check)", FieldKind.Int, "999", 1, false, new byte[] { 0xE7 }, null);
+    G12Vector("Int 999 over 1 byte → rejects", FieldKind.Int, "999", 1, true, null, "exceeds 1-byte signed range");
     G12Vector("IPv4 10.0.0.1 → 4 bytes", FieldKind.IPv4, "10.0.0.1", 4, false, new byte[] { 10, 0, 0, 1 }, null);
     G12Vector("IPv4 300.1.1.1 → rejects", FieldKind.IPv4, "300.1.1.1", 4, true, null, "not a valid IPv4");
     G12Vector("IPv4 ::1 → rejects", FieldKind.IPv4, "::1", 4, true, null, "not a valid IPv4");
@@ -692,6 +699,12 @@ try
     G12Vector("String too long → rejects", FieldKind.String, "ABCDEF", 2, true, null, "Value too long");
     G12Vector("String empty → rejects", FieldKind.String, "", 2, true, null, "Value cannot be empty");
     G12Vector("Unknown kind → rejects", FieldKind.Unknown, "5", 1, true, null, "is not editable");
+    G12Vector("Bytes colon-hex → 3 bytes", FieldKind.Bytes, "0a:0b:0c", 3, false, new byte[] { 0x0A, 0x0B, 0x0C }, null);
+    G12Vector("Bytes plain hex → 4 bytes", FieldKind.Bytes, "aabbccdd", 4, false, new byte[] { 0xAA, 0xBB, 0xCC, 0xDD }, null);
+    G12Vector("Bytes 0x-prefixed → 2 bytes", FieldKind.Bytes, "0xAABB", 2, false, new byte[] { 0xAA, 0xBB }, null);
+    G12Vector("Bytes length mismatch → rejects", FieldKind.Bytes, "aabb", 4, true, null, "field holds");
+    G12Vector("Bytes non-hex → rejects", FieldKind.Bytes, "zz", 1, true, null, "not valid hex bytes");
+    G12Vector("Bytes odd digit count → rejects", FieldKind.Bytes, "abc", 2, true, null, "not valid hex bytes");
     Report("G12b full conversion matrix", g12ok, g12detail.Length == 0 ? "all vectors passed" : g12detail);
 }
 catch (Exception ex)
@@ -954,6 +967,187 @@ try
         && BytesEq(g15p9.AsSpan(14).ToArray(), g15f9.AsSpan(14).ToArray())
         && BytesEq(g15p9.AsSpan(6, 6).ToArray(), new byte[] { 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF }),
         $"len={g15p9.Length}, ip area intact, eth src rewritten");
+
+    // Vector 10: the RFC 4960 §A.5 check value — CRC32c over ASCII "123456789"
+    // must be 0xE3069283, pinning polynomial/init/final-XOR in one constant.
+    byte[] g15crcCheck = System.Text.Encoding.ASCII.GetBytes("123456789");
+    uint g15crcCheckGot = PacketPrepareService.ComputeCrc32c(g15crcCheck, 0, g15crcCheck.Length);
+    Report("G15t ComputeCrc32c matches the RFC 4960 check value",
+        g15crcCheckGot == 0xE3069283u, $"0x{g15crcCheckGot:X8}");
+
+    // Vector 11: IPv4 + SCTP with a bogus checksum — PrepareFrame must rewrite it,
+    // stored little-endian per RFC 4960 §3.10, consistent with a fresh recomputation
+    // over the checksum-zeroed SCTP section.
+    byte[] g15sctp = Concat(U16(1234, false), U16(5678, false), U32(0x11223344, false), U32(0xDEADBEEF, false));
+    byte[] g15ipS = Concat(new byte[] { 0x45, 0x00 }, U16(32, false), U16(1, false), U16(0x4000, false),
+        new byte[] { 0x40, 0x84, 0x00, 0x00 }, new byte[] { 10, 0, 0, 1 }, new byte[] { 10, 0, 0, 2 });
+    byte[] g15fS = Concat(new byte[] { 0x02, 0, 0, 0, 0, 1, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0x08, 0x00 }, g15ipS, g15sctp);
+    byte[] g15pS = PacketPrepareService.PrepareFrame(g15fS, g15iface);
+    byte[] g15sctpSection = g15pS.AsSpan(34, 12).ToArray();
+    uint g15stored = (uint)(g15sctpSection[8] | (g15sctpSection[9] << 8) | (g15sctpSection[10] << 16) | (g15sctpSection[11] << 24));
+    g15sctpSection[8] = 0; g15sctpSection[9] = 0; g15sctpSection[10] = 0; g15sctpSection[11] = 0;
+    uint g15crcRe = PacketPrepareService.ComputeCrc32c(g15sctpSection, 0, g15sctpSection.Length);
+    Report("G15u IPv4 SCTP CRC32c rewritten little-endian and self-consistent",
+        g15stored == g15crcRe && g15stored != 0xDEADBEEFu,
+        $"stored=0x{g15stored:X8}, recomputed=0x{g15crcRe:X8}");
+
+    // Vector 12 (P0-1): an exactly-14-byte Ethernet-II frame whose ethertype is IPv4 but
+    // that carries no payload — FindIpOffset returns 14 == frame.Length and the old
+    // result[14] read threw IndexOutOfRange.
+    byte[] g15f14 = Concat(new byte[] { 0x02, 0, 0, 0, 0, 1, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0x08, 0x00 });
+    bool g15Threw14 = false;
+    byte[] g15p14 = Array.Empty<byte>();
+    try { g15p14 = PacketPrepareService.PrepareFrame(g15f14, g15iface); }
+    catch (Exception) { g15Threw14 = true; }
+    Report("G15v PrepareFrame on a 14-byte Ethernet-II frame does not throw and preserves length",
+        !g15Threw14 && g15p14.Length == 14,
+        $"threw={g15Threw14}, len={g15p14.Length}");
+
+    // Vector 13 (P0-2a): IPv6 + Hop-by-Hop extension header + TCP. The source rewrite must
+    // still occur AND the TCP checksum must be recomputed, since it covers the IPv6
+    // pseudo-header (which contains the source address). Payload Length = 8 (HbH) + 20 (TCP).
+    byte[] g15hbh = new byte[] { 0x06, 0x00, 0x01, 0x04, 0, 0, 0, 0 };
+    byte[] g15tcp20 = BuildTcpSegment(1234, 80, 0, 0, 0x18, Array.Empty<byte>());
+    byte[] g15ip6hb = Concat(new byte[] { 0x60, 0x00, 0x00, 0x00 }, U16(8 + g15tcp20.Length, false),
+        new byte[] { 0, 64 }, IPAddress.Parse("fe80::2").GetAddressBytes(), IPAddress.Parse("fe80::3").GetAddressBytes());
+    byte[] g15f6hb = Concat(new byte[] { 0x02, 0, 0, 0, 0, 1, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0x86, 0xDD },
+        g15ip6hb, g15hbh, g15tcp20);
+    byte[] g15p6hb = PacketPrepareService.PrepareFrame(g15f6hb, g15iface);
+    Report("G15w IPv6 + Hop-by-Hop + TCP rewrites source and fixes the TCP checksum",
+        BytesEq(g15p6hb.AsSpan(22, 16).ToArray(), IPAddress.Parse("fe80::1").GetAddressBytes())
+        && FoldSum(Concat(Pseudo6(g15p6hb, 22, 38, 6, g15tcp20.Length), g15p6hb.AsSpan(62, g15tcp20.Length).ToArray()), 0, 40 + g15tcp20.Length) == 0xFFFF,
+        $"src={BytesHex(g15p6hb.AsSpan(22, 16).ToArray())}, " +
+        $"fold=0x{FoldSum(Concat(Pseudo6(g15p6hb, 22, 38, 6, g15tcp20.Length), g15p6hb.AsSpan(62, g15tcp20.Length).ToArray()), 0, 40 + g15tcp20.Length):X4}");
+
+    // Vector 14 (P0-2b): IPv6 + ICMPv6 (Next Header 58). ICMPv6's checksum is not recomputed
+    // here, so the source address must be left exactly as captured — rewriting it would strand
+    // a checksum that covers the old source address.
+    byte[] g15icmp6 = new byte[] { 0x80, 0x00, 0x00, 0x00, 0, 0, 0, 0 };
+    byte[] g15ip6ic = Concat(new byte[] { 0x60, 0x00, 0x00, 0x00 }, U16(g15icmp6.Length, false),
+        new byte[] { 58, 64 }, IPAddress.Parse("fe80::2").GetAddressBytes(), IPAddress.Parse("fe80::3").GetAddressBytes());
+    byte[] g15f6ic = Concat(new byte[] { 0x02, 0, 0, 0, 0, 1, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0x86, 0xDD },
+        g15ip6ic, g15icmp6);
+    byte[] g15p6ic = PacketPrepareService.PrepareFrame(g15f6ic, g15iface);
+    Report("G15x IPv6 + ICMPv6 (Next Header 58) leaves the source address untouched",
+        BytesEq(g15p6ic.AsSpan(22, 16).ToArray(), IPAddress.Parse("fe80::2").GetAddressBytes()),
+        $"src={BytesHex(g15p6ic.AsSpan(22, 16).ToArray())}");
+
+    // Vector 15 (P0-3): an ARP Ethernet frame whose destination MAC starts with 0x45. The
+    // version-nibble fallback used to misread it as a bare IPv4 datagram (offset 0); the
+    // positive Ethernet/non-IP detection must return -1 and PrepareFrame must not touch it.
+    byte[] g15arp = Concat(new byte[] { 0x45, 0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0x08, 0x06 },
+        new byte[] { 0x00, 0x01, 0x08, 0x00, 0x06, 0x04, 0x00, 0x01 }, new byte[10]);
+    byte[] g15pArp = PacketPrepareService.PrepareFrame(g15arp, g15iface);
+    Report("G15y ARP Ethernet frame with 0x45 dst MAC → FindIpOffset -1 and frame unchanged",
+        PacketPrepareService.FindIpOffset(g15arp) == -1 && BytesEq(g15pArp, g15arp),
+        $"ipOffset={PacketPrepareService.FindIpOffset(g15arp)}, unchanged={BytesEq(g15pArp, g15arp)}");
+
+    // Vector 16 (P0-3): the bare-datagram fallback still validates structurally — a valid
+    // bare IPv4 returns 0 (the G15q contract), a bad-IHL one returns -1.
+    Report("G15z bare-IP fallback still returns 0 for valid IPv4 and -1 for a bad IHL",
+        PacketPrepareService.FindIpOffset(Concat(new byte[] { 0x45, 0x00, 0x00, 0x1C }, new byte[16])) == 0
+        && PacketPrepareService.FindIpOffset(Concat(new byte[] { 0x44, 0x00, 0x00, 0x1C }, new byte[16])) == -1,
+        "valid=0, IHL<5=-1");
+
+    // 源 MAC 取接口自身 MAC，使 PrepareFrame 的源 MAC 改写（偏移 6）成为空操作，
+    // G15aa 才能断言“整帧未改动”。后续向量只检查源地址区，共用该以太头无碍。
+    byte[] g15ethHdr = new byte[] { 0x02, 0, 0, 0, 0, 1, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x86, 0xDD };
+    byte[] g15src6 = IPAddress.Parse("fe80::2").GetAddressBytes();
+    byte[] g15dst6 = IPAddress.Parse("fe80::3").GetAddressBytes();
+    byte[] g15ip6Hdr(int next, int payload) => Concat(new byte[] { 0x60, 0x00, 0x00, 0x00 }, U16(payload, false),
+        new byte[] { (byte)next, 64 }, g15src6, g15dst6);
+
+    // Vector 17 (FIX-1): a non-atomic Fragment header (offset=1) means the bytes after it
+    // are fragment payload, not a transport header — nothing may be rewritten, including
+    // the two bytes the old code mistook for a TCP checksum.
+    byte[] g15fFrag1 = Concat(g15ethHdr, g15ip6Hdr(44, 8 + g15tcp20.Length),
+        new byte[] { 0x06, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x01 }, g15tcp20);
+    byte[] g15pFrag1 = PacketPrepareService.PrepareFrame(g15fFrag1, g15iface);
+    Report("G15aa non-atomic IPv6 fragment (offset=1) leaves the whole frame untouched",
+        BytesEq(g15pFrag1, g15fFrag1),
+        $"unchanged={BytesEq(g15pFrag1, g15fFrag1)}, src={BytesHex(g15pFrag1.AsSpan(22, 16).ToArray())}");
+
+    // Vector 18 (FIX-1): an atomic Fragment header (offset=0 && M=0, RFC 6946) is
+    // transparent, so the walk reaches TCP and both the source rewrite and the checksum
+    // recompute still happen.
+    byte[] g15fFrag0 = Concat(g15ethHdr, g15ip6Hdr(44, 8 + g15tcp20.Length),
+        new byte[] { 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01 }, g15tcp20);
+    byte[] g15pFrag0 = PacketPrepareService.PrepareFrame(g15fFrag0, g15iface);
+    Report("G15ab atomic IPv6 fragment (offset=0,M=0) rewrites source and fixes TCP checksum",
+        BytesEq(g15pFrag0.AsSpan(22, 16).ToArray(), IPAddress.Parse("fe80::1").GetAddressBytes())
+        && FoldSum(Concat(Pseudo6(g15pFrag0, 22, 38, 6, g15tcp20.Length), g15pFrag0.AsSpan(62, g15tcp20.Length).ToArray()), 0, 40 + g15tcp20.Length) == 0xFFFF,
+        $"src={BytesHex(g15pFrag0.AsSpan(22, 16).ToArray())}");
+
+    // Vector 19 (FIX-2): a truncated frame (Payload Length 200 > captured 20) cannot have
+    // its transport checksum recomputed, so the source stays exactly as captured.
+    byte[] g15fTrunc = Concat(g15ethHdr, g15ip6Hdr(6, 200), g15tcp20);
+    byte[] g15pTrunc = PacketPrepareService.PrepareFrame(g15fTrunc, g15iface);
+    Report("G15ac IPv6 with PayloadLength past the frame leaves the source unchanged",
+        BytesEq(g15pTrunc.AsSpan(22, 16).ToArray(), g15src6),
+        $"src={BytesHex(g15pTrunc.AsSpan(22, 16).ToArray())}");
+
+    // Vector 20 (FIX-3): AH authenticates the IPv6 header (including the source), so the
+    // walk must treat it as non-resolvable and never touch the source.
+    byte[] g15fAh = Concat(g15ethHdr, g15ip6Hdr(51, 12 + g15tcp20.Length),
+        new byte[] { 0x06, 0x01, 0x00, 0x00, 0, 0, 0, 0, 0, 0, 0, 0 }, g15tcp20);
+    byte[] g15pAh = PacketPrepareService.PrepareFrame(g15fAh, g15iface);
+    Report("G15ad IPv6 + AH (next=51) leaves the source unchanged",
+        BytesEq(g15pAh.AsSpan(22, 16).ToArray(), g15src6),
+        $"src={BytesHex(g15pAh.AsSpan(22, 16).ToArray())}");
+
+    // Vector 21 (FIX-4): a Routing header with Segments Left > 0 has a pseudo-header
+    // destination that is the last address in the header, not the IPv6 destination, so the
+    // source must not change.
+    byte[] g15fRt = Concat(g15ethHdr, g15ip6Hdr(43, 24 + g15tcp20.Length),
+        new byte[] { 0x06, 0x02, 0x00, 0x01, 0, 0, 0, 0 }, IPAddress.Parse("fe80::9").GetAddressBytes(),
+        g15tcp20);
+    byte[] g15pRt = PacketPrepareService.PrepareFrame(g15fRt, g15iface);
+    Report("G15ae IPv6 + Routing (SegmentsLeft=1) leaves the source unchanged",
+        BytesEq(g15pRt.AsSpan(22, 16).ToArray(), g15src6),
+        $"src={BytesHex(g15pRt.AsSpan(22, 16).ToArray())}");
+
+    // Vector 22 (方案 B): DLT 感知的 IP 定位。裸 IPv4 的 12–13 字节恰为 0x0800 时，
+    // 字节启发式会误判为以太网(offset 14)；RAW DLT 下必须仍按裸数据报处理(offset 0)，
+    // 源地址改写在 12，且不动 6–7 字节（不发散为 MAC 改写）。
+    byte[] g15dcls = Concat(
+        new byte[] { 0x45, 0x00 }, U16(20, false), U16(1, false), U16(0x4000, false),
+        new byte[] { 0x40, 0x11, 0x00, 0x00 }, new byte[] { 8, 0, 0, 1 }, new byte[] { 10, 0, 0, 2 });
+    byte[] g15dclsOut = PacketPrepareService.PrepareFrame(g15dcls, g15iface, 101);
+    Report("G15af RAW DLT: bare IPv4 with bytes12-13=0x0800 stays bare (offset 0, src at 12, no MAC)",
+        PacketPrepareService.FindIpOffset(g15dcls, 101) == 0
+        && BytesEq(g15dclsOut.AsSpan(12, 4).ToArray(), IPAddress.Parse("10.1.2.3").GetAddressBytes())
+        && BytesEq(g15dclsOut.AsSpan(6, 2).ToArray(), new byte[] { 0x40, 0x00 }),
+        $"ipOffset={PacketPrepareService.FindIpOffset(g15dcls, 101)}, src={BytesHex(g15dclsOut.AsSpan(12, 4).ToArray())}");
+
+    Report("G15ag RAW DLT: a real Ethernet frame is not Ethernet-parsed (offset -1)",
+        PacketPrepareService.FindIpOffset(g15f1, 101) == -1,
+        $"ipOffset={PacketPrepareService.FindIpOffset(g15f1, 101)}");
+
+    Report("G15ah Ethernet DLT: a real Ethernet frame resolves to offset 14",
+        PacketPrepareService.FindIpOffset(g15f1, 1) == 14,
+        $"ipOffset={PacketPrepareService.FindIpOffset(g15f1, 1)}");
+
+    Report("G15ai Ethernet DLT: ARP frame returns -1 (no bare fallback)",
+        PacketPrepareService.FindIpOffset(g15arp, 1) == -1,
+        $"ipOffset={PacketPrepareService.FindIpOffset(g15arp, 1)}");
+
+    byte[] g15bare6 = g15ip6Hdr(6, 0);
+    Report("G15aj IPv4/IPv6 DLTs are version-gated (228→v4 only, 229→v6 only)",
+        PacketPrepareService.FindIpOffset(g15dcls, 228) == 0
+        && PacketPrepareService.FindIpOffset(g15bare6, 228) == -1
+        && PacketPrepareService.FindIpOffset(g15bare6, 229) == 0
+        && PacketPrepareService.FindIpOffset(g15dcls, 229) == -1,
+        $"v4@228={PacketPrepareService.FindIpOffset(g15dcls, 228)}, v6@229={PacketPrepareService.FindIpOffset(g15bare6, 229)}");
+
+    Report("G15ak HasEthernetHeader is DLT-aware",
+        PacketPrepareService.HasEthernetHeader(g15f1, 1)
+        && !PacketPrepareService.HasEthernetHeader(g15dcls, 101),
+        $"eth@1={PacketPrepareService.HasEthernetHeader(g15f1, 1)}, bare@101={PacketPrepareService.HasEthernetHeader(g15dcls, 101)}");
+
+    Report("G15al unknown DLT keeps the historical heuristic (eth→14, bare→0)",
+        PacketPrepareService.FindIpOffset(g15f1, PacketPrepareService.LinkTypeUnknown) == 14
+        && PacketPrepareService.FindIpOffset(g15ip1, PacketPrepareService.LinkTypeUnknown) == 0,
+        $"eth={PacketPrepareService.FindIpOffset(g15f1, PacketPrepareService.LinkTypeUnknown)}, bare={PacketPrepareService.FindIpOffset(g15ip1, PacketPrepareService.LinkTypeUnknown)}");
 }
 catch (Exception ex)
 {
@@ -1106,10 +1300,10 @@ Banner(17, "PCAP/PCAPNG ingestion — classic endianness/ns, pcapng sections, re
         Report("G17-06 decimal tsresol exponent (0x03): raw 5 → 5000 µs",
             p06a.Packets.Count == 1 && p06a.Packets[0].Timestamp == 5_000, $"ts={p06a.Packets[0].Timestamp}");
 
-        // P-06b: tsresol 0x83 (power-of-two, n=3) raw=125000 → 1 µs
-        var p06b = await G17Read(Concat(MkShb(true), MkIdb(1, 65535, true, 0x83), MkEpb(125_000, new byte[] { 0xBB }, true)));
-        Report("G17-07 power-of-two tsresol (0x83): raw 125000 → 1 µs",
-            p06b.Packets.Count == 1 && p06b.Packets[0].Timestamp == 1, $"ts={p06b.Packets[0].Timestamp}");
+        // P-06b: tsresol 0x83 (power-of-two, n=3 → tick = 2^-3 s) raw=1 → 0.125 s = 125000 µs
+        var p06b = await G17Read(Concat(MkShb(true), MkIdb(1, 65535, true, 0x83), MkEpb(1, new byte[] { 0xBB }, true)));
+        Report("G17-07 power-of-two tsresol (0x83): raw 1 → 125000 µs",
+            p06b.Packets.Count == 1 && p06b.Packets[0].Timestamp == 125_000, $"ts={p06b.Packets[0].Timestamp}");
 
         // P-07: truncated record tail tolerated
         var p07 = await G17Read(Concat(ClassicHeader(false, true), ClassicRecord(100, new byte[] { 0xAA, 0x55, 0x00, 0xFF }, false, true), new byte[10]));
@@ -1375,6 +1569,45 @@ try
             try { File.Delete(g19Temp); } catch { }
         }
     }
+
+    // Structural port-pair gate (fixture-independent): ports must be extracted for
+    // any layer carrying tshark's srcport/dstport signature — not only udp/tcp/sctp —
+    // and a lone "port" field on an application layer must not pollute the columns.
+    var g19Syn = new Packet { RawData = new byte[8] };
+    g19Syn.RawData[0] = 0x04; g19Syn.RawData[1] = 0xD2; // src 1234
+    g19Syn.RawData[2] = 0x00; g19Syn.RawData[3] = 0x50; // dst 80
+    var g19Lay = new ProtocolLayer { ProtocolName = "dccp" };
+    var g19Hdr = new ProtocolField { Name = "hdr", Offset = -1, Length = 0 };
+    g19Hdr.Children.Add(new ProtocolField { Name = "srcport", Offset = 0, Length = 2 });
+    g19Hdr.Children.Add(new ProtocolField { Name = "dstport", Offset = 2, Length = 2 });
+    g19Lay.Fields.Add(g19Hdr);
+    g19Syn.Layers.Add(g19Lay);
+    HexEditorViewModel.ReExtractAddressInfo(g19Syn);
+    Report("G19-08 non-listed transport (dccp) nested port pair extracted",
+        g19Syn.SourcePort == 1234 && g19Syn.DestinationPort == 80,
+        $"src={g19Syn.SourcePort} dst={g19Syn.DestinationPort}");
+
+    var g19Pol = new Packet { RawData = new byte[4] };
+    g19Pol.RawData[0] = 0x16; g19Pol.RawData[1] = 0x2E; // lone 5678
+    var g19App = new ProtocolLayer { ProtocolName = "app" };
+    g19App.Fields.Add(new ProtocolField { Name = "port", Offset = 0, Length = 2 });
+    g19Pol.Layers.Add(g19App);
+    HexEditorViewModel.ReExtractAddressInfo(g19Pol);
+    Report("G19-09 lone port field cannot pass the pair gate",
+        g19Pol.SourcePort == -1 && g19Pol.DestinationPort == -1,
+        $"src={g19Pol.SourcePort} dst={g19Pol.DestinationPort}");
+
+    var g19Tcp = new Packet { RawData = new byte[4] };
+    g19Tcp.RawData[0] = 0x1F; g19Tcp.RawData[1] = 0x90; // src 8080
+    g19Tcp.RawData[2] = 0x00; g19Tcp.RawData[3] = 0x50; // dst 80
+    var g19TcpLay = new ProtocolLayer { ProtocolName = "tcp" };
+    g19TcpLay.Fields.Add(new ProtocolField { Name = "srcport", Offset = 0, Length = 2 });
+    g19TcpLay.Fields.Add(new ProtocolField { Name = "dstport", Offset = 2, Length = 2 });
+    g19Tcp.Layers.Add(g19TcpLay);
+    HexEditorViewModel.ReExtractAddressInfo(g19Tcp);
+    Report("G19-10 flat tcp port pair still extracted",
+        g19Tcp.SourcePort == 8080 && g19Tcp.DestinationPort == 80,
+        $"src={g19Tcp.SourcePort} dst={g19Tcp.DestinationPort}");
 }
 catch (Exception ex)
 {
@@ -1482,22 +1715,10 @@ if (OperatingSystem.IsLinux())
                 nR1.Sent == 1 && nR1.Failed == 0 && nR1.TotalSent == 1 && nR1.Done,
                 $"sent={nR1.Sent}, failed={nR1.Failed}, total={nR1.TotalSent}, last=\"{nR1.LastMsg}\"");
 
-            // TCP has no UDP fallback, so delivery needs a privileged rung (AF_PACKET /
-            // IP raw). Unprivileged, the ladder is UDP-only and must fail with a reason.
             var nR2 = await RunSendAsync(new PacketSendService(), new[] { nTcpPkt }, gNIface);
-            if (Environment.IsPrivilegedProcess)
-            {
-                Report("G21-02 eth/ipv4/tcp frame sent (any rung, strict counts)",
-                    nR2.Sent == 1 && nR2.Failed == 0 && nR2.TotalSent == 1 && nR2.Done,
-                    $"sent={nR2.Sent}, failed={nR2.Failed}, total={nR2.TotalSent}, last=\"{nR2.LastMsg}\"");
-            }
-            else
-            {
-                Report("G21-02 eth/ipv4/tcp frame → TcpNeedsPriv without privileges",
-                    nR2.Sent == 0 && nR2.Failed == 1
-                        && nR2.LastMsg == LocalizationService.Resolve("Send.TcpNeedsPriv"),
-                    $"sent={nR2.Sent}, failed={nR2.Failed}, total={nR2.TotalSent}, last=\"{nR2.LastMsg}\"");
-            }
+            Report("G21-02 eth/ipv4/tcp frame sent (any rung, strict counts)",
+                nR2.Sent == 1 && nR2.Failed == 0 && nR2.TotalSent == 1 && nR2.Done,
+                $"sent={nR2.Sent}, failed={nR2.Failed}, total={nR2.TotalSent}, last=\"{nR2.LastMsg}\"");
 
             var nR3 = await RunSendAsync(new PacketSendService(), new[] { nBarePkt }, gNIface);
             Report("G21-03 bare-ip/udp frame sent (any rung, strict counts)",
@@ -1720,6 +1941,16 @@ try
                 && ipSrc != null && ipSrc.LengthBits == -1,
             $"dscp={dscp?.LengthBits}, ecn={ecn?.LengthBits}, rb={flagsRb?.LengthBits}, src={ipSrc?.LengthBits}");
 
+        // ── TR-10: real bit fields carry their raw mask and pass the fence (plan PBLE F5).
+        var tr10ed = new ProtocolEditorService();
+        var tr10Pkt = ipLayer?.ParentPacket;
+        bool tr10DscpMasked = dscp != null && dscp.BitMask != 0 && dscp.IsBitField;
+        bool tr10EcnMasked = ecn != null && ecn.BitMask != 0 && ecn.IsBitField;
+        bool tr10Fence = dscp != null && tr10Pkt != null && tr10ed.CheckTreeEditFence(tr10Pkt, dscp).Allowed;
+        Report("TR-10 real bit fields (dscp/ecn) carry a BitMask and pass the fence",
+            tr10DscpMasked && tr10EcnMasked && tr10Fence,
+            $"dscp.mask=0x{dscp?.BitMask:X}, ecn.mask=0x{ecn?.BitMask:X}, fence={(tr10Fence ? "OK" : tr10Pkt == null ? "no packet" : tr10ed.CheckTreeEditFence(tr10Pkt, dscp!).Reason)}");
+
         // ── TR-08: malformed — _ws.malformed dropped, note appended to innermost layer.
         var malPkt = new Packet { Index = 0, Timestamp = 0, RawData = malFrame };
         bool malOk = await g24Tsh.ParsePacketFromPcapFileAsync(malPkt, fx3);
@@ -1881,31 +2112,17 @@ try
             var rungLines = n27Trace.Lines.Where(l => l.Contains("Send rung")).ToList();
 
             bool garbageExhaustsLadder = rG.Failed == 1 && rG.Sent == 0 && rG.LastMsg == udpParseFailed;
+            Report("N-11 <14B frame → AF_PACKET FrameTooShort on the FIRST rung, then descends",
+                rungLines.Count >= 1 && rungLines[0].Contains("AF_PACKET") && rungLines[0].Contains(frameTooShort)
+                    && garbageExhaustsLadder,
+                $"first=\"{(rungLines.Count > 0 ? rungLines[0] : "(none)")}\", sent={rG.Sent}, failed={rG.Failed}, last=\"{rG.LastMsg}\"");
+
             int aIdx = rungLines.FindIndex(l => l.Contains("AF_PACKET"));
             int bIdx = rungLines.FindIndex(l => l.Contains("IP raw"));
             int cIdx = rungLines.FindIndex(l => l.Contains("UDP"));
-            if (g27Root)
-            {
-                Report("N-11 <14B frame → AF_PACKET FrameTooShort on the FIRST rung, then descends",
-                    rungLines.Count >= 1 && rungLines[0].Contains("AF_PACKET") && rungLines[0].Contains(frameTooShort)
-                        && garbageExhaustsLadder,
-                    $"first=\"{(rungLines.Count > 0 ? rungLines[0] : "(none)")}\", sent={rG.Sent}, failed={rG.Failed}, last=\"{rG.LastMsg}\"");
-                Report("N-10 ladder descent order visible in trace (AF_PACKET → IP raw → UDP failures)",
-                    garbageExhaustsLadder && aIdx >= 0 && bIdx > aIdx && cIdx > bIdx,
-                    $"idx=({aIdx},{bIdx},{cIdx}), trace=[{string.Join(" | ", n27Trace.Lines)}]");
-            }
-            else
-            {
-                // AF_PACKET and IP raw sockets need CAP_NET_RAW, so an unprivileged run
-                // creates only the UDP rung: the descent is degenerate but must still
-                // exhaust the ladder with the UDP parse error.
-                Report("N-11 <14B frame → UDP rung is the only rung without privileges",
-                    rungLines.Count >= 1 && rungLines[0].Contains("UDP") && garbageExhaustsLadder,
-                    $"first=\"{(rungLines.Count > 0 ? rungLines[0] : "(none)")}\", sent={rG.Sent}, failed={rG.Failed}, last=\"{rG.LastMsg}\"");
-                Report("N-10 unprivileged ladder is UDP-only in the trace (privileged rungs need CAP_NET_RAW)",
-                    garbageExhaustsLadder && aIdx < 0 && bIdx < 0 && cIdx >= 0,
-                    $"idx=({aIdx},{bIdx},{cIdx}), trace=[{string.Join(" | ", n27Trace.Lines)}]");
-            }
+            Report("N-10 ladder descent order visible in trace (AF_PACKET → IP raw → UDP failures)",
+                garbageExhaustsLadder && aIdx >= 0 && bIdx > aIdx && cIdx > bIdx,
+                $"idx=({aIdx},{bIdx},{cIdx}), trace=[{string.Join(" | ", n27Trace.Lines)}]");
 
             if (g27Root)
             {
@@ -3438,7 +3655,7 @@ catch (Exception ex)
     Report("G43 group execution", false, ex.ToString());
 }
 
-// ══ GROUP 44: FS-01..04 follow-stream index is exposed ══
+// ══ GROUP 44: FS-01..07 follow-stream index is exposed ══
 Banner(44, "follow-stream index");
 try
 {
@@ -3453,7 +3670,10 @@ try
     byte[] g44A = FixtureEth(FixtureIpv4(g44Req, 6, 1), 0x0800);
     byte[] g44A2 = FixtureEth(FixtureIpv4(g44Req2, 6, 2), 0x0800);
     byte[] g44B = FixtureEth(FixtureIpv4(g44Other, 6, 3), 0x0800);
-    await File.WriteAllBytesAsync(g44Src, BuildFixturePcap(g44A, g44A2, g44B));
+    // One UDP conversation (same 5-tuple twice) — frames 4 and 5 of the fixture.
+    byte[] g44U1 = FixtureEth(FixtureIpv4(FixtureUdp(5000, 5001, new byte[] { 1, 2, 3, 4 }), 17, 4), 0x0800);
+    byte[] g44U2 = FixtureEth(FixtureIpv4(FixtureUdp(5000, 5001, new byte[] { 5, 6, 7, 8 }), 17, 5), 0x0800);
+    await File.WriteAllBytesAsync(g44Src, BuildFixturePcap(g44A, g44A2, g44B, g44U1, g44U2));
 
     var g44Doc = new PacketDocument { FilePath = g44Src };
     var g44Tshark = new TsharkService(new PcapIngestService(), new PcapExportService());
@@ -3481,6 +3701,28 @@ try
 
         var g44None = await g44Provider.GetStreamOfFrameAsync(9999);
         Report("FS-04 a frame that is not TCP maps to no stream", g44None is null, $"owner={g44None}");
+
+        var g44UdpFrame = await g44Provider.GetStreamOfFrameAsync(4);
+        Report("FS-05 the TCP index does not claim UDP frames", g44UdpFrame is null,
+            $"owner={g44UdpFrame}");
+    }
+
+    var g44UdpProvider = g44Doc.ContextProviders.OfType<UdpStreamContextProvider>().FirstOrDefault();
+    Report("FS-06 the document carries a UDP stream provider", g44UdpProvider is not null,
+        g44UdpProvider is null ? "missing" : g44UdpProvider.Name);
+
+    if (g44UdpProvider is not null)
+    {
+        var g44UdpStreams = await g44UdpProvider.GetStreamsAsync();
+        var g44UdpOne = g44UdpStreams.Count == 1 ? g44UdpStreams[0] : null;
+        Report("FS-07 the UDP index reports one conversation covering both UDP frames",
+            g44UdpOne is not null
+            && g44UdpOne.Protocol == "udp"
+            && g44UdpOne.Frames.Count == 2
+            && g44UdpOne.Frames.Contains(4) && g44UdpOne.Frames.Contains(5),
+            g44UdpOne is null
+                ? $"streams={g44UdpStreams.Count}"
+                : $"protocol={g44UdpOne.Protocol}, frames=[{string.Join(",", g44UdpOne.Frames)}]");
     }
 }
 catch (Exception ex)
@@ -3535,6 +3777,22 @@ try
     Report("VL-08 stripping a frame that has no tag is a no-op",
         PacketPrepareService.StripVlanTag(g49Plain).AsSpan().SequenceEqual(g49Plain),
         "untouched");
+
+    // 0x9100 is a third VLAN TPID. Detection, VID read, strip and retag must all treat it
+    // the same as 0x8100/0x88A8 — the ethertype walk already did, but HasVlanTag,
+    // GetVlanId, StripVlanTag and ApplyVlanTag did not.
+    byte[] g49Tag9100 = Concat(g49Plain.AsSpan(0, 12).ToArray(), new byte[] { 0x91, 0x00 },
+        U16(100, false), g49Plain.AsSpan(12).ToArray());
+    Report("VL-11 a 0x9100-tagged frame is detected and its VID read back",
+        PacketPrepareService.HasVlanTag(g49Tag9100) && PacketPrepareService.GetVlanId(g49Tag9100) == 100,
+        $"tag={PacketPrepareService.HasVlanTag(g49Tag9100)}, vid={PacketPrepareService.GetVlanId(g49Tag9100)}");
+    Report("VL-12 stripping a 0x9100 tag restores the plain frame",
+        PacketPrepareService.StripVlanTag(g49Tag9100).AsSpan().SequenceEqual(g49Plain),
+        "stripped == plain");
+    byte[] g49Retag9100 = PacketPrepareService.ApplyVlanTag(g49Tag9100, 200);
+    Report("VL-13 re-tagging a 0x9100 frame keeps the length (no double tag) and moves the VID",
+        g49Retag9100.Length == g49Tag9100.Length && PacketPrepareService.GetVlanId(g49Retag9100) == 200,
+        $"len={g49Retag9100.Length}, was={g49Tag9100.Length}, vid={PacketPrepareService.GetVlanId(g49Retag9100)}");
 
     // tshark must agree the tagged frame is VLAN with the right VID.
     try
@@ -3598,6 +3856,11 @@ int RunHeadlessRenderOnly()
             throw;
         }
 
+        string g54DockPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "ProtocolForge", "docklayout.json");
+        byte[]? g54DockBackup = File.Exists(g54DockPath) ? File.ReadAllBytes(g54DockPath) : null;
+
         var g54Window = App.ComposeMainWindow(null);
         g54Window.Width = 1400;
         g54Window.Height = 900;
@@ -3626,11 +3889,27 @@ int RunHeadlessRenderOnly()
             }
         }
 
+        bool g54StatsShownInitially = g54Vm.ShowStatistics;
         var g54Stats = ByName<ListBox>(g54Window, "StatisticsList");
         var g54Reasm = ByName<ListBox>(g54Window, "ReassembledList");
-        Report("HG-03 the panel controls the fix touched are present in the visual tree",
-            g54Stats is not null && g54Reasm is not null,
-            $"statistics={g54Stats is not null}, reassembled={g54Reasm is not null}");
+
+        // The statistics pane is hidden by default, and Dock materialises a pane's
+        // content only while it is visible — so presence must track ShowStatistics
+        // in both states, and showing it via the menu must realise both lists.
+        bool g54PresenceTracksFlag =
+            (g54Stats is not null) == g54Vm.ShowStatistics &&
+            (g54Reasm is not null) == g54Vm.ShowStatistics;
+        if (!g54Vm.ShowStatistics)
+        {
+            g54Vm.ToggleStatisticsCommand.Execute(null);
+            Pump();
+            g54Stats = ByName<ListBox>(g54Window, "StatisticsList");
+            g54Reasm = ByName<ListBox>(g54Window, "ReassembledList");
+        }
+        bool g54Shown = g54Vm.ShowStatistics && g54Stats is not null && g54Reasm is not null;
+        Report("HG-03 the statistics pane materialises when the View menu shows it",
+            g54PresenceTracksFlag && g54Shown,
+            $"defaultHidden={g54StatsShownInitially == false}, presenceMatchedFlag={g54PresenceTracksFlag}, shownAfterToggle={g54Shown}");
 
         // The regression a compiled-XAML check cannot catch: both lists sit in Grid.Row=1
         // and used to paint on top of each other.
@@ -3656,6 +3935,28 @@ int RunHeadlessRenderOnly()
             g54VlanShown && g54VlanHidden,
             $"shownOnInsert={g54VlanShown}, hiddenOnLeave={g54VlanHidden}");
 
+        var g54VlanCombo = ByName<ComboBox>(g54Window, "VlanModeCombo");
+        var g54VlanOptions = g54VlanCombo?.ItemsSource?.Cast<object>()
+            .OfType<ToolBarViewModel.VlanModeOption>().ToList() ?? [];
+        Report("HG-05a VLAN mode combo labels resolve from the localization dictionary",
+            g54VlanOptions.Count == 4
+            && g54VlanOptions[0].Label == LocalizationService.Resolve("Vlan.Mode.Leave")
+            && g54VlanOptions[1].Label == LocalizationService.Resolve("Vlan.Mode.Insert")
+            && g54VlanOptions[2].Label == LocalizationService.Resolve("Vlan.Mode.Replace")
+            && g54VlanOptions[3].Label == LocalizationService.Resolve("Vlan.Mode.Remove"),
+            $"count={g54VlanOptions.Count}, labels=[{string.Join(", ", g54VlanOptions.Select(o => o.Label))}]");
+
+        var g54VlanLang = LocalizationService.CurrentLanguage;
+        string g54VlanBefore = g54Bar.VlanModes[0].Label;
+        LocalizationService.SetCurrent(g54VlanLang == AppLanguage.ZhCn ? AppLanguage.EnUs : AppLanguage.ZhCn);
+        Pump();
+        string g54VlanAfter = g54Bar.VlanModes[0].Label;
+        LocalizationService.SetCurrent(g54VlanLang);
+        Pump();
+        Report("HG-05b VLAN mode combo labels follow a runtime language switch",
+            g54Bar.VlanModes.Count == 4 && g54VlanAfter != g54VlanBefore,
+            $"lang={g54VlanLang}, before=\"{g54VlanBefore}\", after=\"{g54VlanAfter}\"");
+
         var g54FixBox = ByName<CheckBox>(g54Window, "AutoFixCheckBox");
         var g54MultiBox = ByName<CheckBox>(g54Window, "MultiNicCheckBox");
         string g54FixText = g54FixBox?.Content as string ?? "";
@@ -3676,6 +3977,13 @@ int RunHeadlessRenderOnly()
             g54MultiOn && g54MultiOff && g54Targets,
             $"on={g54MultiOn}, off={g54MultiOff}, targets={g54Bar.TargetInterfaces.Count}");
 
+        // Back to the pre-HG-03 visibility so the screenshot shows the default layout.
+        if (g54StatsShownInitially != g54Vm.ShowStatistics)
+        {
+            g54Vm.ToggleStatisticsCommand.Execute(null);
+            Pump();
+        }
+
         Pump();
         var g54Frame = g54Window.CaptureRenderedFrame();
         Report("HG-08 the platform produced a rendered frame",
@@ -3692,7 +4000,7 @@ int RunHeadlessRenderOnly()
             return 0;
         }
 
-        g54Frame.Save(g54Png);
+        g54Frame.Save(g54Png, new PngBitmapEncoderOptions());
 
         int g54W = g54Frame.PixelSize.Width, g54H = g54Frame.PixelSize.Height;
         int g54Colors = 0;
@@ -3727,8 +4035,739 @@ int RunHeadlessRenderOnly()
             $"{g54Png} ({new FileInfo(g54Png).Length} bytes)");
 
         Detail($"    headless render: {g54Png}");
+
+        var g54TreeVm = g54Vm.ProtocolTree;
+        g54TreeVm.Layers.Clear();
+        var g54Layer = new ProtocolLayer { ProtocolName = "g54", DisplayText = "G54 reveal layer" };
+        var g54FieldA = new ProtocolField { Name = "g54.field.a", DisplayValue = "first", ParentLayer = g54Layer };
+        var g54FieldB = new ProtocolField { Name = "g54.field.b", DisplayValue = "second", ParentLayer = g54Layer };
+        g54Layer.Fields.Add(g54FieldA);
+        g54Layer.Fields.Add(g54FieldB);
+        g54TreeVm.Layers.Add(g54Layer);
+        g54TreeVm.IsEnabled = true;
+        for (int i = 0; i < 6; i++) Pump();
+
+        var g54Tree = ByName<TreeView>(g54Window, "ProtocolTree");
+        g54TreeVm.SelectFieldOnTree(g54FieldA);
+        for (int i = 0; i < 6; i++) Pump();
+        var g54AfterA = g54Tree?.GetRealizedTreeContainers().OfType<TreeViewItem>()
+            .Where(t => t.IsSelected).ToList() ?? [];
+
+        Report("HG-11 the first reveal highlights the target node",
+            g54AfterA.Count == 1 && ReferenceEquals(g54AfterA[0].DataContext, g54FieldA),
+            $"selectedCount={g54AfterA.Count}");
+
+        g54TreeVm.SelectFieldOnTree(g54FieldB);
+        for (int i = 0; i < 6; i++) Pump();
+        var g54AfterB = g54Tree?.GetRealizedTreeContainers().OfType<TreeViewItem>()
+            .Where(t => t.IsSelected).ToList() ?? [];
+
+        Report("HG-12 the second reveal leaves exactly one highlighted node",
+            g54AfterB.Count == 1,
+            $"selectedCount={g54AfterB.Count}, stale nodes would still be selected");
+        Report("HG-13 the highlighted node is the second field",
+            g54AfterB.Count == 1 && ReferenceEquals(g54AfterB[0].DataContext, g54FieldB),
+            $"selected={g54AfterB.FirstOrDefault()?.DataContext?.ToString() ?? "none"}");
+
+        g54TreeVm.LoadPacket(null);
+        for (int i = 0; i < 3; i++) Pump();
+
+        // ── HG-14/15: a closed pane must uncheck the View menu and stay re-openable.
+        if (!g54Vm.ShowProtocolTree)
+        {
+            g54Vm.ToggleProtocolTreeCommand.Execute(null);
+            Pump();
+        }
+        var g54Pane = g54Vm.Factory.Find(g54Vm.Layout!, d => d.Id == DockLayoutFactory.ProtocolTreeId)
+            .OfType<PaneDock>().FirstOrDefault();
+
+        g54Vm.Factory.CloseDockable(g54Pane!);
+        Pump();
+        bool g54HiddenAfterClose = g54Vm.Layout!.HiddenDockables?.Any(d => d.Id == DockLayoutFactory.ProtocolTreeId) == true;
+        bool g54UncheckedAfterClose = !g54Vm.ShowProtocolTree;
+
+        g54Vm.ToggleProtocolTreeCommand.Execute(null);
+        Pump();
+        var g54PaneBack = g54Vm.Factory.Find(g54Vm.Layout!, d => d.Id == DockLayoutFactory.ProtocolTreeId)
+            .OfType<PaneDock>().FirstOrDefault();
+        bool g54Reopened = g54PaneBack is not null && g54Vm.ShowProtocolTree;
+        Report("HG-14 closing a pane unchecks the View menu and the menu re-opens it",
+            g54Pane is not null && g54HiddenAfterClose && g54UncheckedAfterClose && g54Reopened
+            && g54PaneBack?.Host is not null,
+            $"hiddenAfterClose={g54HiddenAfterClose}, uncheckedAfterClose={g54UncheckedAfterClose}, reopened={g54Reopened}, host={(g54PaneBack?.Host is null ? "null" : "set")}");
+
+        // A pane hidden in a restored docklayout.json used to keep Host == null, so the
+        // pane DataTemplate (DataContext="{Binding Host}") rendered it blank on re-open.
+        g54Vm.Factory.CloseDockable(g54PaneBack!);
+        Pump();
+        g54Vm.SaveLayout();
+        Pump();
+
+        var g54Window2 = App.ComposeMainWindow(null);
+        g54Window2.Width = 1400;
+        g54Window2.Height = 900;
+        g54Window2.Show();
+        for (int i = 0; i < 5; i++) Pump();
+        var g54Vm2 = (MainWindowViewModel)g54Window2.DataContext!;
+        var g54HiddenPane2 = g54Vm2.Layout!.HiddenDockables?.OfType<PaneDock>()
+            .FirstOrDefault(d => d.Id == DockLayoutFactory.ProtocolTreeId);
+        bool g54HostRestored = g54HiddenPane2 is not null && g54HiddenPane2.Host is not null;
+        bool g54FlagHidden = !g54Vm2.ShowProtocolTree;
+
+        g54Vm2.ToggleProtocolTreeCommand.Execute(null);
+        for (int i = 0; i < 5; i++) Pump();
+        bool g54Reopened2 = g54Vm2.ShowProtocolTree
+            && g54Vm2.Factory.Find(g54Vm2.Layout!, d => d.Id == DockLayoutFactory.ProtocolTreeId).Any();
+        bool g54ContentMaterialised = ByName<TreeView>(g54Window2, "ProtocolTree") is not null;
+        Report("HG-15 a pane hidden across a restart keeps its Host and re-opens with content",
+            g54HiddenPane2 is not null && g54HostRestored && g54FlagHidden && g54Reopened2 && g54ContentMaterialised,
+            $"hiddenPaneFound={g54HiddenPane2 is not null}, hostRestored={g54HostRestored}, menuUnchecked={g54FlagHidden}, reopened={g54Reopened2}, content={g54ContentMaterialised}");
+
+        g54Window2.Close();
+        Pump();
+
+        // Restore the pre-test visibility so the persisted layout is not left mutated.
+        if (!g54Vm.ShowProtocolTree)
+        {
+            g54Vm.ToggleProtocolTreeCommand.Execute(null);
+            Pump();
+        }
+        g54Vm.SaveLayout();
+        Pump();
+
+        // ── HG-18/19: the pin button parks a pane in RootDock.*PinnedDockables, which the
+        // menu logic used to ignore; pinning must uncheck the menu, and the menu must re-home
+        // every pinned pane into its own ToolDock — surviving a restart that persists the pin.
+        // The pinned edge strip must also RENDER a real tab (a ToolPinItemControl with size),
+        // gating the DockDensity.axaml ToolPinnedControl/DockTarget overrides of SukiUI.Dock 7.0.1
+        // (upstream shipped an ItemsSource-less strip and a DockTarget without IndicatorDockOperation).
+        static string G54HomeOf(string id) => id switch
+        {
+            DockLayoutFactory.PacketListId => DockLayoutFactory.TopDockId,
+            DockLayoutFactory.ProtocolTreeId => DockLayoutFactory.TreeDockId,
+            DockLayoutFactory.HexEditorId => DockLayoutFactory.HexDockId,
+            _ => "",
+        };
+        static PaneDock? G54Pane(MainWindowViewModel vm, string id) =>
+            vm.Factory.Find(vm.Layout!, d => d.Id == id).OfType<PaneDock>().FirstOrDefault();
+        static bool G54Rehomed(MainWindowViewModel vm, string id) =>
+            vm.Factory.Find(vm.Layout!, d => d.Id == G54HomeOf(id)).OfType<IDock>().FirstOrDefault()
+                ?.VisibleDockables?.Any(d => d.Id == id) == true;
+        string[] g54PinIds = [DockLayoutFactory.PacketListId, DockLayoutFactory.ProtocolTreeId, DockLayoutFactory.HexEditorId];
+
+        foreach (var id in g54PinIds)
+            g54Vm.Factory.PinDockable(G54Pane(g54Vm, id)!);
+        Pump();
+        for (int i = 0; i < 6; i++) { AvaloniaHeadlessPlatform.ForceRenderTimerTick(); Pump(); }
+        bool g54AllPinned = g54PinIds.All(id => g54Vm.Layout!.LeftPinnedDockables?.Any(d => d.Id == id) == true);
+        bool g54MenuUnchecked = !g54Vm.ShowPacketList && !g54Vm.ShowProtocolTree && !g54Vm.ShowHexEditor;
+        static bool G54StripTabRendered(Visual v)
+        {
+            if (v is ToolPinItemControl tab && tab.IsVisible && tab.Bounds.Width > 0 && tab.Bounds.Height > 0)
+                return true;
+            foreach (var child in v.GetVisualChildren())
+                if (G54StripTabRendered(child)) return true;
+            return false;
+        }
+        bool g54StripTabRendered = G54StripTabRendered(g54Window);
+
+        // HG-21: the auto-hide edge tab must be a real toggle. SukiUI.Dock 7.0.1's
+        // ToolPinItemControl binds the tab to PreviewPinnedDockable (show-only), whereas the
+        // upstream Fluent theme binds TogglePreviewPinnedDockable; DockDensity.axaml overrides
+        // the tab back to the toggle. Executing the tab's command twice must return the pane
+        // to its pinned-not-previewing state (leaving HG-18's rehome flow untouched).
+        static ToolPinItemControl? G54FirstPinTab(Visual v)
+        {
+            if (v is ToolPinItemControl tab && tab.IsVisible && tab.Bounds.Width > 0 && tab.Bounds.Height > 0)
+                return tab;
+            foreach (var child in v.GetVisualChildren())
+                if (G54FirstPinTab(child) is { } found) return found;
+            return null;
+        }
+        var g54PinTab = G54FirstPinTab(g54Window);
+        var g54PinTabBtn = g54PinTab?.GetVisualDescendants().OfType<Button>().FirstOrDefault();
+        var g54PinTabDockable = g54PinTab?.DataContext;
+        bool G54PinPreviewing() => g54PinTabDockable is null
+            ? false
+            : g54Vm.Layout!.PinnedDock?.VisibleDockables?.Contains(g54PinTabDockable) == true;
+        bool g54TabCommandBound = g54PinTabBtn?.Command is not null;
+        g54PinTabBtn?.Command?.Execute(g54PinTabBtn.CommandParameter);
+        Pump();
+        bool g54TabClickShows = G54PinPreviewing();
+        g54PinTabBtn?.Command?.Execute(g54PinTabBtn.CommandParameter);
+        Pump();
+        bool g54TabClickHides = !G54PinPreviewing();
+        Report("HG-21 the auto-hide edge tab toggles the preview (click shows, re-click hides)",
+            g54TabCommandBound && g54TabClickShows && g54TabClickHides,
+            $"tabFound={g54PinTab is not null}, tabBtn={g54PinTabBtn is not null}, commandBound={g54TabCommandBound}, clickShows={g54TabClickShows}, reClickHides={g54TabClickHides}");
+
+        // HG-22: the edge tab must carry the localized context menu on the whole tab
+        // (the Button), not just on the label (the TextBlock): SukiUI.Dock attaches the
+        // menu to the TextBlock only, so a right-click on the tab strip outside the label
+        // lands on the Command Button and bubbles to menu-less ancestors -- real-device
+        // report. Assert the tab Button now owns the 3-item menu with all items visible.
+        var g54TabMenu = g54PinTabBtn?.ContextMenu;
+        var g54TabMenuItems = g54TabMenu?.Items.OfType<MenuItem>().ToList();
+        bool g54TabMenuOk =
+            g54PinTabBtn is not null &&
+            g54TabMenu is not null &&
+            g54TabMenuItems is not null && g54TabMenuItems.Count == 3 &&
+            g54TabMenuItems.All(m => m.IsVisible);
+        Report("HG-22 the edge tab's context menu covers the whole tab with 3 visible items",
+            g54TabMenuOk,
+            $"btn={g54PinTabBtn is not null}, menu={g54TabMenu is not null}, items=[{string.Join("|", (g54TabMenuItems ?? new List<MenuItem>()).Select(m => m.IsVisible))}]");
+
+        g54Vm.TogglePacketListCommand.Execute(null);
+        g54Vm.ToggleProtocolTreeCommand.Execute(null);
+        g54Vm.ToggleHexEditorCommand.Execute(null);
+        Pump();
+        bool g54AllRehomed = g54PinIds.All(id => G54Rehomed(g54Vm, id));
+        bool g54NonePinned = g54PinIds.All(id => g54Vm.Layout!.LeftPinnedDockables?.Any(d => d.Id == id) != true);
+        bool g54MenuCheckedAgain = g54Vm.ShowPacketList && g54Vm.ShowProtocolTree && g54Vm.ShowHexEditor;
+        bool g54HostsSet = g54PinIds.All(id => G54Pane(g54Vm, id)?.Host is not null);
+        Report("HG-18 pinning panes unchecks the View menu, renders an edge tab, and the menu re-homes each into its own dock",
+            g54AllPinned && g54MenuUnchecked && g54StripTabRendered && g54AllRehomed && g54NonePinned && g54MenuCheckedAgain && g54HostsSet,
+            $"allPinned={g54AllPinned}, menuUnchecked={g54MenuUnchecked}, stripTabRendered={g54StripTabRendered}, allRehomed={g54AllRehomed}, nonePinned={g54NonePinned}, menuCheckedAgain={g54MenuCheckedAgain}, hosts={g54HostsSet}");
+
+        // HG-24: SukiUI 7.0.1 的 SukiWindow 模板未包含 VisualLayerManager(标准 Window 模板内嵌),
+        // 窗口树因此缺少 LightDismissOverlayLayer 宿主,所有浮层(ContextMenu/Flyout/ComboBox 下拉/
+        // ToolTip)都无法「点击外部关闭」——实机报告 packet 列表右键菜单点哪儿都不消失。MainWindow
+        // 内容外层已补 VisualLayerManager;断言浮层放置目标(DataGrid)确能解析到该层管理器。
+        var g54GridMenuHost = ByName<DataGrid>(g54Window!, "PacketListView");
+        if (g54GridMenuHost is not null)
+            for (int i = 0; i < 3; i++) { AvaloniaHeadlessPlatform.ForceRenderTimerTick(); Pump(); }
+        var g54LayerManager = g54GridMenuHost?.FindAncestorOfType<Avalonia.Controls.Primitives.VisualLayerManager>();
+        Report("HG-24 the packet-list DataGrid resolves a VisualLayerManager (menus close on outside click)",
+            g54LayerManager is not null,
+            $"grid={g54GridMenuHost is not null}, layerManager={g54LayerManager is not null}");
+
+        foreach (var id in g54PinIds)
+            g54Vm.Factory.PinDockable(G54Pane(g54Vm, id)!);
+        Pump();
+        g54Vm.SaveLayout();
+        Pump();
+
+        var g54Window3 = App.ComposeMainWindow(null);
+        g54Window3.Width = 1400;
+        g54Window3.Height = 900;
+        g54Window3.Show();
+        for (int i = 0; i < 5; i++) Pump();
+        var g54Vm3 = (MainWindowViewModel)g54Window3.DataContext!;
+        bool g54PinnedRestored = g54PinIds.All(id => g54Vm3.Layout!.LeftPinnedDockables?.Any(d => d.Id == id) == true);
+        bool g54RestartMenuUnchecked = !g54Vm3.ShowPacketList && !g54Vm3.ShowProtocolTree && !g54Vm3.ShowHexEditor;
+        bool g54RestartHosts = g54PinIds.All(id =>
+            g54Vm3.Layout!.LeftPinnedDockables?.OfType<PaneDock>().FirstOrDefault(d => d.Id == id)?.Host is not null);
+
+        g54Vm3.TogglePacketListCommand.Execute(null);
+        g54Vm3.ToggleProtocolTreeCommand.Execute(null);
+        g54Vm3.ToggleHexEditorCommand.Execute(null);
+        for (int i = 0; i < 5; i++) Pump();
+        bool g54Rehomed3 = g54PinIds.All(id => G54Rehomed(g54Vm3, id))
+            && g54Vm3.ShowPacketList && g54Vm3.ShowProtocolTree && g54Vm3.ShowHexEditor;
+        bool g54Content3 = ByName<TreeView>(g54Window3, "ProtocolTree") is not null
+            && ByName<Control>(g54Window3, "PacketListView") is not null;
+        Report("HG-19 pinned panes survive a restart, stay menu-restorable and re-open with content",
+            g54PinnedRestored && g54RestartMenuUnchecked && g54RestartHosts && g54Rehomed3 && g54Content3,
+            $"pinnedRestored={g54PinnedRestored}, menuUnchecked={g54RestartMenuUnchecked}, hosts={g54RestartHosts}, rehomed={g54Rehomed3}, content={g54Content3}");
+
+        g54Window3.Close();
+        Pump();
+
+        if (!g54Vm.ShowPacketList || !g54Vm.ShowProtocolTree || !g54Vm.ShowHexEditor)
+        {
+            if (!g54Vm.ShowPacketList) g54Vm.TogglePacketListCommand.Execute(null);
+            if (!g54Vm.ShowProtocolTree) g54Vm.ToggleProtocolTreeCommand.Execute(null);
+            if (!g54Vm.ShowHexEditor) g54Vm.ToggleHexEditorCommand.Execute(null);
+            Pump();
+        }
+        g54Vm.SaveLayout();
+        Pump();
+
+        g54Vm.SaveLayout();
+        Pump();
+
+        // Avalonia's MenuItem.InputGesture is display-only, so the window must route these
+        // itself; raising the real event proves the accelerators are wired, not just shown.
+        var g54KeyZ = new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Z, KeyModifiers = KeyModifiers.Control };
+        g54Window.RaiseEvent(g54KeyZ);
+        var g54KeyF = new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.F, KeyModifiers = KeyModifiers.Control };
+        g54Window.RaiseEvent(g54KeyF);
+        Pump();
+        Report("HG-16 the window routes Ctrl+Z / Ctrl+F itself, so the menu shortcuts fire",
+            g54KeyZ.Handled && g54KeyF.Handled,
+            $"ctrlZ={g54KeyZ.Handled}, ctrlF={g54KeyF.Handled}");
+
+        // ── HG-17: 基色切换必须真正作用到运行中的应用(ThemeService → SukiTheme)。──
+        string g54OrigBase = ThemeService.CurrentBase;
+        ThemeService.SetBase("Dark");
+        Pump();
+        // 断言 CurrentBase 已切换,且 SukiTheme.ChangeBaseTheme 已把请求变体写到
+        // Application.RequestedThemeVariant(无头平台无 IPlatformSettings,默认解析为 Light,
+        // 故 ChangeBaseTheme(Dark) 必然写入 RequestedThemeVariant=Dark)。
+        bool g54BaseSwitched = ThemeService.CurrentBase == "Dark"
+            && Application.Current?.RequestedThemeVariant == Avalonia.Styling.ThemeVariant.Dark;
+        Report("HG-17 SetBase(\"Dark\") 切换持久化基色并作用到运行中的应用",
+            g54BaseSwitched,
+            $"currentBase={ThemeService.CurrentBase}, requestedVariant={Application.Current?.RequestedThemeVariant}");
+        // 还原原基色:仅当确实发生切换时才触发持久化,不会泄漏 settings.json 副作用。
+        ThemeService.SetBase(g54OrigBase);
+        Pump();
+
+        // ── HG-20: 拖动窗格 chrome 标题栏必须出现 DockTarget 停靠指示。───────────────
+        // 根因(指示层宿主):SukiUI 7.0.1 的窗口模板删除了 VisualLayerManager(6.1.1 尚有)。
+        // AdornerLayer 由窗口模板里的 VisualLayerManager 惰性创建——整个窗口树都没有它时
+        // AdornerLayer.GetAdornerLayer(visual) 返回 null,AdornerHelper.AddRegularAdorner
+        // 随即静默返回,DockTarget/GlobalDockTarget 永不挂载 → 拖动窗格无方向提示。
+        // App.axaml.cs 以 UseFloatingDockAdorner=true 走 AddFloatingAdorner 分支,把指示器
+        // 挂进以主窗为 owner 的顶层 DockAdornerWindow,绕开窗口树中缺失的 AdornerLayer。
+        // 附带(DockDensity.axaml):chrome 头 PART_Grip 的 DataContext 由 ToolDock 改指
+        // ActiveDockable(窗格),使拖拽源与 Fluent TabStrip 语义对齐;IToolDock:IDock:
+        // IDockable 本就通过 ValidateLocal 源侧闸,故这是语义对齐而非指示器恢复的关键。
+        // 无头模拟用户手势:按下 chrome 头 → 越过最小拖距 → 移到窗格本体 → 断言
+        // DockTarget 挂载、五个方向选择器均已注册(DockOperation)、中心选择器为 Fill、
+        // 主题为我们覆盖的 DockTarget、释放后指示器随浮动窗关闭移除。
+        {
+            // 标题栏为 GripMode.Visible:未悬停时 PART_Grip 已随布局常显,可直接采集拖动。
+            // (旧 AutoHide 模式需先悬停仍可见的 1px PART_Panel 让标题栏浮出;Visible 下
+            // PART_Panel 恒不可见,该悬停步骤自动跳过,不影响后续 grip 采集与拖动。)
+            var g54Strip = g54Window.GetVisualDescendants().OfType<Control>()
+                .FirstOrDefault(c => c.Name == "PART_Panel" && c.IsVisible && c.Bounds.Width > 0
+                    && c.FindAncestorOfType<ToolChromeControl>() is { } ch
+                    && (ch.DataContext as IDock)?.ActiveDockable is PaneDock);
+            if (g54Strip is not null
+                && g54Strip.TranslatePoint(new Point(g54Strip.Bounds.Width / 2, g54Strip.Bounds.Height / 2), g54Window) is { } g54Hover)
+            {
+                g54Window.MouseMove(g54Hover, Avalonia.Input.RawInputModifiers.None);
+                Pump();
+            }
+            Detail($"HG-20 hover-strip: {(g54Strip is null ? "absent" : "found")}");
+
+            var g54AllGrips = g54Window.GetVisualDescendants().OfType<Control>()
+                .Where(c => c.Name == "PART_Grip" && c.IsVisible && c.Bounds.Width > 0).ToList();
+            var g54GripRow = g54AllGrips.Select(g =>
+            {
+                var ch = g.FindAncestorOfType<ToolChromeControl>();
+                var dockable = (g.DataContext as IDockable ?? (ch?.DataContext as IDock)?.ActiveDockable as IDockable);
+                return $"grip:{g.DataContext?.GetType().Name ?? "null"} ch:{ch?.DataContext?.GetType().Name ?? "null"} act:{dockable?.GetType().Name ?? "null"}";
+            });
+            Detail($"HG-20 grips({g54AllGrips.Count}): {string.Join(" | ", g54GripRow)}");
+            var g54Grip = g54AllGrips.FirstOrDefault(g => g.DataContext is IDockable);
+
+            Detail($"HG-20 grip ctx: {(g54Grip is null ? "absent" : g54Grip.DataContext is PaneDock gpd ? $"{gpd.Id}:{gpd.Title}" : g54Grip.DataContext?.GetType().Name ?? "null")}");
+
+            bool g54GripIsDockable = g54Grip?.DataContext is PaneDock;
+            string g54DragOut = "no-grip";
+            if (g54Grip is not null)
+            {
+                var chrome = g54Grip.FindAncestorOfType<ToolChromeControl>();
+                var g54Bodies = g54Window.GetVisualDescendants().OfType<ToolControl>()
+                    .Where(t => t.IsVisible && t.Bounds.Width > 0).ToList();
+                var ownBody = g54Bodies.FirstOrDefault(t => ReferenceEquals(chrome, t.FindAncestorOfType<ToolChromeControl>()))
+                    ?? g54Bodies.FirstOrDefault();
+                var targetChrome = g54Window.GetVisualDescendants().OfType<ToolChromeControl>()
+                    .FirstOrDefault(c => c.IsVisible && !ReferenceEquals(c, chrome) && c.DataContext is not null);
+                var targetBody = targetChrome is null ? null : g54Bodies.FirstOrDefault(t => ReferenceEquals(targetChrome, t.FindAncestorOfType<ToolChromeControl>()));
+
+                if (chrome is not null && ownBody is not null && targetBody is not null
+                    && g54Grip.TranslatePoint(new Point(g54Grip.Bounds.Width / 2, g54Grip.Bounds.Height / 2), g54Window) is { } gripCenter
+                    && ownBody.TranslatePoint(new Point(ownBody.Bounds.Width / 2, ownBody.Bounds.Height / 2), g54Window) is { } bodyCenter
+                    && targetBody.TranslatePoint(new Point(targetBody.Bounds.Width / 2, targetBody.Bounds.Height / 2), g54Window) is { } targetCenter)
+                {
+                    var g54DockLog = new List<string>();
+                    bool g54PrevDiag = DockSettings.EnableDiagnosticsLogging;
+                    Action<string>? g54PrevHandler = DockSettings.DiagnosticsLogHandler;
+                    DockSettings.EnableDiagnosticsLogging = true;
+                    DockSettings.DiagnosticsLogHandler = m => { lock (g54DockLog) g54DockLog.Add(m); };
+
+                    g54Window.MouseDown(gripCenter, MouseButton.Left);
+                    Pump();
+                    foreach (var m in new[]
+                    {
+                        new Point(gripCenter.X, gripCenter.Y + 20),
+                        new Point(gripCenter.X, gripCenter.Y + 44),
+                        new Point(gripCenter.X - 16, gripCenter.Y + 72)
+                    })
+                    {
+                        g54Window.MouseMove(m, Avalonia.Input.RawInputModifiers.LeftMouseButton);
+                        Pump();
+                    }
+                    g54Window.MouseMove(targetCenter, Avalonia.Input.RawInputModifiers.LeftMouseButton); // 悬停另一窗格本体 → 本地停靠解析 + 指示层
+                    Pump();
+
+                    DockSettings.DiagnosticsLogHandler = g54PrevHandler;
+                    DockSettings.EnableDiagnosticsLogging = g54PrevDiag;
+
+                    IEnumerable<Visual> Hg20AllWindows()
+                    {
+                        // 浮动停靠指示(UseFloatingDockAdorner)把 DockTarget/GlobalDockTarget
+                        // 放进以主窗口为 owner 的顶层 DockAdornerWindow,不能只扫主窗口树。
+                        foreach (var v in g54Window.GetVisualDescendants())
+                            yield return v;
+                        foreach (var w in g54Window.OwnedWindows)
+                        foreach (var v in w.GetVisualDescendants())
+                            yield return v;
+                    }
+
+                    var g54Dock = g54Window.GetVisualDescendants().OfType<DockControl>().FirstOrDefault();
+                    Detail($"HG-20 adorner: floating={DockSettings.UseFloatingDockAdorner} layer={(g54Dock is null ? "?" : Avalonia.Controls.Primitives.AdornerLayer.GetAdornerLayer(g54Dock)?.GetType().Name ?? "null")}");
+
+                    var dt = Hg20AllWindows().OfType<DockTarget>().FirstOrDefault();
+                    if (dt is null)
+                    {
+                        g54DragOut = "dt=absent";
+                    }
+                    else
+                    {
+                        var dtParts = dt.GetVisualDescendants().OfType<Control>().ToList();
+                        var selOps = string.Join(" ",
+                            dtParts.Where(c => c.Name is { } n && n.StartsWith("PART_", StringComparison.Ordinal) && n.EndsWith("Selector", StringComparison.Ordinal))
+                                .Select(c => $"{c.Name!.Replace("PART_", "").Replace("Selector", "")}={DockProperties.GetIndicatorDockOperation(c)}"));
+                        g54DragOut = $"ops=[{selOps}] theme={(dtParts.OfType<Image>().Any(i => i.Name == "PART_CenterSelector") ? "ours" : "stock")}";
+                    }
+
+                    g54Window.MouseMove(bodyCenter, Avalonia.Input.RawInputModifiers.LeftMouseButton); // 移回自身体:自停靠为全局 no-op
+                    Pump();
+                    g54Window.MouseUp(bodyCenter, MouseButton.Left); // 释放:不改变布局
+                    Pump();
+                    bool g54ReleasedGone = !Hg20AllWindows().Any(v => v is DockTarget or GlobalDockTarget);
+                    g54DragOut += $" releasedGone={g54ReleasedGone}";
+
+                    Detail($"HG-20 drag: {g54DragOut}");
+                    Detail($"HG-20 docktrace: {string.Join(" | ", g54DockLog.TakeLast(24))}");
+                }
+            }
+
+            bool g54GuidesShown = g54DragOut.StartsWith("ops=", StringComparison.Ordinal)
+                && g54DragOut.Contains("Top=Top", StringComparison.Ordinal)
+                && g54DragOut.Contains("Center=Fill", StringComparison.Ordinal)
+                && g54DragOut.Contains("theme=ours", StringComparison.Ordinal)
+                && g54DragOut.Contains("releasedGone=True", StringComparison.Ordinal);
+            Report("HG-20 拖动窗格 chrome 标题栏显示停靠指示(五方向选择器已注册 + 指示器点亮 + 释放移除)",
+                g54GripIsDockable && g54GuidesShown,
+                $"gripIsDockable={g54GripIsDockable}; {g54DragOut}");
+        }
+
+        // HG-23: 关闭浮动窗口时,其中的面板必须移回主布局(PaneDock 不能随浮动根被丢弃成孤儿)。
+        // 根因:Dock 关闭窗口会把面板 HideDockable 进「浮动根」的 HiddenDockables,随后 RemoveWindow
+        // 丢弃整棵浮动根。修复:MainWindowViewModel 订阅 Factory.WindowClosing,在丢弃前把面板移回
+        // 其 HomeDock。这里浮出 packet-list,再触发 WindowClosing,断言面板回到主布局可见树。
+        if (G54Pane(g54Vm, DockLayoutFactory.PacketListId) is { } g54FloatPane)
+        {
+            bool g54HomeBefore = g54Vm.Factory.Find(g54Vm.Layout!, d => d.Id == DockLayoutFactory.TopDockId).OfType<IDock>().Any();
+            g54Vm.Factory.FloatDockable(g54FloatPane);
+            for (int i = 0; i < 5; i++) Pump();
+            var g54FloatRoot = g54Vm.Factory.FindRoot(g54FloatPane);
+            var g54FloatWin = g54FloatRoot?.Window;
+            bool g54Floated = g54FloatWin is not null
+                && !ReferenceEquals(g54FloatRoot, g54Vm.Layout)
+                && g54Vm.Factory.Find(g54FloatRoot!, d => d.Id == DockLayoutFactory.PacketListId).Any()
+                && !G54Rehomed(g54Vm, DockLayoutFactory.PacketListId);
+            bool g54HomeAfterFloat = g54Vm.Factory.Find(g54Vm.Layout!, d => d.Id == DockLayoutFactory.TopDockId).OfType<IDock>().Any();
+            bool g54CanClose = g54FloatWin is not null && g54Vm.Factory.OnWindowClosing(g54FloatWin);
+            Pump();
+            bool g54RehomedAfterClose = G54Rehomed(g54Vm, DockLayoutFactory.PacketListId);
+            bool g54PaneInFloat = g54FloatRoot is not null && g54Vm.Factory.Find(g54FloatRoot, d => d.Id == DockLayoutFactory.PacketListId).Any();
+            bool g54PaneAnywhereInMain = g54Vm.Factory.Find(g54Vm.Layout!, d => d.Id == DockLayoutFactory.PacketListId).Any();
+            var g54MainOrder = g54Vm.Factory.Find(g54Vm.Layout!, d => d.Id == DockLayoutFactory.MainLayoutId)
+                .OfType<IDock>().FirstOrDefault()?.VisibleDockables;
+            bool g54TopRestored = g54MainOrder is { Count: >= 2 }
+                && g54MainOrder[0].Id == DockLayoutFactory.TopDockId
+                && g54MainOrder[1] is Dock.Model.Controls.IProportionalDockSplitter;
+            Report("HG-23 closing a floating pane's window re-homes the pane instead of orphaning it",
+                g54Floated && g54CanClose && g54RehomedAfterClose && g54TopRestored,
+                $"floated={g54Floated}, canClose={g54CanClose}, rehomedAfterClose={g54RehomedAfterClose}, topRestored={g54TopRestored}, homeBefore={g54HomeBefore}, homeAfterFloat={g54HomeAfterFloat}, paneInFloat={g54PaneInFloat}, paneAnywhereInMain={g54PaneAnywhereInMain}");
+        }
+        else
+        {
+            Report("HG-23 closing a floating pane's window re-homes the pane instead of orphaning it",
+                false, "packet-list pane not found in main layout");
+        }
+
+        // HG-25a/HG-25:菜单栏悬停切换。SukiUI 7.0.1 的 SukiTopLevelMenuItem 用 light-dismiss
+        // 悬浮层(LightDismissOverlayLayer)实现「点击外部关闭」,靠 OverlayInputPassThroughElement
+        // 决定哪些点穿透。原绑定是 $parent[MenuItem](仅当前打开项 A),但仅改绑定不足以修复:
+        // 主窗口内容外层内联的 VisualLayerManager 位于 38px 标题栏之下,浮层坐标原点比窗口根偏
+        // 39px,Avalonia 12.1.3 的 LightDismissOverlayLayer.HitTest 用窗口根坐标去调用
+        // VisualRoot.InputHitTest 做穿透判定,拿到的却是层坐标 → 菜单栏上任何点都被判「不穿透」,
+        // 浮层吞掉悬停兄弟项 B 的指针事件,PointerEnteredItemEvent 到不了 Menu,
+        // DefaultMenuInteractionHandler 的悬停切换分支不执行 → 必须点两次。
+        // 真正生效的修复是 App.axaml 的 PfTopLevelMenuItem 把 PART_Popup 的 IsLightDismissEnabled
+        // 由 True 改为 False(顶层不再注册该浮层);OverlayInputPassThroughElement 语义上也改绑
+        // $parent[Menu](与 Avalonia 默认 FluentTopLevelMenuItem 一致)。「点外部关闭」不依赖该浮层:
+        // DefaultMenuInteractionHandler 用 TopLevel 上的 RootPointerPressed(tunnel)+
+        // RawInput(NonClientLeftButtonDown)+WindowDeactivated 关闭 Menu(实机验证通过)。
+        // HG-25a(结构断言,headless 可验、不打开浮层):顶层 popup 必须关闭 light-dismiss,
+        // 且穿透元素为整条菜单栏,防回归。
+        // HG-25(行为断言):真实点击 item0 打开下拉、悬停 item1 应一次切换。但 SukiUI 菜单
+        // popup 在 headless 平台无法承载——`CreatePopupHost` 需要 IPopupImpl(Headless 无)
+        // 或 EnablePopupOverlayLayer=true 的 VisualLayerManager(internal 属性,默认 false,
+        // SukiWindow 模板无 VLM、内联 VLM 也无法从 XAML 置位)→ 打开即抛
+        // InvalidOperationException,故行为断言在 headless 必然 SKIP,需实机验证;
+        // HG-25a 是 headless 下的回归门禁。
+        {
+            var g54Menu = g54Window.GetVisualDescendants().OfType<Menu>().FirstOrDefault(m => m.Classes.Contains("main-menu"));
+            var g54TopItems = g54Menu?.Items.OfType<MenuItem>().ToList() ?? new List<MenuItem>();
+            var g54M0 = g54TopItems.FirstOrDefault();
+            var g54M1 = g54TopItems.Skip(1).FirstOrDefault();
+            var g54Popup = g54M0?.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.Popup>().FirstOrDefault();
+            string g54PassThrough = g54Popup?.OverlayInputPassThroughElement is null
+                ? "none"
+                : ReferenceEquals(g54Popup.OverlayInputPassThroughElement, g54Menu) ? "Menu"
+                : ReferenceEquals(g54Popup.OverlayInputPassThroughElement, g54M0) ? "item0(自身,即原绑定)"
+                : g54Popup.OverlayInputPassThroughElement.GetType().Name;
+            bool g54PassThroughIsMenu = g54Popup is not null && ReferenceEquals(g54Popup.OverlayInputPassThroughElement, g54Menu);
+            bool g54LightDismissOff = g54Popup is not null && !g54Popup.IsLightDismissEnabled;
+            Report("HG-25a top-level submenu disables light-dismiss and targets the whole menu bar",
+                g54PassThroughIsMenu && g54LightDismissOff,
+                $"menu={g54Menu is not null}, items={g54TopItems.Count}, popup={g54Popup is not null}, passThrough={g54PassThrough}, lightDismiss={g54Popup?.IsLightDismissEnabled}");
+
+            bool g54HoverSwitched = false;
+            bool g54OpenBlocked = false;
+            string g54BehaviorDetail = $"menu={g54Menu is not null}, items={g54TopItems.Count}";
+            if (g54Menu is not null && g54M0 is not null && g54M1 is not null)
+            {
+                g54BehaviorDetail += " [" + string.Join(", ", g54TopItems.Select(i => $"'{i.Header}' {i.Bounds.Width}x{i.Bounds.Height}")) + "]";
+                try
+                {
+                    if (g54M0.TranslatePoint(new Point(g54M0.Bounds.Width / 2, g54M0.Bounds.Height / 2), g54Window) is { } g54P0)
+                    {
+                        g54Window.MouseDown(g54P0, MouseButton.Left);
+                        Pump();
+                        g54Window.MouseUp(g54P0, MouseButton.Left);
+                        Pump();
+                    }
+                }
+                catch (InvalidOperationException)
+                {
+                    // headless 无法承载 SukiUI 菜单 popup(无 IPopupImpl / 无启用 popup 层的 VLM)。
+                    g54OpenBlocked = true;
+                }
+                g54BehaviorDetail += $" | afterClick item0.Open={g54M0.IsSubMenuOpen} popup.Open={g54Popup?.IsOpen}";
+                if (!g54OpenBlocked && g54M0.IsSubMenuOpen
+                    && g54M1.TranslatePoint(new Point(g54M1.Bounds.Width / 2, g54M1.Bounds.Height / 2), g54Window) is { } g54P1)
+                {
+                    g54Window.MouseMove(g54P1, Avalonia.Input.RawInputModifiers.None);
+                    Pump();
+                    g54HoverSwitched = g54M1.IsSubMenuOpen && !g54M0.IsSubMenuOpen;
+                    g54BehaviorDetail += $" | afterHover item0={g54M0.IsSubMenuOpen} item1={g54M1.IsSubMenuOpen}";
+                }
+            }
+            if (g54OpenBlocked)
+            {
+                Skip("HG-25 hovering a sibling top-level item switches the open submenu",
+                    "headless 无法承载 SukiUI 菜单 popup(无 IPopupImpl 且 EnablePopupOverlayLayer=false),行为验证需实机;HG-25a 结构断言为回归门禁");
+            }
+            else
+            {
+                Report("HG-25 hovering a sibling top-level item switches the open submenu (one hover, no second click)",
+                    g54HoverSwitched,
+                    g54BehaviorDetail);
+            }
+            // 清理:收拢可能仍打开的下拉,免得影响关闭后的后续断言。
+            if (g54Menu is not null)
+            {
+                g54Menu.Close();
+                Pump();
+            }
+        }
+
+        // ── HG-26..HG-29b: 报文列表显示过滤器的真实交互验证。────────────────────
+        // 无头平台同样走真实的 TextChanged → 去抖 → tshark 路径与真实键盘事件,
+        // 因此断言的是运行中控件的类绑定(绿/红边框)与光标行为;引擎层由 GROUP 55 覆盖。
+        {
+            var g54FilterBox = ByName<TextBox>(g54Window, "FilterBox");
+            Report("HG-26 the packet-list filter box is mounted",
+                g54FilterBox is not null,
+                g54FilterBox is null ? "FilterBox not found" : $"width={g54FilterBox.Bounds.Width}");
+
+            if (g54FilterBox is not null)
+            {
+                // 真实等待:去抖(200/400ms)+ tshark 子进程都在真实时间轴上,
+                // 必须在 Pump 之外真正睡一会儿,否则 continuation 永不回到 UI 线程。
+                bool PumpUntil(Func<bool> cond, int timeoutMs)
+                {
+                    var sw = System.Diagnostics.Stopwatch.StartNew();
+                    while (sw.ElapsedMilliseconds < timeoutMs)
+                    {
+                        Pump();
+                        if (cond()) return true;
+                        Thread.Sleep(25);
+                    }
+                    Pump();
+                    return cond();
+                }
+
+                // 采样渲染帧里 FilterBox 边框区域的像素,确认绿/红边框真的画出来了。
+                // 类名绑定 ≠ 视觉渲染:SukiUI 模板曾无视某些属性(App.axaml 中 ComboBox 的 Padding
+                // 就因模板局部值而失效),所以类断言之外必须再验一次真实像素。
+                (int NearA, int NearB, double MinA, double MinB) SampleColors(
+                    Avalonia.Media.Imaging.WriteableBitmap? frame, (int R, int G, int B) cA, (int R, int G, int B) cB)
+                {
+                    if (frame is null) return (0, 0, double.MaxValue, double.MaxValue);
+                    var origin = g54FilterBox.TranslatePoint(new Point(0, 0), g54Window) ?? new Point(-9999, -9999);
+                    double scale = g54Window.RenderScaling <= 0 ? 1 : g54Window.RenderScaling;
+                    int x0 = Math.Max(0, (int)Math.Floor((origin.X - 2) * scale));
+                    int y0 = Math.Max(0, (int)Math.Floor((origin.Y - 2) * scale));
+                    int x1 = Math.Min(frame.PixelSize.Width, (int)Math.Ceiling((origin.X + g54FilterBox.Bounds.Width + 2) * scale));
+                    int y1 = Math.Min(frame.PixelSize.Height, (int)Math.Ceiling((origin.Y + g54FilterBox.Bounds.Height + 2) * scale));
+                    int na = 0, nb = 0; double ma = double.MaxValue, mb = double.MaxValue;
+                    using var fb = frame.Lock();
+                    if (fb is null || fb.Address == IntPtr.Zero) return (0, 0, ma, mb);
+                    var buf = new byte[fb.RowBytes * frame.PixelSize.Height];
+                    System.Runtime.InteropServices.Marshal.Copy(fb.Address, buf, 0, buf.Length);
+                    for (int y = y0; y < y1; y++)
+                        for (int x = x0; x < x1; x++)
+                        {
+                            int i = y * fb.RowBytes + x * 4;
+                            if (i + 2 >= buf.Length) continue;
+                            int b = buf[i], g = buf[i + 1], r = buf[i + 2];
+                            double da = Math.Sqrt((r - cA.R) * (r - cA.R) + (g - cA.G) * (g - cA.G) + (b - cA.B) * (b - cA.B));
+                            double db = Math.Sqrt((r - cB.R) * (r - cB.R) + (g - cB.G) * (g - cB.G) + (b - cB.B) * (b - cB.B));
+                            if (da < ma) ma = da;
+                            if (db < mb) mb = db;
+                            if (da < 80) na++;
+                            if (db < 80) nb++;
+                        }
+                    return (na, nb, ma, mb);
+                }
+
+                // 诊断:把 TextBox → GlassCard → 三个 BorderPart 的 BorderBrush/可见性/透明度
+                // 依次打印,定位绿框在哪一环丢失(样式 vs 模板链路 vs 主题分支)。
+                void DumpBorderChain(string label)
+                {
+                    var sb = new System.Text.StringBuilder();
+                    sb.Append($"{label}: TextBox.BorderBrush={g54FilterBox.BorderBrush}");
+                    var glass = g54FilterBox.GetVisualDescendants()
+                        .OfType<SukiUI.Controls.GlassCard>().FirstOrDefault();
+                    if (glass is null)
+                    {
+                        sb.Append(" | GlassCard=<none>");
+                    }
+                    else
+                    {
+                        sb.Append($" | GlassCard(BorderBrush={glass.BorderBrush}, vis={glass.IsVisible})");
+                        foreach (var bn in new[] { "PART_BorderCardLight", "PART_BorderCardDark", "PART_ClipBorder" })
+                        {
+                            var b = glass.GetVisualDescendants().OfType<Avalonia.Controls.Border>()
+                                .FirstOrDefault(x => x.Name == bn);
+                            sb.Append($" | {bn}({b?.BorderBrush}, vis={b?.IsVisible}, op={b?.Opacity})");
+                        }
+                    }
+                    Detail(sb.ToString());
+                }
+
+                var g54Green = (R: 79, G: 175, B: 80);
+                var g54Red = (R: 244, G: 67, B: 54);
+                var g54Magenta = (R: 255, G: 0, B: 255);
+
+                // 合法表达式 → 绿框(类 + 渲染像素双重确认)。
+                g54Vm.FilterText = "frame.number == 1";
+                bool g54ValidSettled = PumpUntil(() => g54Vm.IsFilterValid, 15000);
+                Report("HG-27 a parseable filter turns the box green (filter-valid class)",
+                    g54ValidSettled
+                    && g54FilterBox.Classes.Contains("filter-valid")
+                    && !g54FilterBox.Classes.Contains("filter-invalid"),
+                    $"settled={g54ValidSettled}, valid={g54Vm.IsFilterValid}, "
+                    + $"classes=[{string.Join(",", g54FilterBox.Classes)}], msg=\"{g54Vm.FilterValidationMessage}\"");
+
+                for (int i = 0; i < 24; i++) { Pump(); Thread.Sleep(25); }
+                var g54FbOrigin = g54FilterBox.TranslatePoint(new Point(0, 0), g54Window) ?? new Point(-9999, -9999);
+                string g54GreenPng = Path.Combine(g54Dir, "filter-valid.png");
+                var g54GreenFrame = g54Window.CaptureRenderedFrame();
+                g54GreenFrame?.Save(g54GreenPng, new PngBitmapEncoderOptions());
+                var g54GreenPx = SampleColors(g54GreenFrame, g54Green, g54Red);
+                Detail($"HG-diag valid: borderBrush={g54FilterBox.BorderBrush}, thickness={g54FilterBox.BorderThickness}, "
+                    + $"focused={g54FilterBox.IsFocused}, cls=[{string.Join(",", g54FilterBox.Classes)}]");
+                Report("HG-27a the rendered filter border is green, not just the binding (border pixels)",
+                    File.Exists(g54GreenPng) && g54GreenPx.NearA > 0 && g54GreenPx.NearB == 0,
+                    $"{g54GreenPng}, rect={g54FbOrigin}({g54FilterBox.Bounds.Width}x{g54FilterBox.Bounds.Height})"
+                    + $"@{g54Window.RenderScaling}x, nearGreen={g54GreenPx.NearA}, nearRed={g54GreenPx.NearB}, "
+                    + $"minGreen={g54GreenPx.MinA:F1}, minRed={g54GreenPx.MinB:F1}");
+                DumpBorderChain("HG-diag valid-chain");
+
+                // 诊断探针:强制局部值(优先级高于样式 setter)确认 TextBox 模板是否真的渲染 BorderBrush。
+                g54FilterBox.BorderBrush = Avalonia.Media.Brushes.Magenta;
+                for (int i = 0; i < 12; i++) { Pump(); Thread.Sleep(25); }
+                string g54MagentaPng = Path.Combine(g54Dir, "filter-forced-magenta.png");
+                var g54MagentaFrame = g54Window.CaptureRenderedFrame();
+                g54MagentaFrame?.Save(g54MagentaPng, new PngBitmapEncoderOptions());
+                var g54MagentaPx = SampleColors(g54MagentaFrame, g54Magenta, g54Magenta);
+                Report("HG-27b probe: a forced local BorderBrush is painted by the template",
+                    g54MagentaPx.NearA > 0,
+                    $"forced magenta local value → nearMagenta={g54MagentaPx.NearA}, minDist={g54MagentaPx.MinA:F1} ({g54MagentaPng})");
+                g54FilterBox.ClearValue(Avalonia.Controls.Primitives.TemplatedControl.BorderBrushProperty);
+
+                // 语法错误的表达式 → 红框(类 + 渲染像素双重确认)+ 原因文本。
+                g54Vm.FilterText = "ip.src ==";
+                bool g54InvalidSettled = PumpUntil(() => g54Vm.IsFilterInvalid, 15000);
+                Report("HG-28 a syntax-error filter turns the box red with a reason (filter-invalid class)",
+                    g54InvalidSettled
+                    && g54FilterBox.Classes.Contains("filter-invalid")
+                    && !g54FilterBox.Classes.Contains("filter-valid")
+                    && !string.IsNullOrEmpty(g54Vm.FilterValidationMessage),
+                    $"settled={g54InvalidSettled}, invalid={g54Vm.IsFilterInvalid}, "
+                    + $"classes=[{string.Join(",", g54FilterBox.Classes)}], msg=\"{g54Vm.FilterValidationMessage}\"");
+
+                for (int i = 0; i < 24; i++) { Pump(); Thread.Sleep(25); }
+                string g54RedPng = Path.Combine(g54Dir, "filter-invalid.png");
+                var g54RedFrame = g54Window.CaptureRenderedFrame();
+                g54RedFrame?.Save(g54RedPng, new PngBitmapEncoderOptions());
+                var g54RedPx = SampleColors(g54RedFrame, g54Green, g54Red);
+                Detail($"HG-diag invalid: borderBrush={g54FilterBox.BorderBrush}, thickness={g54FilterBox.BorderThickness}, "
+                    + $"focused={g54FilterBox.IsFocused}, cls=[{string.Join(",", g54FilterBox.Classes)}]");
+                Report("HG-28a the rendered filter border turns red (border pixels, not just the class)",
+                    File.Exists(g54RedPng) && g54RedPx.NearB > 0 && g54RedPx.NearA == 0,
+                    $"{g54RedPng}, rect={g54FbOrigin}({g54FilterBox.Bounds.Width}x{g54FilterBox.Bounds.Height}), "
+                    + $"nearGreen={g54RedPx.NearA}, nearRed={g54RedPx.NearB}, "
+                    + $"minGreen={g54RedPx.MinA:F1}, minRed={g54RedPx.MinB:F1}");
+                DumpBorderChain("HG-diag invalid-chain");
+
+                g54FilterBox.BorderBrush = Avalonia.Media.Brushes.Magenta;
+                for (int i = 0; i < 12; i++) { Pump(); Thread.Sleep(25); }
+                string g54MagentaInvPng = Path.Combine(g54Dir, "filter-invalid-forced-magenta.png");
+                var g54MagentaInvFrame = g54Window.CaptureRenderedFrame();
+                g54MagentaInvFrame?.Save(g54MagentaInvPng, new PngBitmapEncoderOptions());
+                var g54MagentaInvPx = SampleColors(g54MagentaInvFrame, g54Magenta, g54Magenta);
+                Report("HG-28b probe: forced local magenta in the invalid state",
+                    g54MagentaInvPx.NearA > 0,
+                    $"nearMagenta={g54MagentaInvPx.NearA}, minDist={g54MagentaInvPx.MinA:F1} ({g54MagentaInvPng})");
+                g54FilterBox.ClearValue(Avalonia.Controls.Primitives.TemplatedControl.BorderBrushProperty);
+
+                // 自动补全数据路径:字段前缀 → 建议列表填充匹配的完整字段名。
+                // Popup 的可视打开无法在无头平台断言——无宿主时其 IsOpen 双向绑定会被立即写回
+                // false(与 HG-25 同类限制);可视打开与真实 Tab 采纳见 HG-29c 的实机 SKIP。
+                g54Vm.FilterText = "frame.num";
+                g54FilterBox.CaretIndex = (g54FilterBox.Text ?? string.Empty).Length;
+                bool g54SuggestionsShown = PumpUntil(() => g54Vm.FilterSuggestions.Count > 0, 60000);
+                Report("HG-29 typing a field prefix fills the autocomplete list with matching field names",
+                    g54SuggestionsShown && g54Vm.FilterSuggestions.Contains("frame.number"),
+                    $"count={g54Vm.FilterSuggestions.Count}, first3=[{string.Join(",", g54Vm.FilterSuggestions.Take(3))}], "
+                    + $"openOnVm={g54Vm.IsFilterSuggestionOpen}");
+
+                // 视图采纳路径 = ApplyFilterSuggestion(令牌替换),在真实 "frame.num" 令牌上驱动。
+                g54Vm.ApplyFilterSuggestion("frame.number", 0, "frame.num".Length);
+                Pump();
+                Report("HG-29b accepting a suggestion replaces the token with the full field name",
+                    g54FilterBox.Text == "frame.number" && !g54Vm.IsFilterSuggestionOpen,
+                    $"text=\"{g54FilterBox.Text}\", open={g54Vm.IsFilterSuggestionOpen}");
+
+                // 弹窗可视打开 + Tab 键采纳需要真实 popup 宿主,无头无法承载(同 HG-25)。
+                Skip("HG-29c the popup opens on screen and Tab accepts the highlighted suggestion",
+                    "headless 无法承载 Popup 宿主(IsOpen 双向绑定被立即写回 false),可视打开与 Tab 采纳需实机");
+
+                // 复位,避免过滤文本泄漏进后续断言。
+                g54Vm.FilterText = string.Empty;
+                Pump();
+            }
+        }
+
         g54Window.Close();
         Pump();
+
+        if (g54DockBackup is not null)
+            File.WriteAllBytes(g54DockPath, g54DockBackup);
+        else if (File.Exists(g54DockPath))
+            File.Delete(g54DockPath);
     }
     catch (Exception ex)
     {
@@ -3812,8 +4851,8 @@ try
             return ms.ToArray();
         }
 
-        string g53One = Path.Combine(g53Dir, "pf-g53-one.pcapng");
-        string g53Two = Path.Combine(g53Dir, "pf-g53-two.pcapng");
+        string g53One = Path.Combine(g53Dir, "capture.pcapng");
+        string g53Two = Path.Combine(g53Dir, "large-capture.pcapng");
         await File.WriteAllBytesAsync(g53One, OneIdb());
         await File.WriteAllBytesAsync(g53Two, TwoIdbs());
 
@@ -3837,7 +4876,7 @@ try
 
         // Classic PCAP has no IDB concept and must stay at the default so the save path
         // never mistakes it for a merged capture.
-        string g53Pcap = Path.Combine(g53Dir, "pf-g53-classic.pcap");
+        string g53Pcap = Path.Combine(g53Dir, "sample.pcap");
         await File.WriteAllBytesAsync(g53Pcap, BuildFixturePcap([g53Frame]));
         var g53R3 = await g53Svc.ReadPacketsAsync(g53Pcap);
         Report("IF-04 classic PCAP reports one interface and no merge warning",
@@ -3909,7 +4948,7 @@ try
             return frames;
         }
 
-        async Task<string> Streams(string name, byte[][] frames)
+        async Task<string> Streams(string name, string soloName, byte[][] frames)
         {
             string path = Path.Combine(g52Dir, name);
             await File.WriteAllBytesAsync(path, BuildFixturePcap(frames));
@@ -3923,7 +4962,7 @@ try
             try
             {
                 // The same frame on its own: does it keep its capture-wide stream id?
-                string solo = Path.Combine(g52Dir, Path.GetFileNameWithoutExtension(name) + "-solo" + Path.GetExtension(name));
+                string solo = Path.Combine(g52Dir, soloName);
                 await File.WriteAllBytesAsync(solo, BuildFixturePcap([frames[1]]));
                 var soloDoc = new PacketDocument { FilePath = solo };
                 await svc.LoadPcapAsync(soloDoc, solo, null);
@@ -3935,9 +4974,9 @@ try
             return text + " | solo=" + single;
         }
 
-        string g52Base = await Streams("pf-g52-base.pcap", Segs(4321, 0x10, [], [10, 0, 0, 2]));
-        string g52Len = await Streams("pf-g52-len.pcap", Segs(4321, 0x18, new byte[40], [10, 0, 0, 2]));
-        string g52Port = await Streams("pf-g52-port.pcap", Segs(7777, 0x10, [], [10, 0, 0, 2]));
+        string g52Base = await Streams("example.pcap", "sample.pcap", Segs(4321, 0x10, [], [10, 0, 0, 2]));
+        string g52Len = await Streams("file.pcap", "local.pcap", Segs(4321, 0x18, new byte[40], [10, 0, 0, 2]));
+        string g52Port = await Streams("one.pcap", "capture.pcap", Segs(7777, 0x10, [], [10, 0, 0, 2]));
 
         Report("SI-01 a payload-length edit leaves stream numbering untouched",
             g52Base == g52Len && g52Base.Contains("0=[1/2/3]"),
@@ -3958,7 +4997,7 @@ try
         // Invalidate must actually force a re-read: overwrite the capture behind the
         // provider's closed-over path with a *different* stream layout and confirm the
         // next query sees it. Without a real rescan this would still report 0=[1/2/3].
-        string g52Live = Path.Combine(g52Dir, "pf-g52-live.pcap");
+        string g52Live = Path.Combine(g52Dir, "output.pcap");
         await File.WriteAllBytesAsync(g52Live, BuildFixturePcap(Segs(4321, 0x10, [], [10, 0, 0, 2])));
         var g52Svc = new TsharkService(new PcapIngestService(), new PcapExportService());
         var g52Doc = new PacketDocument { FilePath = g52Live };
@@ -4161,7 +5200,7 @@ catch (Exception ex)
     Report("G48 group execution", false, ex.ToString());
 }
 
-// ══ GROUP 47: RV-01..05 reassembled stream bytes ══// ══ GROUP 47: RV-01..05 reassembled stream bytes ══
+// ══ GROUP 47: RV-01..06 reassembled stream bytes ══// ══ GROUP 47: RV-01..06 reassembled stream bytes ══
 Banner(47, "reassembled stream bytes");
 try
 {
@@ -4204,6 +5243,15 @@ try
     catch (ArgumentException) { g47Threw = true; }
     Report("RV-05 a protocol that cannot be followed is refused explicitly", g47Threw,
         "sctp throws ArgumentException");
+
+    // http passes the follow gate but has no stream 99 — the tap returns nothing
+    // rather than failing, same as RV-04 for tcp.
+    byte[]? g47Http = null;
+    bool g47HttpThrew = false;
+    try { g47Http = await g47Tshark.GetReassembledStreamAsync(g47Src, "http", "99"); }
+    catch (ArgumentException) { g47HttpThrew = true; }
+    Report("RV-06 a followable protocol past the gate yields nothing for an unknown stream",
+        !g47HttpThrew && g47Http is null, g47HttpThrew ? "threw" : $"len={g47Http?.Length}");
 }
 catch (Exception ex)
 {
@@ -4268,10 +5316,13 @@ try
     var g46F7 = g46Editor.CheckTreeEditFence(g46Packet, g46Good);
     Report("FE-08 a well-formed field is still allowed", g46F7.Allowed, g46F7.Reason);
 
-    // The relaxation must not have made the menu offer an editor for junk.
-    Report("FE-09 an undecoded marker is never offered an editor",
-        !new ProtocolField { Name = "x", Kind = FieldKind.UInt, Offset = 4, Length = 2, IsUndecodedMarker = true }.IsTreeEditable,
-        "undecoded marker");
+    // Plan C: an undecoded marker is offered an editor only once it carries a derived
+    // whole-blob span (Kind == Bytes); any other kind on a marker stays refused.
+    Report("FE-09 an undecoded marker is editable only as a derived Bytes blob",
+        new ProtocolField { Name = "x", Kind = FieldKind.Bytes, Offset = 4, Length = 2, RawBytes = new byte[2], IsUndecodedMarker = true }.IsTreeEditable
+        && !new ProtocolField { Name = "x", Kind = FieldKind.UInt, Offset = 4, Length = 2, IsUndecodedMarker = true }.IsTreeEditable
+        && !new ProtocolField { Name = "x", Kind = FieldKind.Unknown, IsUndecodedMarker = true }.IsTreeEditable,
+        "marker editable iff Kind == Bytes");
     Report("FE-10 a field with a valid type but no span IS offered, so the fence can explain",
         new ProtocolField { Name = "x", Kind = FieldKind.UInt, Offset = 4, Length = 0 }.IsTreeEditable,
         "the fence reports the precise reason instead of the menu hiding it");
@@ -4632,6 +5683,479 @@ static async Task<(int Sent, int Failed, string LastMsg, int TotalSent, bool Don
     await svc.StartSendAsync(packets, iface, loopCount: 1, intervalMs: 0, autoFixFrames: true);
     return (sent, failed, lastMsg, svc.TotalSent, done);
 }
+
+// ══ GROUP 55: display filter validation + field-name catalog ══
+// No capture fixture: the validation probe writes its own empty pcap internally and
+// `-G fields` needs no `-r`, so this group never depends on PcapPath and never skips.
+Banner(55, "display filter validation + field-name catalog");
+try
+{
+    var g55 = new TsharkService(new PcapIngestService(), new PcapExportService());
+
+    // Blank filters mean "no filter": valid with no error, and tshark is never spawned.
+    var g55Empty = await g55.ValidateDisplayFilterAsync("");
+    Report("FV-01 an empty filter is valid without an error",
+        g55Empty.IsValid && g55Empty.Error is null,
+        $"IsValid={g55Empty.IsValid}, Error={g55Empty.Error ?? "<null>"}");
+
+    var g55Spaces = await g55.ValidateDisplayFilterAsync("   ");
+    Report("FV-02 a whitespace-only filter is valid without an error",
+        g55Spaces.IsValid && g55Spaces.Error is null,
+        $"IsValid={g55Spaces.IsValid}, Error={g55Spaces.Error ?? "<null>"}");
+
+    var g55Valid = await g55.ValidateDisplayFilterAsync("frame.number == 1");
+    Report("FV-03 a real display filter validates as valid", g55Valid.IsValid,
+        $"IsValid={g55Valid.IsValid}, Error={g55Valid.Error ?? "<null>"}");
+
+    var g55Invalid = await g55.ValidateDisplayFilterAsync("this.field.does.not.exist == 1");
+    Report("FV-04 an unknown field is rejected with a non-empty error",
+        !g55Invalid.IsValid && !string.IsNullOrEmpty(g55Invalid.Error),
+        $"IsValid={g55Invalid.IsValid}, Error={g55Invalid.Error ?? "<null>"}");
+
+    // The verdict is cached per filter string, so the repeat probe must be byte-identical
+    // without another tshark run.
+    var g55InvalidAgain = await g55.ValidateDisplayFilterAsync("this.field.does.not.exist == 1");
+    Report("FV-05 repeating an invalid filter returns the identical cached verdict",
+        !g55InvalidAgain.IsValid && g55InvalidAgain.Error == g55Invalid.Error,
+        $"IsValid={g55InvalidAgain.IsValid}, sameError={g55InvalidAgain.Error == g55Invalid.Error}");
+
+    var g55Fields = await g55.GetFieldNamesAsync();
+    Report("FN-01 the field catalog is large", g55Fields.Count > 100000,
+        $"count={g55Fields.Count}");
+    Report("FN-02 the catalog contains frame.number", g55Fields.Contains("frame.number"),
+        $"count={g55Fields.Count}");
+    Report("FN-03 the catalog contains ip.src", g55Fields.Contains("ip.src"),
+        $"count={g55Fields.Count}");
+    Report("FN-04 the catalog is de-duplicated",
+        g55Fields.Distinct().Count() == g55Fields.Count,
+        $"count={g55Fields.Count}, distinct={g55Fields.Distinct().Count()}");
+    Report("FN-05 the catalog is Ordinal-sorted",
+        g55Fields.SequenceEqual(g55Fields.OrderBy(n => n, StringComparer.Ordinal)),
+        "SequenceEqual(OrderBy(n, Ordinal))");
+
+    bool g55HasGtpuPlaceholder = g55Fields.Contains("gtpu");
+    bool g55HasGtp = g55Fields.Contains("gtp");
+    Report("FN-06 the catalog has no placeholder 'gtpu', only the real 'gtp'",
+        !g55HasGtpuPlaceholder && g55HasGtp,
+        $"gtpu={g55HasGtpuPlaceholder}, gtp={g55HasGtp}");
+}
+catch (Exception ex)
+{
+    Report("G55 group execution", false, ex.ToString());
+}
+
+// ══ GROUP 56: bit-level field editing — fence / RMW / range (plan PBLE) ══
+Banner(56, "bit-level field editing (RMW / range / fence)");
+try
+{
+    var g56Editor = new ProtocolEditorService();
+
+    // Frame bytes: byte 0 = 0b1010_1010, byte 1 = 0x34 (the pair reads 0xAA34 big-endian).
+    var g56Bytes = new byte[16];
+    g56Bytes[0] = 0xAA; g56Bytes[1] = 0x34; g56Bytes[2] = 0x56;
+    var g56Pkt = new Packet { Index = 0, RawData = (byte[])g56Bytes.Clone() };
+
+    var g56LowNibble = new ProtocolField
+    {
+        Name = "dscp", OriginalPdmlName = "ip.dsfield.dscp",
+        Offset = 0, Length = 1, LengthBits = 4, BitMask = 0x0F,
+        Kind = FieldKind.UInt, RawBytes = new byte[] { 0xAA },
+    };
+    var g56fence = g56Editor.CheckTreeEditFence(g56Pkt, g56LowNibble);
+    Report("BLE-01 a contiguous bit field is editable (fence allows)",
+        g56fence.Allowed, g56fence.Reason);
+
+    Report("BLE-02 a typed bit field is tree-editable (bit path reachable)",
+        g56LowNibble.IsTreeEditable, $"IsTreeEditable={g56LowNibble.IsTreeEditable}");
+
+    var g56NonContig = new ProtocolField
+    {
+        Name = "x", OriginalPdmlName = "x", Offset = 0, Length = 1, LengthBits = 2,
+        BitMask = 0x05, Kind = FieldKind.UInt, RawBytes = new byte[] { 0xAA },
+    };
+    var g56fenceNc = g56Editor.CheckTreeEditFence(g56Pkt, g56NonContig);
+    Report("BLE-03 a non-contiguous mask is refused (BitMaskNonContiguous)",
+        !g56fenceNc.Allowed
+        && g56fenceNc.Reason == LocalizationService.Resolve("Fence.BitMaskNonContiguous"),
+        g56fenceNc.Reason);
+
+    var g56Wide = new ProtocolField
+    {
+        Name = "x", OriginalPdmlName = "x", Offset = 0, Length = 9, LengthBits = 4,
+        BitMask = 0x0F, Kind = FieldKind.UInt, RawBytes = new byte[9],
+    };
+    var g56fenceWide = g56Editor.CheckTreeEditFence(g56Pkt, g56Wide);
+    Report("BLE-04 a bit field wider than 8 bytes is refused (BitOutOfRange)",
+        !g56fenceWide.Allowed
+        && g56fenceWide.Reason == LocalizationService.Resolve("Fence.BitOutOfRange"),
+        g56fenceWide.Reason);
+
+    var g56NoMask = new ProtocolField
+    {
+        Name = "x", OriginalPdmlName = "x", Offset = 0, Length = 1, LengthBits = 4,
+        Kind = FieldKind.UInt, RawBytes = new byte[] { 0xAA },
+    };
+    var g56fenceNoMask = g56Editor.CheckTreeEditFence(g56Pkt, g56NoMask);
+    Report("BLE-05 a bit-level field with no mask is refused (BitMaskMissing)",
+        !g56fenceNoMask.Allowed
+        && g56fenceNoMask.Reason == LocalizationService.Resolve("Fence.BitMaskMissing"),
+        g56fenceNoMask.Reason);
+
+    var g56NoRaw = new ProtocolField
+    {
+        Name = "dscp", OriginalPdmlName = "ip.dsfield.dscp", Offset = 0, Length = 1,
+        LengthBits = 4, BitMask = 0x0F, Kind = FieldKind.UInt, RawBytes = [],
+    };
+    var g56fenceNoRaw = g56Editor.CheckTreeEditFence(g56Pkt, g56NoRaw);
+    Report("BLE-10 a bit field with no RawBytes is still editable (real tshark shape)",
+        g56fenceNoRaw.Allowed, g56fenceNoRaw.Reason);
+
+    byte[] g56Edit = ProtocolEditorService.ComputeBitFieldEditBytes(g56Pkt, g56LowNibble, 0x5);
+    Report("BLE-06 RMW changes only the masked bits (0xAA low nibble -> 0x5)",
+        g56Edit.Length == 1 && g56Edit[0] == 0xA5, $"-> {g56Edit[0]:X2}");
+
+    byte[] g56Same = ProtocolEditorService.ComputeBitFieldEditBytes(g56Pkt, g56LowNibble, 0xA);
+    Report("BLE-07 RMW is idempotent when writing the current value",
+        g56Same.Length == 1 && g56Same[0] == 0xAA, $"-> {g56Same[0]:X2}");
+
+    var g56Twelve = new ProtocolField
+    {
+        Name = "x", OriginalPdmlName = "x", Offset = 0, Length = 2, LengthBits = 12,
+        BitMask = 0x0FFF, Kind = FieldKind.UInt, RawBytes = new byte[] { 0xAA, 0x34 },
+    };
+    byte[] g56Set = ProtocolEditorService.ComputeBitFieldEditBytes(g56Pkt, g56Twelve, 0xABC);
+    Report("BLE-08 RMW keeps the high nibble of a multi-byte bit field (0xAA34 -> 0xAABC)",
+        g56Set.Length == 2 && g56Set[0] == 0xAA && g56Set[1] == 0xBC,
+        $"-> {g56Set[0]:X2}{g56Set[1]:X2}");
+
+    bool g56RangeThrew = false;
+    try { ProtocolEditorService.ComputeBitFieldEditBytes(g56Pkt, g56LowNibble, 0x10); }
+    catch (ArgumentException) { g56RangeThrew = true; }
+    Report("BLE-09 RMW rejects a value wider than the mask (0x10 in a 4-bit field)",
+        g56RangeThrew, g56RangeThrew ? "throws" : "accepted");
+}
+catch (Exception ex)
+{
+    Report("G56 group execution", false, ex.ToString());
+}
+
+// ══ GROUP 57: UTLE — unknown-type leaf editing (Bytes fallback + container guard) ══
+Banner(57, "unknown-type leaf editing (Bytes fallback + container guard)");
+try
+{
+    var g57Infer = typeof(TsharkService).GetMethod("InferFieldKind",
+        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+    FieldKind Infer(string name, int len, string? disp, bool isContainer) =>
+        (FieldKind)g57Infer.Invoke(null, new object?[] { name, len, disp, isContainer })!;
+
+    Report("UTLE-01 a 9+ byte opaque leaf falls back to Bytes (editable as hex)",
+        Infer("myvendor.ie", 9, null, false) == FieldKind.Bytes,
+        $"kind={Infer("myvendor.ie", 9, null, false)}");
+
+    Report("UTLE-02 a 1-8 byte unknown leaf stays UInt (no regression)",
+        Infer("x", 4, null, false) == FieldKind.UInt,
+        $"kind={Infer("x", 4, null, false)}");
+
+    Report("UTLE-03 a length<=0 leaf stays Unknown (no byte span to edit)",
+        Infer("x", 0, null, false) == FieldKind.Unknown,
+        $"kind={Infer("x", 0, null, false)}");
+
+    Report("UTLE-04 a 9+ byte container stays Unknown (UTLE-F1 guard, never Bytes)",
+        Infer("some.proto", 16, null, true) == FieldKind.Unknown,
+        $"kind={Infer("some.proto", 16, null, true)}");
+
+    Report("UTLE-05 the Bytes fallback never overrides the BCD shape heuristic",
+        Infer("nas.imsi", 8, "12345678", false) == FieldKind.Bcd,
+        $"kind={Infer("nas.imsi", 8, "12345678", false)}");
+
+    var g57Editor = new ProtocolEditorService();
+    var g57Bytes = new byte[20];
+    for (int i = 0; i < g57Bytes.Length; i++) g57Bytes[i] = (byte)(0x10 + i);
+    var g57Pkt = new Packet { Index = 0, RawData = (byte[])g57Bytes.Clone() };
+
+    var g57Good = new ProtocolField
+    {
+        Name = "VendorBlob", OriginalPdmlName = "myvendor.ie",
+        Offset = 2, Length = 9, Kind = FieldKind.Bytes,
+        RawBytes = g57Bytes.AsSpan(2, 9).ToArray(),
+    };
+    var g57fenceGood = g57Editor.CheckTreeEditFence(g57Pkt, g57Good);
+    Report("UTLE-06 a well-formed Bytes leaf passes the fence (hex REPLACE editable)",
+        g57fenceGood.Allowed, g57fenceGood.Reason);
+
+    var g57Bad = new ProtocolField
+    {
+        Name = "VendorBlob", OriginalPdmlName = "myvendor.ie",
+        Offset = 2, Length = 9, Kind = FieldKind.Bytes,
+        RawBytes = new byte[4],
+    };
+    var g57fenceBad = g57Editor.CheckTreeEditFence(g57Pkt, g57Bad);
+    Report("UTLE-07 a Bytes leaf with mismatched evidence is refused (fence not relaxed)",
+        !g57fenceBad.Allowed
+        && g57fenceBad.Reason == LocalizationService.Resolve("Fence.NoByteEvidence", 4, 9),
+        g57fenceBad.Reason);
+
+    string g57Src = await File.ReadAllTextAsync(Path.Combine(ProjectDir, "Services/TsharkService.cs"));
+    Report("UTLE-08 source: container guard + Bytes fallback present in InferFieldKind",
+        g57Src.Contains("if (isContainer)")
+        && g57Src.Contains("return length >= 1 ? FieldKind.Bytes : FieldKind.Unknown;"),
+        "missing container guard or Bytes fallback");
+}
+catch (Exception ex)
+{
+    Report("G57 group execution", false, ex.ToString());
+}
+
+// ══ GROUP 58: CWLE — container whole-edit (derived span, Bytes-only, no length change) ══
+Banner(58, "container whole-edit (span derivation, Bytes-only, length change hidden)");
+try
+{
+    var g58Derive = typeof(TsharkService).GetMethod("DeriveContainerSpans",
+        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+    void Derive(System.Collections.ObjectModel.ObservableCollection<ProtocolField> fields, Packet pkt) =>
+        g58Derive.Invoke(null, new object?[] { fields, pkt });
+
+    var g58Bytes = new byte[32];
+    for (int i = 0; i < g58Bytes.Length; i++) g58Bytes[i] = (byte)(0x40 + i);
+    var g58Pkt = new Packet { Index = 0, RawData = (byte[])g58Bytes.Clone() };
+    var g58Editor = new ProtocolEditorService();
+
+    var g58Spanning = new ProtocolField
+    {
+        Name = "IE", OriginalPdmlName = "vendor.ie",
+        Offset = 2, Length = 6, RawBytes = g58Bytes.AsSpan(2, 6).ToArray(),
+        Kind = FieldKind.UInt,
+    };
+    g58Spanning.Children.Add(new ProtocolField
+    {
+        Name = "len", OriginalPdmlName = "vendor.ie.len",
+        Offset = 2, Length = 2, RawBytes = g58Bytes.AsSpan(2, 2).ToArray(), Kind = FieldKind.UInt,
+    });
+    Derive(new System.Collections.ObjectModel.ObservableCollection<ProtocolField> { g58Spanning }, g58Pkt);
+    Report("CWLE-01 a container with a raw span is re-kinded to Bytes, never a scalar",
+        g58Spanning.Kind == FieldKind.Bytes, $"kind={g58Spanning.Kind}");
+
+    var g58Fence = g58Editor.CheckTreeEditFence(g58Pkt, g58Spanning);
+    Report("CWLE-02 that container is editable as one whole hex blob",
+        g58Fence.Allowed, g58Fence.Reason);
+
+    var g58Derived = new ProtocolField
+    {
+        Name = "IE2", OriginalPdmlName = "vendor.ie2",
+        Offset = 0, Length = 0, Kind = FieldKind.Unknown,
+    };
+    g58Derived.Children.Add(new ProtocolField
+    {
+        Name = "a", OriginalPdmlName = "vendor.ie2.a",
+        Offset = 10, Length = 3, RawBytes = g58Bytes.AsSpan(10, 3).ToArray(), Kind = FieldKind.UInt,
+    });
+    g58Derived.Children.Add(new ProtocolField
+    {
+        Name = "b", OriginalPdmlName = "vendor.ie2.b",
+        Offset = 14, Length = 2, RawBytes = g58Bytes.AsSpan(14, 2).ToArray(), Kind = FieldKind.UInt,
+    });
+    Derive(new System.Collections.ObjectModel.ObservableCollection<ProtocolField> { g58Derived }, g58Pkt);
+    Report("CWLE-03 a zero-length container derives Offset/Length from its children",
+        g58Derived.Offset == 10 && g58Derived.Length == 6 && g58Derived.Kind == FieldKind.Bytes,
+        $"off={g58Derived.Offset} len={g58Derived.Length} kind={g58Derived.Kind}");
+
+    var g58DerivedFence = g58Editor.CheckTreeEditFence(g58Pkt, g58Derived);
+    Report("CWLE-04 the derived container is editable as one whole hex blob",
+        g58DerivedFence.Allowed, g58DerivedFence.Reason);
+
+    var g58NoSpan = new ProtocolField
+    {
+        Name = "expert", OriginalPdmlName = "vendor.expert",
+        Offset = 0, Length = 0, Kind = FieldKind.Unknown,
+    };
+    g58NoSpan.Children.Add(new ProtocolField
+    {
+        Name = "note", OriginalPdmlName = "vendor.expert.note",
+        Offset = 0, Length = 0, Kind = FieldKind.Unknown,
+    });
+    Derive(new System.Collections.ObjectModel.ObservableCollection<ProtocolField> { g58NoSpan }, g58Pkt);
+    var g58NoSpanFence = g58Editor.CheckTreeEditFence(g58Pkt, g58NoSpan);
+    Report("CWLE-05 a container with no derivable span stays Unknown and is refused",
+        g58NoSpan.Kind == FieldKind.Unknown && !g58NoSpanFence.Allowed
+        && g58NoSpanFence.Reason == LocalizationService.Resolve("Fence.UnknownField"),
+        $"kind={g58NoSpan.Kind} reason={g58NoSpanFence.Reason}");
+
+    g58Spanning.IsEditing = true;
+    Report("CWLE-06 a container in edit mode does not show the length-change opt-in",
+        !g58Spanning.IsEditingScalar, $"isEditingScalar={g58Spanning.IsEditingScalar}");
+
+    var g58Leaf = new ProtocolField { Name = "leaf" };
+    g58Leaf.IsEditing = true;
+    Report("CWLE-07 a scalar leaf still shows the length-change opt-in",
+        g58Leaf.IsEditingScalar, $"isEditingScalar={g58Leaf.IsEditingScalar}");
+
+    Report("CWLE-08 length change stays opt-in (off by default) on a container",
+        !g58Spanning.AllowLengthChange, $"allow={g58Spanning.AllowLengthChange}");
+}
+catch (Exception ex)
+{
+    Report("G58 group execution", false, ex.ToString());
+}
+
+// ══ GROUP 59: MKE — undecoded-marker blob editing (ordered span pairing, fail-closed) ══
+Banner(59, "undecoded-marker blob editing (ordered PDML span pairing)");
+try
+{
+    var g59DeriveMarker = typeof(TsharkService).GetMethod("DeriveMarkerSpans",
+        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+    var g59Collect = typeof(TsharkService).GetMethod("CollectPdmlFields",
+        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+
+    var g59Pdml = System.Xml.Linq.XElement.Parse(
+        "<proto name='pfcp'>" +
+        "<field name='' show='IE not decoded yet' size='4' pos='257'/>" +
+        "<field name='' show='IE not decoded yet' size='1' pos='267'/>" +
+        "<field name='' show='IE not decoded yet(WS:IE id too large)' size='69' pos='274'/>" +
+        "<field name='pfcp.enterprise_ie_data' show='IE not decoded yet' size='3' pos='10'/>" +
+        "<field name='' show='IE not decoded yet' size='0' pos='999'/>" +
+        "</proto>");
+    var g59Spans = new List<(int Pos, int Size)>();
+    g59Collect.Invoke(null, new object?[]
+    {
+        g59Pdml,
+        new Dictionary<(string, int), string>(),
+        new Dictionary<(string, int), string>(),
+        new Dictionary<string, HashSet<int>>(),
+        new Dictionary<string, HashSet<int>>(),
+        null, null, g59Spans,
+    });
+    Report("MKE-01 anonymous 'not decoded' spans are collected in document order",
+        g59Spans.Count == 3 && g59Spans[0] == (257, 4) && g59Spans[1] == (267, 1) && g59Spans[2] == (274, 69),
+        string.Join(",", g59Spans));
+    Report("MKE-02 named or zero-size 'not decoded' fields are not collected",
+        !g59Spans.Contains((10, 3)) && !g59Spans.Contains((999, 0)), "named/size-0 excluded");
+
+    var g59Bytes = new byte[32];
+    for (int i = 0; i < g59Bytes.Length; i++) g59Bytes[i] = (byte)(0x10 + i);
+    var g59Pkt = new Packet { Index = 0, RawData = (byte[])g59Bytes.Clone() };
+    var g59Editor = new ProtocolEditorService();
+
+    static ProtocolField Marker(string name)
+        => new ProtocolField { Name = name, OriginalPdmlName = string.Empty, IsUndecodedMarker = true, Kind = FieldKind.Unknown };
+
+    ProtocolLayer LayerWith(params ProtocolField[] fields)
+    {
+        var layer = new ProtocolLayer { ProtocolName = "pfcp", ParentPacket = g59Pkt };
+        foreach (var f in fields) layer.Fields.Add(f);
+        return layer;
+    }
+
+    void DeriveMarker(IEnumerable<ProtocolLayer> layers, List<(int Pos, int Size)> spans) =>
+        g59DeriveMarker.Invoke(null, new object?[] { layers, spans, g59Pkt });
+
+    var m3 = Marker("IE");
+    m3.Children.Add(new ProtocolField { Name = "expert", OriginalPdmlName = "_ws.expert", Kind = FieldKind.Unknown });
+    DeriveMarker(new[] { LayerWith(m3) }, new List<(int, int)> { (4, 5) });
+    Report("MKE-03 a matched marker gets its own span and Bytes kind",
+        m3.Kind == FieldKind.Bytes && m3.Offset == 4 && m3.Length == 5
+        && m3.RawBytes.AsSpan().SequenceEqual(g59Bytes.AsSpan(4, 5)),
+        $"off={m3.Offset} len={m3.Length} kind={m3.Kind}");
+
+    var g59Fence6 = g59Editor.CheckTreeEditFence(g59Pkt, m3);
+    Report("MKE-04 a marker with a derived span passes the fence and edits as a blob",
+        g59Fence6.Allowed, g59Fence6.Reason);
+
+    var m5a = Marker("A");
+    var m5b = Marker("B");
+    DeriveMarker(new[] { LayerWith(m5a, m5b) }, new List<(int, int)> { (2, 4), (6, 2) });
+    Report("MKE-05 several markers in one packet get distinct spans by document order (no show-text collision)",
+        m5a.Offset == 2 && m5a.Length == 4 && m5b.Offset == 6 && m5b.Length == 2
+        && m5a.Kind == FieldKind.Bytes && m5b.Kind == FieldKind.Bytes,
+        $"a=({m5a.Offset},{m5a.Length}) b=({m5b.Offset},{m5b.Length})");
+
+    var m6 = Marker("IE");
+    var m6Nested = new ProtocolField { Name = "null", OriginalPdmlName = "pfcp.ie_not_decoded_null", IsUndecodedMarker = true, Kind = FieldKind.Unknown };
+    m6.Children.Add(m6Nested);
+    DeriveMarker(new[] { LayerWith(m6) }, new List<(int, int)> { (5, 3) });
+    Report("MKE-06 the nested named '...not_decoded...' leaf does not consume a span",
+        m6.Kind == FieldKind.Bytes && m6.Offset == 5 && m6.Length == 3 && m6Nested.Kind == FieldKind.Unknown,
+        $"outer=({m6.Offset},{m6.Length},{m6.Kind}) inner={m6Nested.Kind}");
+
+    var m7 = Marker("IE");
+    DeriveMarker(new[] { LayerWith(m7) }, new List<(int, int)>());
+    var g59Fence7 = g59Editor.CheckTreeEditFence(g59Pkt, m7);
+    Report("MKE-07 an underivable marker is failed closed and refused with the marker-specific reason",
+        m7.Kind == FieldKind.Unknown && m7.Offset == -1 && m7.Length == 0
+        && !g59Fence7.Allowed && g59Fence7.Reason == LocalizationService.Resolve("Fence.UndecodedSpanUnknown"),
+        $"kind={m7.Kind} off={m7.Offset} reason={g59Fence7.Reason}");
+
+    var m8a = Marker("A");
+    var m8b = Marker("B");
+    DeriveMarker(new[] { LayerWith(m8a, m8b) }, new List<(int, int)> { (2, 4) });
+    var g59Fence8 = g59Editor.CheckTreeEditFence(g59Pkt, m8b);
+    Report("MKE-08 a marker past the end of the span list is failed closed",
+        m8a.Kind == FieldKind.Bytes && m8b.Kind == FieldKind.Unknown
+        && !g59Fence8.Allowed && g59Fence8.Reason == LocalizationService.Resolve("Fence.UndecodedSpanUnknown"),
+        $"a={m8a.Kind} b={m8b.Kind} reason={g59Fence8.Reason}");
+
+    var m9 = Marker("IE");
+    DeriveMarker(new[] { LayerWith(m9) }, new List<(int, int)> { (100, 5) });
+    Report("MKE-09 a marker whose span runs past the frame is failed closed",
+        m9.Kind == FieldKind.Unknown && m9.Length == 0,
+        $"kind={m9.Kind} off={m9.Offset} len={m9.Length}");
+
+    // MKE-10 (VBC 情形 b, behavioral): an empty-name marker is verified by the
+    // ("", pos) key only. Editing VerifyFieldInReparse directly with a synthetic
+    // reparse keeps this deterministic (no tshark re-dissection) while proving the
+    // anonymous position-only branch commits and the miss path is NotLanding — not
+    // the plain-leaf hard abort (Vbc.NoPdmlName).
+    var g59Verify = typeof(EditTransactionService).GetMethod("VerifyFieldInReparse",
+        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+    PdmlData FreshWith(string pdmlName, int pos) => new(
+        new Dictionary<(string, int), string>(),
+        new Dictionary<(string, int), string> { [(pdmlName, pos)] = "IE not decoded yet" },
+        new Dictionary<(string, int), string>(),
+        new Dictionary<string, List<int>>(),
+        new Dictionary<string, List<int>>(),
+        new HashSet<string>(),
+        new Dictionary<string, HashSet<int>>());
+
+    var m10 = Marker("IE");
+    m10.Offset = 4;
+    m10.Length = 5;
+    m10.Kind = FieldKind.Bytes;
+    m10.RawBytes = g59Bytes.AsSpan(4, 5).ToArray();
+    byte[] m10New = g59Bytes.AsSpan(4, 5).ToArray();
+    m10New[0] ^= 0xFF;
+    var r10Hit = (EditResult)g59Verify.Invoke(null, new object?[] { m10, m10New, FreshWith("", 4) })!;
+    var r10Miss = (EditResult)g59Verify.Invoke(null, new object?[] { m10, m10New, FreshWith("", 99) })!;
+    string noNameReason = LocalizationService.Resolve("Vbc.NoPdmlName");
+    Report("MKE-10 an empty-name marker commits via the (\u0022\u0022, pos) match and a miss aborts NotLanding (VBC 情形 b)",
+        r10Hit.Success && r10Hit.Reason == "OK"
+        && !r10Miss.Success && r10Miss.Reason != noNameReason
+        && r10Miss.Reason == LocalizationService.Resolve("Vbc.NotLanding", "(anonymous)", 4),
+        $"hit={r10Hit.Success}/{r10Hit.Reason}, miss=\"{r10Miss.Reason}\"");
+
+    // MKE-11 (UDTE-F5 highlight regression): a marker with a derived Length>0
+    // highlights its own bytes via the normal leaf path; an underivable marker
+    // (Length==0) still falls back to the enclosing IE's undecoded tail.
+    var g59Span = typeof(HexEditorViewModel).GetMethod("ComputeFieldSpan",
+        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+    object?[] spanDerived = { m3, 32, 0, 0 };
+    g59Span.Invoke(null, spanDerived);
+    int dStart = (int)spanDerived[2]!, dLen = (int)spanDerived[3]!;
+    Report("MKE-11 a derived marker highlights its own span (no zero-length special case)",
+        dStart == 4 && dLen == 5, $"start={dStart} len={dLen}");
+
+    var m11Ancestor = new ProtocolField { Name = "IE", OriginalPdmlName = "", Offset = 2, Length = 30, Kind = FieldKind.Bytes };
+    var m11Tail = Marker("IE");
+    m11Tail.ParentField = m11Ancestor;
+    object?[] spanTail = { m11Tail, 32, 0, 0 };
+    g59Span.Invoke(null, spanTail);
+    int tStart = (int)spanTail[2]!, tLen = (int)spanTail[3]!;
+    Report("MKE-11b an underivable marker still highlights the enclosing undecoded tail",
+        tStart == 2 && tLen == 30, $"start={tStart} len={tLen}");
+}
+catch (Exception ex)
+{
+    Report("G59 group execution", false, ex.ToString());
+}
+
 string skipNote = "";
 if (skipped > 0)
 {

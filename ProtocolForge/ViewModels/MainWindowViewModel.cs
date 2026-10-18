@@ -1,8 +1,13 @@
 using System.ComponentModel;
 using System.Collections.ObjectModel;
 using System.Linq;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Dock.Model.Controls;
+using Dock.Model.Core;
+using Dock.Model.Core.Events;
+using Dock.Serializer.SystemTextJson;
 using ProtocolForge.Models;
 using ProtocolForge.Services;
 
@@ -14,6 +19,14 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private readonly PcapExportService _pcapExport;
     private readonly ProtocolEditorService _editorService;
     private readonly LayoutService _layoutService;
+    private readonly DockSerializer _dockSerializer = new();
+
+    public DockLayoutFactory Factory { get; }
+
+    [ObservableProperty]
+    private IRootDock? _layout;
+
+    public event EventHandler? FindFocusRequested;
 
     // Per-packet version counter so an older in-flight display refresh never
     // overwrites the tree with stale data after the user edited again.
@@ -174,11 +187,44 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             }
         };
 
-        // Restore panel visibility from saved layout
+        Factory = new DockLayoutFactory();
+        IRootDock? restoredLayout = null;
+        var dockJson = _layoutService.LoadDockLayout();
+        if (dockJson is not null)
+        {
+            try
+            {
+                restoredLayout = _dockSerializer.Deserialize<IRootDock>(dockJson);
+            }
+            catch (Exception ex)
+            {
+                TraceLog.Write($"VM.DockLayout corrupt, falling back to default: {ex.Message}");
+            }
+        }
+
+        var layout = restoredLayout ?? Factory.CreateLayout();
+        Factory.InitLayout(layout);
+        Layout = layout;
+        AttachPaneHosts(layout);
+        Factory.DockableHidden += OnDockableHidden;
+        Factory.DockableRestored += OnDockableRestored;
+        Factory.DockablePinned += OnDockablePinned;
+        Factory.DockableUnpinned += OnDockableUnpinned;
+        Factory.WindowClosing += OnFloatingWindowClosing;
+
         var saved = _layoutService.Load();
-        ShowPacketList = saved.ShowPacketList;
-        ShowProtocolTree = saved.ShowProtocolTree;
-        ShowHexEditor = saved.ShowHexEditor;
+        if (restoredLayout is not null)
+        {
+            // The dock JSON is authoritative for pane visibility when restored;
+            // only the OriginalOwner back-links (lost across restart) need repair.
+            RewireHiddenPaneOwners(layout);
+        }
+        else
+        {
+            ApplyLegacyVisibility(saved);
+        }
+        SyncPaneVisibility();
+        RetitlePanes();
 
         // Re-resolve the last status + derived display strings on language switch.
         LocalizationService.LanguageChanged += OnLanguageChanged;
@@ -200,6 +246,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(PacketsDisplay));
         OnPropertyChanged(nameof(FileDisplay));
         OnPropertyChanged(nameof(ModifiedDisplay));
+        RetitlePanes();
     }
 
     // Commands
@@ -213,6 +260,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
         try
         {
+            _lastLoadFailed = false;
             var document = new PacketDocument { FilePath = filePath };
             PacketList.LoadFromDocument(document);
             EnumCatalog.Reset();
@@ -235,6 +283,11 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             _loadedFilePath = filePath;
             _history.Clear();
             TcpStreams.Clear();
+            // Per-packet caches keyed by Packet reference would otherwise retain the
+            // previous document's packets (and their context-frame byte arrays) for
+            // the whole session. Reset them whenever a new capture is loaded.
+            _packetContextFrames.Clear();
+            _reparseVersions.Clear();
             _session.NoteOpened(filePath);
             RaiseHistoryState();
             OnPropertyChanged(nameof(RecentFiles));
@@ -258,6 +311,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
+            _lastLoadFailed = true;
+            _lastLoadError = ex.Message;
             ShowStatus("Status.Error", ex.Message);
         }
         finally
@@ -278,8 +333,18 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
     public ObservableCollection<string> RecentFiles => new(_session.RecentFiles);
 
+    public ObservableCollection<string> RecentFilters => new(_session.RecentFilters);
+
+    public ObservableCollection<string> RecentFinds => new(_session.RecentFinds);
+
+    public bool HasRecentFilters => _session.RecentFilters.Count > 0;
+
+    public bool HasRecentFinds => _session.RecentFinds.Count > 0;
+
     private string? _loadedFilePath;
     private string _displayFilter = string.Empty;
+    private bool _lastLoadFailed;
+    private string _lastLoadError = string.Empty;
 
     [ObservableProperty]
     private string _findText = string.Empty;
@@ -299,6 +364,15 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     public void FindPrevious() => Find(forward: false);
 
+    [RelayCommand]
+    private void ApplyRecentFind(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return;
+        FindText = value;
+        FindNextCommand.Execute(null);
+    }
+
     private void Find(bool forward)
     {
         string needle = FindText?.Trim() ?? string.Empty;
@@ -309,13 +383,16 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
-        if (FindInPacketList(needle, forward))
-            return;
-
         // A tree hit only exists for the selected packet, so the list search must
         // have already moved the selection there.
-        if (FindInTree(needle))
+        bool hit = FindInPacketList(needle, forward) || FindInTree(needle);
+        if (hit)
+        {
+            _session.NoteFind(needle);
+            OnPropertyChanged(nameof(RecentFinds));
+            OnPropertyChanged(nameof(HasRecentFinds));
             return;
+        }
 
         ShowStatus("Status.FindNotFound", needle);
     }
@@ -404,19 +481,32 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         string candidate = FilterText?.Trim() ?? string.Empty;
         string previous = _displayFilter;
         _displayFilter = candidate;
+        await LoadFileAsync(_loadedFilePath);
 
-        try
-        {
-            await LoadFileAsync(_loadedFilePath);
-            if (_displayFilter.Length > 0)
-                ShowStatus("Status.FilterApplied", _displayFilter, TotalPackets);
-        }
-        catch (Exception ex)
+        if (_lastLoadFailed)
         {
             _displayFilter = previous;
-            ShowStatus("Status.FilterInvalid", candidate, ex.Message);
+            ShowStatus("Status.FilterInvalid", candidate, _lastLoadError);
             await LoadFileAsync(_loadedFilePath);
+            return;
         }
+
+        if (_displayFilter.Length > 0)
+        {
+            _session.NoteFilter(_displayFilter);
+            OnPropertyChanged(nameof(RecentFilters));
+            OnPropertyChanged(nameof(HasRecentFilters));
+            ShowStatus("Status.FilterApplied", _displayFilter, TotalPackets);
+        }
+    }
+
+    [RelayCommand]
+    private void ApplyRecentFilter(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return;
+        FilterText = value;
+        ApplyFilterCommand.Execute(null);
     }
 
     [RelayCommand]
@@ -426,7 +516,209 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         await ApplyFilterCommand.ExecuteAsync(null);
     }
 
-    /// <summary>TCP streams discovered in the loaded capture, for the follow-stream list.</summary>
+    // ─── Display-filter validation + field-name autocomplete ───
+    // The box tints green/red via class bindings (Classes.filter-valid / .filter-invalid);
+    // no IValueConverter is involved and the ViewModel holds no brush/colour type.
+    [ObservableProperty]
+    private FilterValidationState _filterValidation = FilterValidationState.None;
+
+    public bool IsFilterValid => FilterValidation == FilterValidationState.Valid;
+
+    public bool IsFilterInvalid => FilterValidation == FilterValidationState.Invalid;
+
+    [ObservableProperty]
+    private string _filterValidationMessage = string.Empty;
+
+    // 校验消息为空时必须返回 null 而不是空串 —— Avalonia 对空串仍会弹出空气泡提示,
+    // 这正是"过滤器为空时悬停出现空提示"的来源。
+    /// <summary>Filter-box tooltip: null (not empty) when there is no message to show.</summary>
+    public string? FilterToolTip =>
+        string.IsNullOrEmpty(FilterValidationMessage) ? null : FilterValidationMessage;
+
+    partial void OnFilterValidationMessageChanged(string value) =>
+        OnPropertyChanged(nameof(FilterToolTip));
+
+    /// <summary>Field names matching the token currently being typed in the filter box.</summary>
+    public ObservableCollection<string> FilterSuggestions { get; } = [];
+
+    [ObservableProperty]
+    private bool _isFilterSuggestionOpen;
+
+    [ObservableProperty]
+    private bool _isFilterHistoryOpen;
+
+    [ObservableProperty]
+    private bool _isFindHistoryOpen;
+
+    [ObservableProperty]
+    private int _selectedFilterSuggestionIndex = -1;
+
+    private const int MaxFilterSuggestions = 100;
+
+    // Cancelled and replaced on every keystroke so only the newest verdict wins.
+    private CancellationTokenSource? _filterValidationCts;
+
+    // Mirrors the validation debounce for the suggestion fetch.
+    private CancellationTokenSource? _filterSuggestionCts;
+
+    // [ObservableProperty] exposes the field as FilterValidation, so the two derived
+    // bools the class bindings read must be re-notified whenever the state changes.
+    partial void OnFilterValidationChanged(FilterValidationState value)
+    {
+        OnPropertyChanged(nameof(IsFilterValid));
+        OnPropertyChanged(nameof(IsFilterInvalid));
+    }
+
+    partial void OnFilterTextChanged(string value)
+    {
+        _filterValidationCts?.Cancel();
+        _filterValidationCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _filterValidationCts = cts;
+        _ = ValidateFilterDebouncedAsync(cts.Token);
+    }
+
+    private async Task ValidateFilterDebouncedAsync(CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(400, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (ct.IsCancellationRequested)
+            return;
+
+        string text = FilterText ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            // Empty box = no tint at all (not green).
+            FilterValidation = FilterValidationState.None;
+            FilterValidationMessage = string.Empty;
+            return;
+        }
+
+        try
+        {
+            var verdict = await _tshark.ValidateDisplayFilterAsync(text, ct);
+            if (ct.IsCancellationRequested)
+                return;
+
+            if (verdict.IsValid)
+            {
+                FilterValidation = FilterValidationState.Valid;
+                FilterValidationMessage = LocalizationService.Resolve("Filter.Valid");
+            }
+            else
+            {
+                FilterValidation = FilterValidationState.Invalid;
+                FilterValidationMessage = string.IsNullOrEmpty(verdict.Error)
+                    ? LocalizationService.Resolve("Filter.Invalid")
+                    : LocalizationService.Resolve("Filter.InvalidDetail", verdict.Error);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer keystroke; that call owns the final state.
+        }
+    }
+
+    /// <summary>
+    /// Refreshes <see cref="FilterSuggestions"/> for the field-name token the user is
+    /// typing (starts-with match, falling back to contains). An empty token closes the popup.
+    /// </summary>
+    public async Task UpdateFilterSuggestionsAsync(string token, CancellationToken ct)
+    {
+        _filterSuggestionCts?.Cancel();
+        _filterSuggestionCts?.Dispose();
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        _filterSuggestionCts = cts;
+        var token2 = cts.Token;
+
+        FilterSuggestions.Clear();
+        SelectedFilterSuggestionIndex = -1;
+
+        if (string.IsNullOrEmpty(token))
+        {
+            IsFilterSuggestionOpen = false;
+            return;
+        }
+
+        IReadOnlyList<string> all;
+        try
+        {
+            all = await _tshark.GetFieldNamesAsync(token2);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (token2.IsCancellationRequested)
+            return;
+
+        var matches = new List<string>(MaxFilterSuggestions);
+        foreach (var name in all)
+        {
+            if (name.StartsWith(token, StringComparison.OrdinalIgnoreCase))
+            {
+                matches.Add(name);
+                if (matches.Count >= MaxFilterSuggestions)
+                    break;
+            }
+        }
+
+        // Only fall back to "contains" when nothing starts with the token.
+        if (matches.Count == 0)
+        {
+            foreach (var name in all)
+            {
+                if (name.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    matches.Add(name);
+                    if (matches.Count >= MaxFilterSuggestions)
+                        break;
+                }
+            }
+        }
+
+        if (token2.IsCancellationRequested)
+            return;
+
+        foreach (var name in matches)
+            FilterSuggestions.Add(name);
+
+        SelectedFilterSuggestionIndex = FilterSuggestions.Count > 0 ? 0 : -1;
+        IsFilterSuggestionOpen = FilterSuggestions.Count > 0;
+    }
+
+    /// <summary>
+    /// Replaces the token spanning [<paramref name="tokenStart"/>, +<paramref name="tokenLength"/>)
+    /// in <see cref="FilterText"/> with the accepted field name and closes the popup.
+    /// </summary>
+    public void ApplyFilterSuggestion(string name, int tokenStart, int tokenLength)
+    {
+        if (string.IsNullOrEmpty(name))
+            return;
+
+        string text = FilterText ?? string.Empty;
+        if (tokenStart < 0)
+            tokenStart = 0;
+        if (tokenStart > text.Length)
+            tokenStart = text.Length;
+        if (tokenLength < 0 || tokenStart + tokenLength > text.Length)
+            tokenLength = text.Length - tokenStart;
+
+        FilterText = text[..tokenStart] + name + text[(tokenStart + tokenLength)..];
+
+        IsFilterSuggestionOpen = false;
+        SelectedFilterSuggestionIndex = -1;
+    }
+
+    /// <summary>Streams (TCP + UDP) discovered in the loaded capture, for the follow-stream list.</summary>
     public ObservableCollection<StreamIndex> TcpStreams { get; } = [];
 
     [ObservableProperty]
@@ -440,9 +732,10 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _ = ApplySelectedStreamFilterAsync(value);
 
     /// <summary>
-    /// Populates the TCP stream list. The index comes from the same scan that already
-    /// runs for reassembly, so this does not launch another tshark pass unless the
-    /// capture has no TCP at all.
+    /// Populates the stream list from every provider that indexes conversations
+    /// (TCP for its reassembly index, UDP for its conversation index). The scans
+    /// come from work the providers already do, so this does not launch another
+    /// tshark pass unless the capture has no such traffic at all.
     /// </summary>
     [RelayCommand]
     private async Task LoadTcpStreamsAsync()
@@ -453,26 +746,29 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
         foreach (var provider in Document.ContextProviders)
         {
-            if (provider is not TcpStreamContextProvider tcp)
+            IReadOnlyList<StreamIndex> streams;
+            if (provider is TcpStreamContextProvider tcp)
+                streams = await tcp.GetStreamsAsync();
+            else if (provider is UdpStreamContextProvider udp)
+                streams = await udp.GetStreamsAsync();
+            else
                 continue;
-            foreach (var stream in await tcp.GetStreamsAsync())
+
+            foreach (var stream in streams)
                 TcpStreams.Add(stream);
-            break;
         }
     }
 
     /// <summary>
     /// Filters the packet list down to the selected stream by reusing the display
-    /// filter, so the grid shows exactly that conversation.
+    /// filter, so the grid shows exactly that conversation. The stream field follows
+    /// the stream's own protocol (tcp.stream / udp.stream).
     /// </summary>
-    private TcpStreamContextProvider? FindTcpStreamProvider() =>
-        Document?.ContextProviders?.OfType<TcpStreamContextProvider>().FirstOrDefault();
-
     private async Task ApplySelectedStreamFilterAsync(StreamIndex? value)
     {
         if (value is null)
             return;
-        FilterText = "tcp.stream eq " + value.StreamId;
+        FilterText = $"{value.Protocol}.stream eq {value.StreamId}";
         await ApplyFilterCommand.ExecuteAsync(null);
     }
 
@@ -493,20 +789,34 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     /// </summary>
     private async Task RefreshStreamIndexAfterSaveAsync()
     {
-        var provider = FindTcpStreamProvider();
-        if (provider is null)
+        bool found = false;
+        foreach (var provider in Document?.ContextProviders ?? [])
+        {
+            switch (provider)
+            {
+                case TcpStreamContextProvider tcp:
+                    tcp.Invalidate();
+                    found = true;
+                    break;
+                case UdpStreamContextProvider udp:
+                    udp.Invalidate();
+                    found = true;
+                    break;
+            }
+        }
+        if (!found)
             return;
 
         try
         {
-            provider.Invalidate();
             await LoadTcpStreamsCommand.ExecuteAsync(null);
 
             // The combo was bound to instances from the previous index; re-point it at the
             // rebuilt one so the selection stays valid.
-            var previous = SelectedTcpStream?.StreamId;
+            var previous = SelectedTcpStream;
             if (previous is not null)
-                SelectedTcpStream = TcpStreams.FirstOrDefault(s => s.StreamId == previous);
+                SelectedTcpStream = TcpStreams.FirstOrDefault(
+                    s => s.Protocol == previous.Protocol && s.StreamId == previous.StreamId);
         }
         catch (Exception ex)
         {
@@ -524,7 +834,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private string _reassembledStatus = string.Empty;
 
     /// <summary>
-    /// Fetches the reassembled payload of the selected TCP stream and shows it as a
+    /// Fetches the reassembled payload of the selected stream (TCP or UDP) and shows
+    /// it as a
     /// read-only hex dump. Read-only by necessity: reassembled bytes span more than the
     /// selected frame, so they have no offset in the packet to edit against.
     /// </summary>
@@ -541,7 +852,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         try
         {
             var bytes = await _tshark.GetReassembledStreamAsync(
-                _loadedFilePath, "tcp", SelectedTcpStream.StreamId, _displayFilter);
+                _loadedFilePath, SelectedTcpStream.Protocol, SelectedTcpStream.StreamId, _displayFilter);
 
             if (bytes is null || bytes.Length == 0)
             {
@@ -616,9 +927,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Reloads the capture after an undo/redo so the protocol tree matches the restored
-    /// bytes. Restoring bytes alone would leave the tree describing the previous frame,
-    /// which for a length-changing edit means every later offset is stale.
+    /// Refreshes the view after an undo/redo. It must not reload the capture from disk:
+    /// doing so would discard every other in-memory edit and wipe the history stacks.
+    /// Only the affected packet's tree is rebuilt so it matches the restored bytes.
     /// </summary>
     private async Task AfterHistoryMoveAsync(Packet packet, string statusKey, EditHistoryService.Entry entry)
     {
@@ -626,16 +937,15 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         if (Document != null)
             Document.HasUnsavedChanges = ModifiedPackets > 0;
 
-        if (_loadedFilePath is not null)
-        {
-            string keep = _displayFilter;
-            _displayFilter = string.Empty;
-            await LoadFileAsync(_loadedFilePath);
-            _displayFilter = keep;
-        }
+        int seq = ++_treeBuildSeq;
+        ProtocolTree.LoadPacket(null);
+        await BuildTreeAsync(packet, seq);
+
+        HexEditor.RefreshBytes();
+        HexEditor.ClearEditedMarks();
+        HexEditorViewModel.ReExtractAddressInfo(packet);
 
         RaiseHistoryState();
-        HexEditor.RefreshBytes();
         HexEditor.RefreshAddressInfo();
         ShowStatus(statusKey, entry.PacketNumber);
     }
@@ -803,6 +1113,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         HexEditor.RefreshBytes();
         HexEditor.ClearEditedMarks();
 
+        // Reset discards every edit at once; the per-packet undo stack now points at
+        // bytes that no longer exist, so drop it rather than let a later Ctrl+Z
+        // resurrect a discarded edit.
+        _history.Clear();
+        RaiseHistoryState();
+
         // The cached tree still holds the edited DisplayValue/RawBytes. That both
         // misreports the edit and fails the fence's byte-agreement check, which locks the
         // field out of editing for the rest of the session — so re-parse the packet the
@@ -823,41 +1139,366 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void TogglePacketList()
-    {
-        ShowPacketList = !ShowPacketList;
-        SaveLayout();
-    }
+    private void TogglePacketList() => TogglePane(DockLayoutFactory.PacketListId);
 
     [RelayCommand]
-    private void ToggleProtocolTree()
-    {
-        ShowProtocolTree = !ShowProtocolTree;
-        SaveLayout();
-    }
+    private void ToggleProtocolTree() => TogglePane(DockLayoutFactory.ProtocolTreeId);
 
     [RelayCommand]
-    private void ToggleHexEditor()
+    private void ToggleHexEditor() => TogglePane(DockLayoutFactory.HexEditorId);
+
+    [RelayCommand]
+    private void ToggleStatistics() => TogglePane(DockLayoutFactory.StatisticsId);
+
+    private void TogglePane(string paneId)
     {
-        ShowHexEditor = !ShowHexEditor;
+        if (IsPaneHidden(paneId))
+            RestorePane(paneId);
+        else
+            HidePane(paneId);
+    }
+
+    private void HidePane(string paneId)
+    {
+        if (Layout is null || IsPaneHidden(paneId))
+            return;
+        if (FindPane(paneId) is { } pane)
+            Factory.HideDockable(pane);
+    }
+
+    private void RestorePane(string paneId)
+    {
+        if (Layout is not { } root || !IsPaneHidden(paneId))
+            return;
+        if (FindPane(paneId) is not { } pane)
+            return;
+        if (IsPanePinned(root, pane))
+        {
+            UnpinPane(root, pane);
+            SyncPaneVisibility();
+            Dispatcher.UIThread.Post(SaveLayout);
+        }
+        else
+        {
+            Factory.RestoreDockable(pane);
+        }
+    }
+
+    private PaneDock? FindPane(string paneId)
+    {
+        if (Layout is not { } root)
+            return null;
+        if (root.HiddenDockables?.FirstOrDefault(d => d.Id == paneId) is PaneDock hiddenPane)
+            return hiddenPane;
+        if (EnumeratePinnedDockables(root).OfType<PaneDock>().FirstOrDefault(d => d.Id == paneId) is { } pinnedPane)
+            return pinnedPane;
+        return Factory.Find(root, d => d.Id == paneId).OfType<PaneDock>().FirstOrDefault();
+    }
+
+    private bool IsPaneHidden(string paneId) =>
+        Layout is { } root &&
+        (root.HiddenDockables?.Any(d => d.Id == paneId) == true ||
+         EnumeratePinnedDockables(root).Any(d => d.Id == paneId));
+
+    // 图钉(自动隐藏)把面板挪进 RootDock.*PinnedDockables,关闭(X)才进 HiddenDockables;菜单原先只认后者。
+    // 故 pinned 一并按隐藏处理,恢复时重新挂回其固定宿主 ToolDock(而非孤儿悬浮)。
+    private static bool IsPanePinned(IRootDock root, PaneDock pane) =>
+        EnumeratePinnedDockables(root).Any(d => ReferenceEquals(d, pane));
+
+    private void UnpinPane(IRootDock root, PaneDock pane)
+    {
+        foreach (var pinned in EnumeratePinnedCollections(root))
+            pinned.Remove(pane);
+
+        pane.OriginalOwner = null;
+        pane.OriginalOwnerId = null;
+        pane.Host ??= this;
+
+        if (HomeDockId(pane.Id) is { } homeId &&
+            Factory.Find(root, d => d.Id == homeId).OfType<IDock>().FirstOrDefault() is { } home)
+        {
+            Factory.AddDockable(home, pane);
+            home.ActiveDockable = pane;
+        }
+    }
+
+    private static IEnumerable<IDockable> EnumeratePinnedDockables(IRootDock root) =>
+        EnumeratePinnedCollections(root).SelectMany(c => c);
+
+    private static IEnumerable<IList<IDockable>> EnumeratePinnedCollections(IRootDock root)
+    {
+        if (root.LeftPinnedDockables is { } left) yield return left;
+        if (root.RightPinnedDockables is { } right) yield return right;
+        if (root.TopPinnedDockables is { } top) yield return top;
+        if (root.BottomPinnedDockables is { } bottom) yield return bottom;
+    }
+
+    private static string? HomeDockId(string paneId) => paneId switch
+    {
+        DockLayoutFactory.PacketListId => DockLayoutFactory.TopDockId,
+        DockLayoutFactory.ProtocolTreeId => DockLayoutFactory.TreeDockId,
+        DockLayoutFactory.HexEditorId => DockLayoutFactory.HexDockId,
+        DockLayoutFactory.StatisticsId => DockLayoutFactory.StatsDockId,
+        _ => null,
+    };
+
+    private void SyncPaneVisibility()
+    {
+        ShowPacketList = !IsPaneHidden(DockLayoutFactory.PacketListId);
+        ShowProtocolTree = !IsPaneHidden(DockLayoutFactory.ProtocolTreeId);
+        ShowHexEditor = !IsPaneHidden(DockLayoutFactory.HexEditorId);
+        ShowStatistics = !IsPaneHidden(DockLayoutFactory.StatisticsId);
+    }
+
+    private void OnDockableHidden(object? sender, DockableHiddenEventArgs e)
+    {
+        if (e.Dockable is PaneDock pane)
+            pane.OriginalOwnerId = pane.OriginalOwner?.Id;
+        SyncPaneVisibility();
+        // Deferred: a restore fires mid-restore (OriginalOwner branch not yet run),
+        // so serialize only once the whole dock operation has completed.
+        Dispatcher.UIThread.Post(SaveLayout);
+    }
+
+    private void OnDockableRestored(object? sender, DockableRestoredEventArgs e)
+    {
+        if (e.Dockable is PaneDock pane)
+        {
+            pane.OriginalOwnerId = null;
+            pane.Host ??= this;
+        }
+        SyncPaneVisibility();
+        Dispatcher.UIThread.Post(SaveLayout);
+    }
+
+    private void OnDockablePinned(object? sender, DockablePinnedEventArgs e)
+    {
+        SyncPaneVisibility();
+        Dispatcher.UIThread.Post(SaveLayout);
+    }
+
+    private void OnDockableUnpinned(object? sender, DockableUnpinnedEventArgs e)
+    {
+        if (e.Dockable is PaneDock pane)
+        {
+            pane.OriginalOwner = null;
+            pane.OriginalOwnerId = null;
+            pane.Host ??= this;
+        }
+        SyncPaneVisibility();
+        Dispatcher.UIThread.Post(SaveLayout);
+    }
+
+    // Dock 关闭浮动窗口时(CloseWindow)会把面板 HideDockable 进「浮动根」的 HiddenDockables,
+    // 随后 RemoveWindow 丢弃整棵浮动根,面板即成找不到的孤儿(除非重置布局)。WindowClosing 在
+    // 丢弃前触发且面板仍在浮动根可见树中,此时移回 HomeDock 即可保住面板。但浮出面板会清空其
+    // HomeDock,Dock 的 RemoveDockable(collapse:true) 随即把该空 ToolDock 从布局移除,故需先按
+    // 默认布局重建这个空 HomeDock(空 dock 在 ProportionalStackPanel 中按 IsEmpty 折叠为零尺寸,不会留白)。
+    private void OnFloatingWindowClosing(object? sender, WindowClosingEventArgs e)
+    {
+        if (Layout is not { } root || e.Window?.Layout is not IDock windowRoot)
+            return;
+        if (ReferenceEquals(windowRoot, root))
+            return;
+        var panes = EnumeratePanes(windowRoot).ToList();
+        if (panes.Count == 0)
+            return;
+        foreach (var pane in panes)
+        {
+            if (pane.Owner is not IDock source)
+                continue;
+            if (EnsureHomeDock(root, pane.Id) is { } home)
+            {
+                Factory.MoveDockable(source, home, pane, null);
+                home.ActiveDockable = pane;
+            }
+        }
+        SyncPaneVisibility();
+        Dispatcher.UIThread.Post(SaveLayout);
+    }
+
+    private IDock? EnsureHomeDock(IRootDock root, string paneId)
+    {
+        if (HomeDockId(paneId) is not { } homeId)
+            return null;
+        if (Factory.Find(root, d => d.Id == homeId).OfType<IDock>().FirstOrDefault() is { } existing)
+            return existing;
+
+        var template = Factory.CreateLayout();
+        if (Factory.Find(template, d => d.Id == homeId).OfType<IDock>().FirstOrDefault() is not { } freshHome)
+            return null;
+
+        // The template is never InitLayout'd, so freshHome.Owner is null; locate its parent by scan.
+        IDock? freshParent = null;
+        var freshIndex = -1;
+        foreach (var candidate in Factory.Find(template, _ => true).OfType<IDock>())
+        {
+            if (candidate.VisibleDockables is { } list && (freshIndex = list.IndexOf(freshHome)) >= 0)
+            {
+                freshParent = candidate;
+                break;
+            }
+        }
+
+        var liveParent = (freshParent is not null
+                ? Factory.Find(root, d => d.Id == freshParent.Id).OfType<IDock>().FirstOrDefault()
+                : null)
+            ?? Factory.Find(root, d => d.Id == DockLayoutFactory.MainLayoutId).OfType<IDock>().FirstOrDefault();
+        if (liveParent?.VisibleDockables is null)
+            return null;
+
+        var insertion = new List<IDockable> { freshHome };
+        var index = liveParent.VisibleDockables.Count;
+        if (freshParent?.VisibleDockables is { } siblings && freshIndex >= 0)
+        {
+            index = Math.Min(freshIndex, liveParent.VisibleDockables.Count);
+            if (freshIndex + 1 < siblings.Count && siblings[freshIndex + 1] is IProportionalDockSplitter splitterAfter)
+                insertion.Add(splitterAfter);
+            else if (freshIndex - 1 >= 0 && siblings[freshIndex - 1] is IProportionalDockSplitter splitterBefore)
+                insertion.Insert(0, splitterBefore);
+        }
+
+        freshHome.VisibleDockables?.Clear();
+        foreach (var item in insertion)
+        {
+            liveParent.VisibleDockables.Insert(index++, item);
+            Factory.InitDockable(item, liveParent);
+        }
+        liveParent.ActiveDockable ??= freshHome;
+        return freshHome;
+    }
+
+    private void ApplyLegacyVisibility(LayoutState saved)
+    {
+        if (!saved.ShowPacketList)
+            HidePane(DockLayoutFactory.PacketListId);
+        if (!saved.ShowProtocolTree)
+            HidePane(DockLayoutFactory.ProtocolTreeId);
+        if (!saved.ShowHexEditor)
+            HidePane(DockLayoutFactory.HexEditorId);
+        // Pre-migration the statistics checkbox never showed the panel, so no user
+        // of the old layout ever had it visible — start hidden on a fresh layout.
+        HidePane(DockLayoutFactory.StatisticsId);
+    }
+
+    private void RewireHiddenPaneOwners(IRootDock root)
+    {
+        foreach (var pane in root.HiddenDockables?.OfType<PaneDock>().ToList() ?? [])
+        {
+            if (pane.OriginalOwnerId is { } ownerId &&
+                Factory.Find(root, d => d.Id == ownerId).OfType<IDock>().FirstOrDefault() is { } owner)
+            {
+                pane.OriginalOwner = owner;
+            }
+        }
+    }
+
+    private void AttachPaneHosts(IDockable dockable)
+    {
+        if (dockable is PaneDock pane)
+            pane.Host = this;
+        if (dockable is IDock dock)
+        {
+            foreach (var child in dock.VisibleDockables ?? [])
+                AttachPaneHosts(child);
+        }
+        if (dockable is IRootDock root)
+        {
+            // Panes hidden in a restored docklayout.json live only here. Without
+            // this they keep Host == null, and the pane DataTemplate
+            // (DataContext="{Binding Host}") renders them blank when re-shown.
+            foreach (var child in root.HiddenDockables ?? [])
+                AttachPaneHosts(child);
+            foreach (var child in EnumeratePinnedDockables(root))
+                AttachPaneHosts(child);
+        }
+    }
+
+    private void RetitlePanes()
+    {
+        if (Layout is not { } root)
+            return;
+        foreach (var pane in EnumeratePanes(root)
+                     .Concat(root.HiddenDockables?.OfType<PaneDock>() ?? [])
+                     .Concat(EnumeratePinnedDockables(root).OfType<PaneDock>()))
+        {
+            pane.Title = pane.Id switch
+            {
+                DockLayoutFactory.PacketListId => LocalizationService.Resolve("Panel.PacketList"),
+                DockLayoutFactory.ProtocolTreeId => LocalizationService.Resolve("Panel.ProtocolTree"),
+                DockLayoutFactory.HexEditorId => LocalizationService.Resolve("Panel.HexEditor"),
+                DockLayoutFactory.StatisticsId => LocalizationService.Resolve("Panel.Statistics"),
+                _ => pane.Title,
+            };
+        }
+    }
+
+    private static IEnumerable<PaneDock> EnumeratePanes(IDock dock)
+    {
+        foreach (var dockable in dock.VisibleDockables ?? [])
+        {
+            if (dockable is PaneDock pane)
+            {
+                yield return pane;
+            }
+            else if (dockable is IDock child)
+            {
+                foreach (var childPane in EnumeratePanes(child))
+                    yield return childPane;
+            }
+        }
+    }
+
+    public void RequestFindFocus() => FindFocusRequested?.Invoke(this, EventArgs.Empty);
+
+    public void ResetDockLayout()
+    {
+        var layout = Factory.CreateLayout();
+        Factory.InitLayout(layout);
+        Layout = layout;
+        AttachPaneHosts(layout);
+        HidePane(DockLayoutFactory.StatisticsId);
+        SyncPaneVisibility();
+        RetitlePanes();
         SaveLayout();
     }
 
     // Layout persistence
-    public void SaveLayout(double topRatio = 0.35, double bottomRatio = 0.5,
-        double winX = -1, double winY = -1, double winW = 1200, double winH = 800, int winState = 0)
+    public void SaveLayout()
     {
-        _layoutService.Save(new LayoutState
+        PersistLayoutState();
+    }
+
+    public void SaveLayout(double winX, double winY, double winW, double winH, int winState)
+    {
+        var state = _layoutService.Load();
+        state.WindowX = winX;
+        state.WindowY = winY;
+        state.WindowWidth = winW;
+        state.WindowHeight = winH;
+        state.WindowState = winState;
+        PersistLayoutState(state);
+    }
+
+    private void PersistLayoutState(LayoutState? state = null)
+    {
+        state ??= _layoutService.Load();
+        state.ShowPacketList = ShowPacketList;
+        state.ShowProtocolTree = ShowProtocolTree;
+        state.ShowHexEditor = ShowHexEditor;
+        _layoutService.Save(state);
+
+        if (Layout is { } layout)
         {
-            TopRowRatio = topRatio,
-            BottomLeftRatio = bottomRatio,
-            WindowX = winX, WindowY = winY,
-            WindowWidth = winW, WindowHeight = winH,
-            WindowState = winState,
-            ShowPacketList = ShowPacketList,
-            ShowProtocolTree = ShowProtocolTree,
-            ShowHexEditor = ShowHexEditor,
-        });
+            try
+            {
+                _layoutService.SaveDockLayout(_dockSerializer.Serialize(layout));
+            }
+            catch (Exception ex)
+            {
+                TraceLog.Write($"VM.SaveDockLayout failed: {ex.Message}");
+            }
+        }
     }
 
     // Event Handlers
@@ -865,6 +1506,17 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private void OnPacketSelected(Packet? packet)
     {
         HexEditor.LoadPacket(packet);
+
+        // Keep the pending verify-before-commit context in sync with the selected
+        // packet. When the early-return below fires for a packet whose layers were
+        // already prefetched, PendingContextFrames would otherwise still hold the
+        // previous packet's context and the edit transaction would build its temp
+        // PCAP with mismatched context frames.
+        ProtocolTree.PendingContextFrames =
+            packet != null && _packetContextFrames.TryGetValue(packet, out var cachedContext)
+                ? cachedContext
+                : null;
+        ProtocolTree.PendingLinkLayerType = Document?.LinkLayerType ?? 1;
 
         if (packet == null || packet.Layers.Count > 0)
         {
@@ -900,7 +1552,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             ProtocolTree.PendingContextFrames = context;
             ProtocolTree.PendingLinkLayerType = Document?.LinkLayerType ?? 1;
 
-            bool ok = await _tshark.BuildPacketTreeAsync(packet, Document?.LinkLayerType ?? 1, context);
+            bool ok = await _tshark.BuildPacketTreeAsync(packet, Document?.LinkLayerType ?? 1, context, foreground: true);
             if (ok && seq == _treeBuildSeq)
             {
                 ProtocolTree.LoadPacket(packet);
@@ -1011,14 +1663,14 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private void OnFieldSelected((Packet Packet, ProtocolField Field) args)
     {
         TraceLog.Write($"MW.OnFieldSelected({args.Field.Name})");
-        HexEditor.HighlightField(args.Field);
+        HexEditor.HighlightField(args.Field, moveSelection: true);
         ShowStatus("Status.FieldSelected", args.Field.Name, args.Field.Offset, args.Field.Length);
     }
 
     private void OnLayerSelected((Packet Packet, ProtocolLayer Layer) args)
     {
         TraceLog.Write($"MW.OnLayerSelected({args.Layer.ProtocolName})");
-        HexEditor.HighlightLayer(args.Layer);
+        HexEditor.HighlightLayer(args.Layer, moveSelection: true);
         ShowStatus("Status.LayerSelected", args.Layer.DisplayText);
     }
 
@@ -1037,7 +1689,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         HexEditor.RefreshBytes();
         HexEditor.RefreshAddressInfo();
         HexEditor.MarkFieldEdited(args.Field);
-        HexEditor.HighlightField(args.Field);
+        HexEditor.HighlightField(args.Field, moveSelection: true);
         RefreshLayerDisplayText(args.Packet);
         ProtocolEditorService.RefreshEditedFieldBytes(args.Packet, args.Field.Offset, args.Field.Length);
 
@@ -1132,9 +1784,15 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             {
                 "ip" or "ipv4" => LocalizationService.Resolve("Layer.Ipv4", srcAddr, dstAddr),
                 "ipv6" => LocalizationService.Resolve("Layer.Ipv6", srcAddr, dstAddr),
-                "udp" or "tcp" when srcPort > 0 || dstPort > 0 =>
+                _ when (srcPort > 0 || dstPort > 0) && layer.HasPortFields =>
                     LocalizationService.Resolve("Layer.TcpUdpPorts",
-                        LocalizationService.Resolve(layer.ProtocolName == "tcp" ? "Layer.Tcp" : "Layer.Udp"),
+                        layer.ProtocolName.ToLowerInvariant() switch
+                        {
+                            "tcp" => LocalizationService.Resolve("Layer.Tcp"),
+                            "udp" => LocalizationService.Resolve("Layer.Udp"),
+                            "sctp" => LocalizationService.Resolve("Layer.Sctp"),
+                            _ => layer.ProtocolName.ToUpperInvariant(),
+                        },
                         srcPort, dstPort),
                 _ => layer.DisplayText,
             };
@@ -1156,6 +1814,17 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private string? _selectedStatisticsTap;
 
+    /// <summary>
+    /// Operator-typed <c>-z</c> invocation that overrides the curated list while
+    /// non-empty. Picking a curated tap clears it, so the combo always shows what
+    /// will actually run.
+    /// </summary>
+    [ObservableProperty]
+    private string _customStatisticsTap = string.Empty;
+
+    partial void OnSelectedStatisticsTapChanged(string? value) =>
+        CustomStatisticsTap = string.Empty;
+
     [ObservableProperty]
     private string _statisticsStatus = string.Empty;
 
@@ -1169,7 +1838,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
     /// <summary>
     /// Runs the selected tap against the loaded capture. Reuses the display filter so
-    /// the statistics describe exactly the rows the user is looking at.
+    /// the statistics describe exactly the rows the user is looking at. A non-empty
+    /// custom tap wins over the curated list, so any <c>-z</c> invocation tshark
+    /// accepts runs here — the panel is not limited to the built-in taps.
     /// </summary>
     [RelayCommand]
     public async Task LoadStatisticsAsync()
@@ -1177,7 +1848,10 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         StatisticsLines.Clear();
         StatisticsStatus = string.Empty;
 
-        if (_loadedFilePath is null || SelectedStatisticsTap is null)
+        string? tap = string.IsNullOrWhiteSpace(CustomStatisticsTap)
+            ? SelectedStatisticsTap
+            : CustomStatisticsTap.Trim();
+        if (_loadedFilePath is null || tap is null)
         {
             StatisticsStatus = LocalizationService.Resolve("Stats.NoFile");
             return;
@@ -1185,14 +1859,13 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
         try
         {
-            var lines = await _tshark.RunStatisticsTapAsync(
-                _loadedFilePath, SelectedStatisticsTap, _displayFilter);
+            var lines = await _tshark.RunStatisticsTapAsync(_loadedFilePath, tap, _displayFilter);
 
             foreach (var line in lines)
                 StatisticsLines.Add(line);
 
             StatisticsStatus = lines.Count == 0
-                ? LocalizationService.Resolve("Stats.Empty", SelectedStatisticsTap)
+                ? LocalizationService.Resolve("Stats.Empty", tap)
                 : LocalizationService.Resolve("Stats.Rows", lines.Count);
         }
         catch (Exception ex)
@@ -1210,4 +1883,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                 yield return c;
         }
     }
+}
+
+/// <summary>Semantic colour state of the display-filter box (bound via CSS classes).</summary>
+public enum FilterValidationState
+{
+    None,
+    Valid,
+    Invalid,
 }

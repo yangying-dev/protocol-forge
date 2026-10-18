@@ -62,7 +62,7 @@
 ProtocolForge v{assembly-version}
 3GPP Protocol Simulation & Debugging
 
-Built with Avalonia UI + .NET 8
+Built with Avalonia UI + .NET 10
 Protocol parsing: Tshark (Wireshark CLI)
 Optional L2 injection: Npcap® by Nmap Software LLC (not bundled)
 Npcap is NOT bundled and NOT installed by this app.

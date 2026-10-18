@@ -10,6 +10,7 @@ namespace ProtocolForge.Services;
 public sealed class SessionStateService
 {
     public const int MaxRecentFiles = 10;
+    public const int MaxRecentEntries = 10;
 
     private readonly string _path;
     private readonly object _gate = new();
@@ -24,6 +25,10 @@ public sealed class SessionStateService
     }
 
     public IReadOnlyList<string> RecentFiles => _state.RecentFiles;
+
+    public IReadOnlyList<string> RecentFilters => _state.RecentFilters;
+
+    public IReadOnlyList<string> RecentFinds => _state.RecentFinds;
 
     public string? LastOpenedFile => _state.LastOpenedFile;
 
@@ -45,6 +50,48 @@ public sealed class SessionStateService
             kept.Insert(0, filePath);
             _state.RecentFiles = kept.Take(MaxRecentFiles).ToList();
             _state.LastOpenedFile = filePath;
+            Save();
+        }
+    }
+
+    /// <summary>
+    /// Records a successfully applied display filter as most-recently-used. Empty or
+    /// whitespace values are ignored (a cleared filter is not history). Failures are
+    /// swallowed for the same reason as <see cref="NoteOpened"/>.
+    /// </summary>
+    public void NoteFilter(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return;
+
+        lock (_gate)
+        {
+            var kept = _state.RecentFilters
+                .Where(v => !string.Equals(v, value, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            kept.Insert(0, value);
+            _state.RecentFilters = kept.Take(MaxRecentEntries).ToList();
+            Save();
+        }
+    }
+
+    /// <summary>
+    /// Records a successful find query as most-recently-used. Empty or whitespace
+    /// values are ignored. Failures are swallowed for the same reason as
+    /// <see cref="NoteOpened"/>.
+    /// </summary>
+    public void NoteFind(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return;
+
+        lock (_gate)
+        {
+            var kept = _state.RecentFinds
+                .Where(v => !string.Equals(v, value, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            kept.Insert(0, value);
+            _state.RecentFinds = kept.Take(MaxRecentEntries).ToList();
             Save();
         }
     }
@@ -107,6 +154,8 @@ public sealed class SessionStateService
     private sealed class SessionState
     {
         public List<string> RecentFiles { get; set; } = [];
+        public List<string> RecentFilters { get; set; } = [];
+        public List<string> RecentFinds { get; set; } = [];
         public string? LastOpenedFile { get; set; }
     }
 }
