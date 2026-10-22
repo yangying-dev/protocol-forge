@@ -12,6 +12,6 @@
   <ItemGroup>
     <!-- Framework-free Avalonia UI tests: Avalonia.Headless only, deliberately not
          Avalonia.Headless.XUnit/NUnit, so the harness keeps its hand-rolled assertions. -->
-    <PackageReference Include="Avalonia.Headless" Version="12.1.3" />
+    <PackageReference Include="Avalonia.Headless" Version="12.1.4" />
   </ItemGroup>
 </Project>
