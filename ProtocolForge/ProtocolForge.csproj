@@ -58,7 +58,7 @@
          tracks Avalonia 12; the .v11 lane exists for Avalonia 11 apps. -->
     <PackageReference Include="Dock.Avalonia" Version="12.1.0.7" />
     <PackageReference Include="Dock.Avalonia.Themes.Fluent" Version="12.1.0.7" />
-    <PackageReference Include="Dock.Model.Mvvm" Version="12.1.0.7" />
+    <PackageReference Include="Dock.Model.Mvvm" Version="12.1.0.12" />
     <PackageReference Include="Dock.Serializer.SystemTextJson" Version="12.1.0.7" />
     <!-- Cross-control theming (SukiUI) + matching chrome for the Dock panes
          (SukiUI.Dock). SukiUI.Dock pulls the Dock 12.0.0.2 lanes in transitively;
