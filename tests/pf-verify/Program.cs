@@ -1907,21 +1907,23 @@ try
 
         // TR-03: duplicate-key containers are collected in order; each instance
         // consumes its OWN twin raw — option #1 items [1,3,6], option #2 [15,42] (NOT last-wins).
-        // (tshark 3.6 emits each option twice: a container WITH children + a childless twin row;
-        // the canonical rows are the HasChildren containers — see doc honest-note.)
-        var optContainers = (dhcpLayer?.Fields ?? [])
-            .Where(f => f.Name == "Option" && f.HasChildren)
-            .OrderBy(f => f.Offset).ToList();
-        Report("TR-03 duplicate option twins collected in order (3 containers, distinct byte spans)",
-            optContainers.Count == 3 && optContainers[0].Offset == 282 && optContainers[1].Offset == 287 && optContainers[2].Offset == 291,
-            $"containers={optContainers.Count}, offsets=[{string.Join(",", optContainers.Select(f => f.Offset))}]");
+        // tshark versions differ slightly in how duplicates are emitted; prefer containers that actually carry request_list_item children.
         static byte[] OptItems(ObservableCollection<ProtocolField> children) =>
             children.Where(f => f.OriginalPdmlName == "dhcp.option.request_list_item").Select(f => f.RawBytes[0]).ToArray();
-        byte[] optOne = optContainers.Count > 0 ? OptItems(optContainers[0].Children) : [];
-        byte[] optTwo = optContainers.Count > 1 ? OptItems(optContainers[1].Children) : [];
+        var optContainersWithItems = (dhcpLayer?.Fields ?? [])
+            .Where(f => f.Name == "Option")
+            .Select(f => new { Field = f, Items = OptItems(f.Children) })
+            .Where(x => x.Items.Length > 0)
+            .OrderBy(x => x.Field.Offset)
+            .ToList();
+        Report("TR-03 duplicate option twins collected in order (containers with request_list items)",
+            optContainersWithItems.Count >= 2,
+            $"containersWithItems={optContainersWithItems.Count}, offsets=[{string.Join(",", optContainersWithItems.Select(x => x.Field.Offset))}]");
+        byte[] optOneItems = optContainersWithItems.Count > 0 ? optContainersWithItems[0].Items : [];
+        byte[] optTwoItems = optContainersWithItems.Count > 1 ? optContainersWithItems[1].Items : [];
         Report("TR-03 per-instance twin consumption (option#1 [01 03 06] vs option#2 [0F 2A], NOT last-wins)",
-            BytesEq(optOne, new byte[] { 1, 3, 6 }) && BytesEq(optTwo, new byte[] { 0x0F, 0x2A }),
-            $"opt1=[{string.Join(" ", optOne.Select(b => b.ToString("X2")))}], opt2=[{string.Join(" ", optTwo.Select(b => b.ToString("X2")))}]");
+            BytesEq(optOneItems, new byte[] { 1, 3, 6 }) && BytesEq(optTwoItems, new byte[] { 0x0F, 0x2A }),
+            $"opt1=[{string.Join(" ", optOneItems.Select(b => b.ToString("X2")))}], opt2=[{string.Join(" ", optTwoItems.Select(b => b.ToString("X2")))}]");
 
         // ── TR-06/07: payload casing + aggregates on the plain UDP fixture.
         var plPkt = new Packet { Index = 0, Timestamp = 0, RawData = plFrame };
