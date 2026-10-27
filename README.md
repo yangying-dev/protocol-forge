@@ -1,14 +1,40 @@
 # ProtocolForge
 
+**English | [简体中文](README.zh-CN.md)**
+
 **3GPP Protocol Simulation & Debugging Workbench**
 
 ProtocolForge is a cross-platform desktop application for inspecting, editing, and replaying 3GPP protocol packets (PFCP, NGAP, GTP-U, NAS, S1AP, Diameter, etc.) captured in PCAP files. It combines Wireshark's parsing engine (tshark) with a native packet editor and raw socket injection — all in a single .NET 10 + Avalonia UI application.
 
 > **Free and open source (Apache-2.0).** Everything currently shipped is free and unlimited — there is no feature gate and no send quota. On Windows, install Wireshark yourself and keep the Npcap option enabled during installation (it is selected by default); ProtocolForge does not bundle or silently install Npcap.
 
+[![Release](https://img.shields.io/github/v/release/yangying-dev/protocol-forge)](https://github.com/yangying-dev/protocol-forge/releases)
+[![CI](https://github.com/yangying-dev/protocol-forge/actions/workflows/ci.yml/badge.svg)](https://github.com/yangying-dev/protocol-forge/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 ![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4)
 ![Avalonia](https://img.shields.io/badge/Avalonia-12.1.3-8B5CF6)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%2F%20Linux%20%2F%20macOS-lightgrey)
+
+## Why not just Wireshark?
+
+Wireshark is the gold standard for packet inspection, but it has gaps for active testing. **ProtocolForge** fills them:
+
+- **Edit & replay** — Modify fields in a GUI and inject the modified frame back onto the wire (Wireshark can't replay edited packets natively).
+- **No need for full capture first** — Construct or edit packets and send without waiting for a live capture.
+- **Bilingual UI** — Switch between English and 简体中文 at runtime.
+- **All-in-one workflow** — Parse with tshark, edit with a fence-gated tree/hex editor (Verify-Before-Commit), and send with a multi-rung injection ladder in one app.
+
+---
+
+## Quick Start
+
+### Install in 3 steps
+
+1. **Download** the latest release for your platform from [Releases](https://github.com/yangying-dev/protocol-forge/releases). Check `SHA256SUMS` for integrity.
+2. **Install dependencies** — On Windows install [Wireshark](https://www.wireshark.org/download.html) with Npcap enabled (default). On Linux `sudo apt install tshark`. On macOS `brew install wireshark`.
+3. **Run** — Launch ProtocolForge, open a PCAP, and start inspecting/editing/sending.
+
+**Bonus:** Download the demo capture from the latest [Release](https://github.com/yangying-dev/protocol-forge/releases) (e.g. `protocolforge-demo-<version>.pcap`) to open a PFCP tree in seconds and see the workflow in action.
 
 ---
 

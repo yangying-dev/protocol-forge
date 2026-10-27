@@ -1,5 +1,7 @@
 # ProtocolForge
 
+**[English](README.md) | 简体中文**
+
 **3GPP 协议仿真与调试工作台**
 
 ProtocolForge 是一款跨平台桌面应用程序，用于检查、编辑和重放 PCAP 文件中捕获的 3GPP 协议报文（PFCP、NGAP、GTP-U、NAS、S1AP、Diameter 等）。它将 Wireshark 的解析引擎（tshark）与原生的报文编辑器和裸套接字注入结合于一个 .NET 10 + Avalonia UI 应用中。
@@ -12,9 +14,35 @@ ProtocolForge 是一款跨平台桌面应用程序，用于检查、编辑和重
 
 > ⚠️ **报文注入会向网络发送真实帧。** 请仅在你拥有或已获得书面授权的网络上使用 ProtocolForge。发送行为可能违反当地法律或运营商条款，责任完全由使用者承担。ProtocolForge 不包含规避检测、获取凭据或针对生产环境的载荷模糊测试工具。完整能力清单与使用声明见 [`SECURITY.md`](SECURITY.md)。
 
+[![Release](https://img.shields.io/github/v/release/yangying-dev/protocol-forge)](https://github.com/yangying-dev/protocol-forge/releases)
+[![CI](https://github.com/yangying-dev/protocol-forge/actions/workflows/ci.yml/badge.svg)](https://github.com/yangying-dev/protocol-forge/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 ![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4)
 ![Avalonia](https://img.shields.io/badge/Avalonia-12.1.3-8B5CF6)
 ![平台](https://img.shields.io/badge/平台-Windows%20%2F%20Linux%20%2F%20macOS-lightgrey)
+
+## 为什么不用 Wireshark？
+
+Wireshark 是抓包分析的业界标准，但对于主动测试仍有空白。**ProtocolForge** 正是填补这一空档：
+
+- **改包重放** — 在 GUI 中修改字段后直接将修改后的报文注入链路（Wireshark 原生无法重放已编辑的报文）。
+- **无需先抓包** — 可直接构造或编辑报文并发送，无需等待实时抓包。
+- **中英双语界面** — 运行时即可切换简体中文与英文。
+- **一体化工作流** — 借助 tshark 解析、带栅栏校验与验证后提交（Verify-Before-Commit）的树/十六进制编辑器、多级注入阶梯，一站式完成解析、编辑、注入。
+
+---
+
+## 快速开始
+
+### 三步安装
+
+1. **下载** — 从 [Releases](https://github.com/yangying-dev/protocol-forge/releases) 下载对应平台的最新版本，建议用 `SHA256SUMS` 校验完整性。
+2. **安装依赖** — Windows 安装 [Wireshark](https://www.wireshark.org/download.html) 并保留 Npcap（默认勾选）；Linux `sudo apt install tshark`；macOS `brew install wireshark`。
+3. **运行** — 启动 ProtocolForge，打开 PCAP 文件即可开始检查、编辑、发送报文。
+
+**提示：** 从最新 [Release](https://github.com/yangying-dev/protocol-forge/releases) 下载演示抓包（如 `protocolforge-demo-<version>.pcap`），可在 30 秒内打开并查看 PFCP 协议树，直观体验核心功能。
+
+---
 
 ## 界面截图
 

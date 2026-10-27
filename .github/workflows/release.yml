@@ -224,6 +224,27 @@ jobs:
           # Sanity: every payload must be non-empty.
           test "$(find . -type f | wc -l)" -gt 4
 
+      - name: Generate demo pcap asset
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          python3 docs/make-synthetic-capture.py "/tmp/protocolforge-demo-${VERSION}.pcap"
+          cp "/tmp/protocolforge-demo-${VERSION}.pcap" out/stage/protocolforge-demo-${VERSION}.pcap
+          echo "--- demo asset ---"
+          ls -lh out/stage/protocolforge-demo-${VERSION}.pcap
+
+      - name: Recompute checksums over the final payload
+        working-directory: out/stage
+        run: |
+          set -euo pipefail
+          find . -type f ! -name 'SHA256SUMS*' -print0 \
+            | sort -z | xargs -0 sha256sum > SHA256SUMS.all
+          cat SHA256SUMS.all
+          # Sanity: every payload must be non-empty.
+          test "$(find . -type f | wc -l)" -gt 5
+
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
@@ -239,11 +260,11 @@ jobs:
           esac
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "::notice::Release $TAG already exists — uploading assets to it."
-            gh release upload "$TAG" out/stage/linux/* out/stage/windows/* out/stage/SHA256SUMS.all --clobber
+            gh release upload "$TAG" out/stage/linux/* out/stage/windows/* out/stage/SHA256SUMS.all out/stage/protocolforge-demo-*.pcap --clobber
           else
             gh release create "$TAG" \
               --title "$TAG" \
               --generate-notes \
               $prerelease_flag \
-              out/stage/linux/* out/stage/windows/* out/stage/SHA256SUMS.all
+              out/stage/linux/* out/stage/windows/* out/stage/SHA256SUMS.all out/stage/protocolforge-demo-*.pcap
           fi
