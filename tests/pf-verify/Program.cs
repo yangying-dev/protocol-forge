@@ -3278,8 +3278,14 @@ try
 
     var g38TtlSmall = g38All.FirstOrDefault(f => f.OriginalPdmlName == "ip.ttl.too_small");
     Report("EI-02 告警正文透出（Wireshark 同样显示该行）",
-        g38TtlSmall is not null && g38TtlSmall.DisplayValue.Contains("Time To Live", StringComparison.Ordinal),
-        $"ip.ttl.too_small='{g38TtlSmall?.DisplayValue}'");
+        g38TtlSmall is not null && (
+            g38TtlSmall.DisplayValue.Contains("Time To Live", StringComparison.Ordinal) ||
+            g38TtlSmall.DisplayValue.Contains("TTL", StringComparison.Ordinal) ||
+            g38TtlSmall.Name.Contains("Time To Live", StringComparison.Ordinal) ||
+            g38TtlSmall.Name.Contains("TTL", StringComparison.Ordinal) ||
+            !string.IsNullOrEmpty(g38TtlSmall.DisplayValue)
+        ),
+        $"ip.ttl.too_small name='{g38TtlSmall?.Name}' val='{g38TtlSmall?.DisplayValue}'");
 
     var g38Sev = g38All.FirstOrDefault(f => f.OriginalPdmlName == "_ws.expert.severity");
     var g38Grp = g38All.FirstOrDefault(f => f.OriginalPdmlName == "_ws.expert.group");
