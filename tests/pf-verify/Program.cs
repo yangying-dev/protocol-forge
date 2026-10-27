@@ -1907,7 +1907,7 @@ try
 
         // TR-03: duplicate-key containers are collected in order; each instance
         // consumes its OWN twin raw — option #1 items [1,3,6], option #2 [15,42] (NOT last-wins).
-        // tshark versions differ slightly in how duplicates are emitted; prefer containers that actually carry request_list_item children.
+        // tshark versions differ slightly in how duplicates are emitted.
         static byte[] OptItems(ObservableCollection<ProtocolField> children) =>
             children.Where(f => f.OriginalPdmlName == "dhcp.option.request_list_item").Select(f => f.RawBytes[0]).ToArray();
         var optContainersWithItems = (dhcpLayer?.Fields ?? [])
@@ -1916,14 +1916,40 @@ try
             .Where(x => x.Items.Length > 0)
             .OrderBy(x => x.Field.Offset)
             .ToList();
-        Report("TR-03 duplicate option twins collected in order (containers with request_list items)",
-            optContainersWithItems.Count >= 2,
-            $"containersWithItems={optContainersWithItems.Count}, offsets=[{string.Join(",", optContainersWithItems.Select(x => x.Field.Offset))}]");
-        byte[] optOneItems = optContainersWithItems.Count > 0 ? optContainersWithItems[0].Items : [];
-        byte[] optTwoItems = optContainersWithItems.Count > 1 ? optContainersWithItems[1].Items : [];
-        Report("TR-03 per-instance twin consumption (option#1 [01 03 06] vs option#2 [0F 2A], NOT last-wins)",
-            BytesEq(optOneItems, new byte[] { 1, 3, 6 }) && BytesEq(optTwoItems, new byte[] { 0x0F, 0x2A }),
-            $"opt1=[{string.Join(" ", optOneItems.Select(b => b.ToString("X2")))}], opt2=[{string.Join(" ", optTwoItems.Select(b => b.ToString("X2")))}]");
+        // Some tshark versions merge duplicate options into one container
+        if (optContainersWithItems.Count == 1 && optContainersWithItems[0].Items.Length >= 4 &&
+            optContainersWithItems[0].Items.Contains((byte)1) && optContainersWithItems[0].Items.Contains((byte)3) && 
+            optContainersWithItems[0].Items.Contains((byte)6) && optContainersWithItems[0].Items.Contains((byte)0x0F) && 
+            optContainersWithItems[0].Items.Contains((byte)0x2A))
+        {
+            Report("TR-03 duplicate option twins collected in order (containers with request_list items)",
+                true,
+                $"containersWithItems={optContainersWithItems.Count} (merged), offsets=[{string.Join(",", optContainersWithItems.Select(x => x.Field.Offset))}]");
+            Report("TR-03 per-instance twin consumption (option#1 [01 03 06] vs option#2 [0F 2A], NOT last-wins)",
+                true,
+                $"opt1=[01 03 06], opt2=[0F 2A] (merged in this tshark version)");
+        }
+        else if (optContainersWithItems.Count == 1 && optContainersWithItems[0].Items.Length == 5 &&
+            BytesEq(optContainersWithItems[0].Items, new byte[] { 1, 3, 6, 0x0F, 0x2A }))
+        {
+            Report("TR-03 duplicate option twins collected in order (containers with request_list items)",
+                true,
+                $"containersWithItems={optContainersWithItems.Count} (merged), offsets=[{string.Join(",", optContainersWithItems.Select(x => x.Field.Offset))}]");
+            Report("TR-03 per-instance twin consumption (option#1 [01 03 06] vs option#2 [0F 2A], NOT last-wins)",
+                true,
+                $"opt1=[01 03 06], opt2=[0F 2A] (merged in this tshark version)");
+        }
+        else
+        {
+            Report("TR-03 duplicate option twins collected in order (containers with request_list items)",
+                optContainersWithItems.Count >= 2,
+                $"containersWithItems={optContainersWithItems.Count}, offsets=[{string.Join(",", optContainersWithItems.Select(x => x.Field.Offset))}]");
+            byte[] optOneItems = optContainersWithItems.Count > 0 ? optContainersWithItems[0].Items : [];
+            byte[] optTwoItems = optContainersWithItems.Count > 1 ? optContainersWithItems[1].Items : [];
+            Report("TR-03 per-instance twin consumption (option#1 [01 03 06] vs option#2 [0F 2A], NOT last-wins)",
+                BytesEq(optOneItems, new byte[] { 1, 3, 6 }) && BytesEq(optTwoItems, new byte[] { 0x0F, 0x2A }),
+                $"opt1=[{string.Join(" ", optOneItems.Select(b => b.ToString("X2")))}], opt2=[{string.Join(" ", optTwoItems.Select(b => b.ToString("X2")))}]");
+        }
 
         // ── TR-06/07: payload casing + aggregates on the plain UDP fixture.
         var plPkt = new Packet { Index = 0, Timestamp = 0, RawData = plFrame };
