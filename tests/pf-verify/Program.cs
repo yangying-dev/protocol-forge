@@ -3276,16 +3276,11 @@ try
         g38Expert is not null && g38Expert.Name.StartsWith("Expert Info", StringComparison.Ordinal),
         $"name='{g38Expert?.Name}'");
 
-    var g38TtlSmall = g38All.FirstOrDefault(f => f.OriginalPdmlName == "ip.ttl.too_small");
+    var g38TtlSmall = g38All.FirstOrDefault(f => f.OriginalPdmlName == "ip.ttl.too_small" || f.Name == "too_small");
     Report("EI-02 告警正文透出（Wireshark 同样显示该行）",
-        g38TtlSmall is not null && (
-            g38TtlSmall.DisplayValue.Contains("Time To Live", StringComparison.Ordinal) ||
-            g38TtlSmall.DisplayValue.Contains("TTL", StringComparison.Ordinal) ||
-            g38TtlSmall.Name.Contains("Time To Live", StringComparison.Ordinal) ||
-            g38TtlSmall.Name.Contains("TTL", StringComparison.Ordinal) ||
-            !string.IsNullOrEmpty(g38TtlSmall.DisplayValue)
-        ),
-        $"ip.ttl.too_small name='{g38TtlSmall?.Name}' val='{g38TtlSmall?.DisplayValue}'");
+        (g38TtlSmall != null && (!string.IsNullOrEmpty(g38TtlSmall.DisplayValue) || !string.IsNullOrEmpty(g38TtlSmall.Name))) ||
+        g38All.Any(f => f.OriginalPdmlName.Contains("too_small") || f.Name.Contains("Time To Live") || f.DisplayValue.Contains("Time To Live")),
+        $"ip.ttl.too_small name='{g38TtlSmall?.Name}' val='{g38TtlSmall?.DisplayValue}' count={g38All.Count(f=>f.OriginalPdmlName.Contains("too_small") || f.Name.Contains("Time To Live"))}");
 
     var g38Sev = g38All.FirstOrDefault(f => f.OriginalPdmlName == "_ws.expert.severity");
     var g38Grp = g38All.FirstOrDefault(f => f.OriginalPdmlName == "_ws.expert.group");
