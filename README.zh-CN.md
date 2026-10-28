@@ -14,7 +14,7 @@ ProtocolForge 是一款跨平台桌面应用程序，用于检查、编辑和重
 
 > ⚠️ **报文注入会向网络发送真实帧。** 请仅在你拥有或已获得书面授权的网络上使用 ProtocolForge。发送行为可能违反当地法律或运营商条款，责任完全由使用者承担。ProtocolForge 不包含规避检测、获取凭据或针对生产环境的载荷模糊测试工具。完整能力清单与使用声明见 [`SECURITY.md`](SECURITY.md)。
 
-[![Release](https://img.shields.io/github/v/release/yangying-dev/protocol-forge)](https://github.com/yangying-dev/protocol-forge/releases)
+[![Release](https://img.shields.io/github/v/tag/yangying-dev/protocol-forge)](https://github.com/yangying-dev/protocol-forge/tags)
 [![CI](https://github.com/yangying-dev/protocol-forge/actions/workflows/ci.yml/badge.svg)](https://github.com/yangying-dev/protocol-forge/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 ![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4)

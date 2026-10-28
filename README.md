@@ -8,7 +8,7 @@ ProtocolForge is a cross-platform desktop application for inspecting, editing, a
 
 > **Free and open source (Apache-2.0).** Everything currently shipped is free and unlimited — there is no feature gate and no send quota. On Windows, install Wireshark yourself and keep the Npcap option enabled during installation (it is selected by default); ProtocolForge does not bundle or silently install Npcap.
 
-[![Release](https://img.shields.io/github/v/release/yangying-dev/protocol-forge)](https://github.com/yangying-dev/protocol-forge/releases)
+[![Release](https://img.shields.io/github/v/tag/yangying-dev/protocol-forge)](https://github.com/yangying-dev/protocol-forge/tags)
 [![CI](https://github.com/yangying-dev/protocol-forge/actions/workflows/ci.yml/badge.svg)](https://github.com/yangying-dev/protocol-forge/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 ![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4)
